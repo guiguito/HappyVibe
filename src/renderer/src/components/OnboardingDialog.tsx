@@ -115,7 +115,7 @@ export function OnboardingDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at open
   }, []);
   const dismiss = (): void => {
-    trackUi("onboarding_dismissed", { atStep: onboardingStep({ welcome, modelReady, workspaceReady }) });
+    trackUi("onboarding_dismissed", { atStep: onboardingStep({ welcome, modelReady: step1Done, workspaceReady }) });
     onSkip();
   };
 

@@ -664,3 +664,10 @@ describe("a rejected key on first run is seen, and doesn't count (docs-round #9)
     expect(has(src, "onNote: React.Dispatch<React.SetStateAction<KeyNote | null>>"), "applied to the CURRENT note").toBe(true);
   });
 });
+
+describe("cleanup C11: dismissing with a refused key reports step 1", () => {
+  it("onboarding_dismissed derives the step from step1Done, not the raw modelReady", () => {
+    const dialog = read("components/OnboardingDialog.tsx");
+    expect(dialog).toContain("onboardingStep({ welcome, modelReady: step1Done, workspaceReady })");
+  });
+});

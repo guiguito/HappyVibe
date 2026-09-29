@@ -36,7 +36,7 @@ describe("§37 turning it off means off", () => {
     // on next launch" caveat it does not have.
     expect(crash).toMatch(/enabled: getCrashReports\(\)/);
     const body = crash.slice(crash.indexOf("export async function installCrash"));
-    const setting = body.indexOf("getCrashReports()");
+    const setting = body.indexOf("enabled: getCrashReports()");
     const init = body.indexOf("installElectronMain(");
     expect(setting).toBeGreaterThan(init); // read INSIDE the options, not as a guard before them
   });
