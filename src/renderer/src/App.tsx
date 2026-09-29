@@ -3452,6 +3452,7 @@ export default function App(): React.JSX.Element {
           {activeView === "models" && (
             <ModelsView
               firstRun={needsSetup}
+              onSaving={() => setView("models")}
               onSaved={() => {
                 setKeyState("present");
                 setView("chat");

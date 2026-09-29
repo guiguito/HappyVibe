@@ -72,7 +72,7 @@ When you save, HappyVibe asks the provider whether it accepts the key. The key i
 If the provider rejects it:
 
 - On the Models page, a red line starts "Saved, but" and gives the provider's name and its reason.
-- In the setup window, the provider's reason appears in red under **Connect a model**.
+- In the setup window, the same red line appears under **Connect a model**, and the step stays open until a key is accepted.
 - What to do: check the key for a typo, then paste it again. The new one replaces the old.
 
 If the app couldn't check:

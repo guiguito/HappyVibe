@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { BrandLogo } from "./BrandLogo";
-import { ModelsEscape, ProviderDoors } from "./OnboardingDoors";
+import { ModelsEscape, ProviderDoors, type KeyNote } from "./OnboardingDoors";
 import { ONBOARDING_COPY as C } from "../onboarding";
 import { ipcMessage } from "../ipcError";
 import { trackUi } from "../usage";
@@ -103,7 +103,7 @@ export function OnboardingDialog({
   // A key the provider refused. Lives here rather than in ProviderDoors because
   // saving it CHECKS step 1 (the key is stored whatever the answer), which
   // unmounts the doors — and took the refusal with it.
-  const [keyNote, setKeyNote] = useState<string | null>(null);
+  const [keyNote, setKeyNote] = useState<KeyNote | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -135,7 +135,11 @@ export function OnboardingDialog({
     };
   }, []);
 
-  const complete = modelReady && workspaceReady;
+  // docs-round #9: a refused key is SAVED (the probe informs, never blocks), so the
+  // gate reads ready — but step 1 isn't done, and the wizard doesn't hand over, until
+  // a key is accepted or another door works.
+  const step1Done = modelReady && !keyNote?.rejected;
+  const complete = step1Done && workspaceReady;
 
   useEffect(() => {
     if (!complete || welcome) return;
@@ -263,7 +267,7 @@ export function OnboardingDialog({
                     // panel and pinning it to the top left a dead strip along
                     // the bottom. The left column centres too, so they agree.
                     <div className="h-full flex flex-col justify-center gap-3">
-                        <StepRow n="1" done={modelReady} active={!modelReady} title={C.step1Title} body={C.step1Body} note={keyNote}>
+                        <StepRow n="1" done={step1Done} active={!step1Done} title={C.step1Title} body={C.step1Body} note={keyNote?.text}>
                           <ProviderDoors onChanged={onRefreshModel} onNote={setKeyNote} />
                           <ModelsEscape onGo={onGoModels} />
                         </StepRow>
@@ -271,7 +275,7 @@ export function OnboardingDialog({
                         <StepRow
                           n="2"
                           done={workspaceReady}
-                          active={modelReady && !workspaceReady}
+                          active={step1Done && !workspaceReady}
                           title={C.step2Title}
                           body={C.step2Body}
                         >

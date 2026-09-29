@@ -67,6 +67,15 @@ export const ONBOARDING_COPY = {
 export type OnboardingCopyKey = keyof typeof ONBOARDING_COPY;
 
 /**
+ * docs-round #9: what the provider said about a key it refused, in ONE sentence for
+ * both screens. The setup window showed only the raw reason ("HTTP 401"); the Models
+ * page had this sentence inline.
+ */
+export function keyRejectedNote(provider: string, reason: string): string {
+  return `Saved, but ${provider} rejected this key (${reason}).`;
+}
+
+/**
  * `onboardingSeen` alone is NOT the migration it looks like.
  *
  * The flag is only written when the OLD bottom-right overlay was dismissed, and

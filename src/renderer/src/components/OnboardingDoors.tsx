@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { GOTO_LABELS } from "./GoTo";
 import { parseAuth, type AuthEvent } from "../auth";
-import { ONBOARDING_COPY as C, rankProviders } from "../onboarding";
+import { ONBOARDING_COPY as C, keyRejectedNote, rankProviders } from "../onboarding";
 import { THIS_COMPUTER } from "../platformCopy";
 
 /**
@@ -167,6 +167,12 @@ interface LocalDoor {
   label: string;
 }
 
+/** What the key check said. `rejected` keeps step 1 open (docs-round #9). */
+export interface KeyNote {
+  text: string;
+  rejected: boolean;
+}
+
 export function ProviderDoors({
   onChanged,
   onNote,
@@ -176,12 +182,11 @@ export function ProviderDoors({
    * What the provider said about the key, lifted OUT of this component.
    *
    * `setProviderKey` saves the key whatever the answer, so a typo'd key still
-   * flips `hv:has-any-provider` — step 1 checks, this whole component unmounts,
-   * and the refusal it just rendered disappears with it. Measured: a bogus
-   * Anthropic key checked step 1 and showed nothing at all. The note has to
-   * outlive the collapse, so the dialog owns it.
+   * flips `hv:has-any-provider`. The dialog owns the note, because it must survive
+   * this component unmounting, and since docs-round #9 a `rejected` note also keeps
+   * step 1 from ticking.
    */
-  onNote: (note: string | null) => void;
+  onNote: (note: KeyNote | null) => void;
 }): React.JSX.Element {
   const [rung, setRung] = useState<Rung>("plan");
   const [oauth, setOauth] = useState<HvOAuthProvider[]>([]);
@@ -238,6 +243,8 @@ export function ProviderDoors({
   };
 
   const closeLogin = (): void => {
+    // A sign-in that worked replaces a refused key as the way in (docs-round #9).
+    if (login?.event?.stage === "success") onNote(null);
     setLogin(null);
     onChanged();
   };
@@ -251,8 +258,11 @@ export function ProviderDoors({
     const probe = await window.hv.setProviderKey(keyId, key);
     setSaving(false);
     setKeyText("");
-    const note =
-      probe.status === "bad" ? probe.error : probe.status === "unverified" ? C.step1KeyUnverified : null;
+    const label = byok.find((b) => b.id === keyId)?.label ?? keyId;
+    const note: KeyNote | null =
+      probe.status === "bad" ? { text: keyRejectedNote(label, probe.error), rejected: true }
+      : probe.status === "unverified" ? { text: C.step1KeyUnverified, rejected: false }
+      : null;
     onNote(note);
     onChanged();
   };
@@ -299,7 +309,7 @@ export function ProviderDoors({
               // Nothing to save: syncModelsJson writes the entry before every
               // spawn. Main emits no event for a detector, so this is the one
               // door that has to nudge the gate itself.
-              onClick={onChanged}
+              onClick={() => { onNote(null); onChanged(); }}
             >
               Use {r.label} — found on {THIS_COMPUTER}
             </button>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { chipsFor, folderHasCode, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
+import { chipsFor, folderHasCode, keyRejectedNote, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
 
 /**
  * §22 onboarding round (2026-09-01).
@@ -354,7 +354,7 @@ describe("a key the provider refused survives step 1 checking itself", () => {
     // setProviderKey SAVES the key whatever the answer, so a typo'd key flips
     // the gate, collapses step 1 and unmounts ProviderDoors. Measured before
     // the fix: a bogus Anthropic key checked step 1 and showed nothing at all.
-    expect(has(flat(DIALOG), "note={keyNote}"), "StepRow renders the note").toBe(true);
+    expect(has(flat(DIALOG), "note={keyNote?.text}"), "StepRow renders the note").toBe(true);
     expect(has(flat(DIALOG), "onNote={setKeyNote}"), "the dialog owns it").toBe(true);
     expect(has(flat(DOORS), "onNote(note)"), "the doors report it up").toBe(true);
   });
@@ -613,5 +613,40 @@ describe("§4 Windows round — the Git for Windows line", () => {
     const block = DIALOG.slice(DIALOG.indexOf("C.gitForWindows") - 600, DIALOG.indexOf("C.gitForWindows") + 200);
     expect(block).not.toMatch(/<Banner/);
     expect(block).not.toMatch(/localStorage|dismiss/i);
+  });
+});
+
+describe("a rejected key on first run is seen, and doesn't count (docs-round #9)", () => {
+  const MODELS = read("components/ModelsView.tsx");
+
+  it("one sentence, used by both screens", () => {
+    expect(keyRejectedNote("Anthropic", "HTTP 401")).toBe("Saved, but Anthropic rejected this key (HTTP 401).");
+    expect(has(flat(MODELS), "keyRejectedNote("), "Models page").toBe(true);
+    expect(has(flat(DOORS), "{ text: keyRejectedNote(label, probe.error), rejected: true }"), "setup window").toBe(true);
+    expect(has(flat(MODELS), "rejected this key ("), "no second copy of the sentence").toBe(false);
+  });
+
+  it("the first-run Models page pins itself before the save, and hands over only for an accepted key", () => {
+    const src = flat(MODELS);
+    const pin = src.indexOf("if (firstRun) onSaving();");
+    expect(pin, "pinned").toBeGreaterThan(-1);
+    expect(pin, "before the push can land").toBeLessThan(src.indexOf("await window.hv.setProviderKey(id, key)"));
+    expect(has(src, 'if (firstRun && probe.status !== "bad") onSaved();'), "accepted only").toBe(true);
+    expect(has(src, "if (firstRun) onSaved();"), "the unconditional handover").toBe(false);
+    expect(has(flat(APP), 'onSaving={() => setView("models")}'), "App pins the view").toBe(true);
+  });
+
+  it("step 1 ticks only for an accepted key, and the wizard can't hand over past a refusal", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "const step1Done = modelReady && !keyNote?.rejected;")).toBe(true);
+    expect(has(src, "done={step1Done} active={!step1Done}"), "step 1").toBe(true);
+    expect(has(src, "active={step1Done && !workspaceReady}"), "step 2 waits").toBe(true);
+    expect(has(src, "const complete = step1Done && workspaceReady;"), "no handover").toBe(true);
+  });
+
+  it("another door that works clears the refusal", () => {
+    const src = flat(DOORS);
+    expect(has(src, 'if (login?.event?.stage === "success") onNote(null);'), "sign-in").toBe(true);
+    expect(has(src, "onClick={() => { onNote(null); onChanged(); }}"), "local runner").toBe(true);
   });
 });
