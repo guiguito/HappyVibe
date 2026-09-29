@@ -89,8 +89,7 @@ describe("the row's labels", () => {
     expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "ok", durationMs: 125_000 }] }))).toBe("✓ 2 min");
     expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "ok", durationMs: 1000, costUsd: 0 }] }))).toBe("✓ 1 min");
     expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "failed", reason: "402" }] }))).toBe("✕ failed: 402");
-    expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "needs_you" }] }))).toBe("⚠ needs you");
-    expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "skipped", reason: "busy" }] }))).toBe("– skipped: busy");
+    expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "skipped", reason: "busy" }] }))).toBe("– skipped: another session in the project was working");
   });
 
   it("a finished schedule says ENDED, never off — nobody switched it off", () => {

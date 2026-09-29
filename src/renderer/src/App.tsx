@@ -3494,7 +3494,6 @@ export default function App(): React.JSX.Element {
               schedules={schedules}
               workspaces={workspaces}
               models={scheduleModels}
-              bypassHere={() => false}
               prefill={schedulePrefill}
               drawerRequest={scheduleDrawerReq}
               onPrefillUsed={() => setSchedulePrefill(null)}

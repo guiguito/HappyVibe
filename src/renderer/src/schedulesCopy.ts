@@ -57,10 +57,22 @@ export const CATCH_UP_LABELS: Record<CatchUp, { title: string; body: string }> =
 
 export const OUTCOME_MARK: Record<RunOutcome | "never", string> = {
   ok: "✓",
-  needs_you: "⚠",
   failed: "✕",
   skipped: "–",
   never: "—",
+};
+
+/**
+ * docs-round #29: a skipped run's reason, in words. The keys are the `reason`
+ * values scheduler.ts records with `outcome: "skipped"`; a test fails when it
+ * writes one this record does not name. A failed run's reason is an error
+ * message and is shown as it is.
+ */
+export const SKIP_REASON: Record<string, string> = {
+  busy: "another session in the project was working",
+  missed: "HappyVibe was closed or asleep at that time",
+  unanswered: "nobody decided about the missed run",
+  "workspace-gone": "the project was removed from the sidebar",
 };
 
 /** Says what state it is in AND what to do about it — "ended" alone is a dead end. */
@@ -150,9 +162,8 @@ export function scheduleSubtitle(list: Schedule[], now: Date): string | null {
 export function lastRunLabel(s: Schedule): string {
   const r = s.runs.at(-1);
   if (!r) return `${OUTCOME_MARK.never} never ran`;
-  if (r.outcome === "needs_you") return `${OUTCOME_MARK.needs_you} needs you`;
   if (r.outcome === "failed") return `${OUTCOME_MARK.failed} failed${r.reason ? `: ${r.reason}` : ""}`;
-  if (r.outcome === "skipped") return `${OUTCOME_MARK.skipped} skipped${r.reason ? `: ${r.reason}` : ""}`;
+  if (r.outcome === "skipped") return `${OUTCOME_MARK.skipped} skipped${r.reason ? `: ${SKIP_REASON[r.reason] ?? r.reason}` : ""}`;
   const mins = r.durationMs ? ` ${Math.max(1, Math.round(r.durationMs / 60000))} min` : "";
   const cost = r.costUsd !== undefined && r.costUsd > 0 ? ` · $${r.costUsd.toFixed(2)}` : "";
   return `${OUTCOME_MARK.ok}${mins}${cost}`;

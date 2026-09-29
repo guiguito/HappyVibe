@@ -2422,7 +2422,13 @@ export function registerIpc(
               : { mode: "full", catchUp: "ask", reuseSession: false, notifyOnDone: true, enabled: true, ...sched.draft, workspaceId: ws };
             const res = await requestScheduleDrawer({ workspaceId: ws, draft, existingId: existing?.id, sessionId });
             if ("cancelled" in res) return answer("declined");
-            if (!existing) track("schedule_created", scheduleParams(res.saved, "agent"));
+            if (!existing) {
+              // docs-round #32: provenance the drawer never sends. editPatch
+              // (scheduleStore.ts) keeps it out of every later edit.
+              scheduleStore.update(res.saved.id, { createdBy: { source: "agent", sessionId } }, new Date());
+              schedulesChanged();
+              track("schedule_created", scheduleParams(res.saved, "agent"));
+            }
             void log.append({
               type: existing ? "schedule.update" : "schedule.create",
               sessionId,
@@ -3425,11 +3431,16 @@ export function registerIpc(
     // agent path below counts it, as `agent`.
     // ponytail: a page create made while an agent drawer is open is not counted; key the save by requestId if that ever matters.
     if (!input.id && scheduleDrawerWaits.size === 0) track("schedule_created", scheduleParams(s, "page"));
-    void log.append({
-      type: input.id ? "schedule.update" : "schedule.create",
-      workspaceId: s.workspaceId,
-      data: { scheduleId: s.id, title: s.title, mode: s.mode, recurrence: humanRecurrence(s.repeat, s.at), source: "user" },
-    });
+    // docs-round #32: an agent-opened drawer saves through here too, and the
+    // agent path logs that create or update itself as `source: "agent"`.
+    // ponytail: same ceiling as the track above — a page save made while an agent drawer is open goes unlogged.
+    if (scheduleDrawerWaits.size === 0) {
+      void log.append({
+        type: input.id ? "schedule.update" : "schedule.create",
+        workspaceId: s.workspaceId,
+        data: { scheduleId: s.id, title: s.title, mode: s.mode, recurrence: humanRecurrence(s.repeat, s.at), source: "user" },
+      });
+    }
     schedulesChanged();
     return s;
   });
@@ -3469,12 +3480,17 @@ export function registerIpc(
   /**
    * "Open HappyVibe at login". Hidden in development rather than disabled: in
    * dev this would register the Electron binary itself, which is not the app
-   * the user thinks they are launching at login.
+   * the user thinks they are launching at login. Hidden on Linux too
+   * (docs-round #29): Electron's login items are macOS and Windows only, so the
+   * switch would flip and do nothing.
    */
-  ipcMain.handle("hv:login-item-get", () => ({
-    available: app.isPackaged,
-    openAtLogin: app.isPackaged ? app.getLoginItemSettings().openAtLogin : false,
-  }));
+  ipcMain.handle("hv:login-item-get", () => {
+    const available = app.isPackaged && platform.name !== "linux";
+    return {
+      available,
+      openAtLogin: available ? app.getLoginItemSettings().openAtLogin : false,
+    };
+  });
   ipcMain.handle("hv:login-item-set", (_e, on: boolean) => {
     if (!app.isPackaged) throw new Error("Opening at login is only available in the installed app.");
     app.setLoginItemSettings({ openAtLogin: !!on });

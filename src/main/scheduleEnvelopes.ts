@@ -180,7 +180,6 @@ export function renderScheduleList(list: Schedule[], costOf: (s: Schedule) => nu
       const outcome = !last ? "never run"
         : last.outcome === "ok" ? `last run ok${cost !== undefined ? ` ($${cost.toFixed(2)})` : ""}`
         : last.outcome === "failed" ? `last run failed${last.reason ? `: ${last.reason}` : ""}`
-        : last.outcome === "needs_you" ? "last run needs permission"
         : `last run skipped${last.reason ? ` (${last.reason})` : ""}`;
       const next = !s.enabled ? "paused" : s.nextRunAt ? `next ${s.nextRunAt}` : "no next run";
       return `• ${s.title} [${s.id}] — ${humanRecurrence(s.repeat, s.at, s.until)} — ${s.mode} — ${next} — ${outcome}`;

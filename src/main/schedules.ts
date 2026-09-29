@@ -33,7 +33,9 @@ export type Repeat =
 
 export type ScheduleMode = "readonly" | "full";
 export type CatchUp = "ask" | "always" | "never";
-export type RunOutcome = "ok" | "needs_you" | "failed" | "skipped";
+// docs-round #29: no "needs you" outcome — nothing ever recorded one. A run that
+// asks raises the OS notification (scheduler.ts onNeedsYou), all §35 promises.
+export type RunOutcome = "ok" | "failed" | "skipped";
 
 export interface ScheduleRun {
   sessionId?: string;
@@ -263,7 +265,7 @@ export function catchUpDecision(s: Schedule, now: Date): CatchUpDecision {
 export function applyOutcome(s: Schedule, run: ScheduleRun): Schedule {
   const runs = [...s.runs, run].slice(-MAX_RUNS);
   let failStreak = s.failStreak;
-  if (run.outcome === "ok" || run.outcome === "needs_you") failStreak = 0;
+  if (run.outcome === "ok") failStreak = 0;
   else if (run.outcome === "failed") failStreak += 1;
   // The money guard: a schedule that has failed three times in a row is failing
   // for a reason that will not fix itself (no key, no model, a dead provider).

@@ -71,7 +71,7 @@ describe("main wires the scheduler to paths it already owns", () => {
 
   it("openAtLogin is only ever set from the one handler, and hidden in development", () => {
     expect(ipc.match(/setLoginItemSettings\(/g)).toHaveLength(1);
-    expect(ipc).toMatch(/available: app\.isPackaged/);
+    expect(ipc).toMatch(/const available = app\.isPackaged/);
     expect(ipc).toMatch(/if \(!app\.isPackaged\) throw new Error/);
   });
 

@@ -190,7 +190,9 @@ describe("main answers every envelope — an unanswered one hangs the bridge", (
   it("create and update NEVER write without the drawer, bypass or no bypass", () => {
     const h = handler();
     expect(h).toContain("requestScheduleDrawer(");
-    expect(h).not.toMatch(/scheduleStore\.(create|update)\(/);
+    // docs-round #32: the createdBy stamp is the one write, and it comes after the drawer saved.
+    expect(h.slice(0, h.indexOf("requestScheduleDrawer("))).not.toMatch(/scheduleStore\.(create|update)\(/);
+    expect(h.match(/scheduleStore\.(create|update)\(/g)).toHaveLength(1);
   });
 
   it("a drawer request with no window left to answer it resolves as declined rather than hanging", () => {
