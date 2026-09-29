@@ -92,9 +92,19 @@ describe("docs-round #32: an agent-created schedule", () => {
     );
   });
 
-  it("logs ONE audit row: the save path skips its user-sourced row while an agent drawer waits", () => {
+  it("logs ONE audit row: only the agent drawer's own save (its requestId) skips the user-sourced row", () => {
     const h = ipc.slice(ipc.indexOf('ipcMain.handle("hv:schedule-save"'), ipc.indexOf('ipcMain.handle("hv:schedule-delete"'));
-    expect(h).toMatch(/if \(scheduleDrawerWaits\.size === 0\) \{\s*void log\.append\(/);
+    expect(h).toMatch(/_e, input: [^,]+, requestId\?: string/);
+    expect(h).toMatch(/const agentDrawer = !!requestId && scheduleDrawerWaits\.has\(requestId\)/);
+    expect(h).toMatch(/if \(!agentDrawer\) \{\s*void log\.append\(/);
+    expect(h).not.toContain("scheduleDrawerWaits.size");
+  });
+
+  it("the drawer passes its requestId through preload; page saves pass none", () => {
+    expect(R("src/preload/index.ts")).toMatch(
+      /scheduleSave: \(input: unknown, requestId\?: string\) => ipcRenderer\.invoke\("hv:schedule-save", input, requestId\)/,
+    );
+    expect(R("src/renderer/src/components/ScheduleDrawer.tsx")).toMatch(/\}\), requestId\);|\}, requestId\);/);
   });
 
   it("the row line it feeds is still there", () => {

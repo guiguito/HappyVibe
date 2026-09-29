@@ -3424,18 +3424,17 @@ export function registerIpc(
 
   ipcMain.handle("hv:schedules-list", () => scheduleStore.list());
 
-  ipcMain.handle("hv:schedule-save", (_e, input: Partial<NewSchedule> & { id?: string }) => {
+  ipcMain.handle("hv:schedule-save", (_e, input: Partial<NewSchedule> & { id?: string }, requestId?: string) => {
     const v = validateScheduleInput(input, workspaces.list());
     const s = input.id ? scheduleStore.update(input.id, editPatch(v), new Date()) : scheduleStore.create(v as NewSchedule, new Date());
     if (!s) throw new Error("That schedule no longer exists.");
-    // §39: the agent's drawer saves through here too; while one is open the
-    // agent path below counts it, as `agent`.
-    // ponytail: a page create made while an agent drawer is open is not counted; key the save by requestId if that ever matters.
-    if (!input.id && scheduleDrawerWaits.size === 0) track("schedule_created", scheduleParams(s, "page"));
+    // §39: the agent's drawer saves through here too (it passes its requestId); the
+    // agent path below counts and logs that one as `agent`. Page saves pass none.
+    const agentDrawer = !!requestId && scheduleDrawerWaits.has(requestId);
+    if (!input.id && !agentDrawer) track("schedule_created", scheduleParams(s, "page"));
     // docs-round #32: an agent-opened drawer saves through here too, and the
     // agent path logs that create or update itself as `source: "agent"`.
-    // ponytail: same ceiling as the track above — a page save made while an agent drawer is open goes unlogged.
-    if (scheduleDrawerWaits.size === 0) {
+    if (!agentDrawer) {
       void log.append({
         type: input.id ? "schedule.update" : "schedule.create",
         workspaceId: s.workspaceId,

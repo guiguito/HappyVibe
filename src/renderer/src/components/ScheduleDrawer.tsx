@@ -89,7 +89,7 @@ export function ScheduleDrawer({
         catchUp,
         until: repeat.kind === "once" ? undefined : until,
         enabled: initial.enabled ?? true,
-      });
+      }, requestId);
       if (requestId) window.hv.scheduleDrawerAnswer(requestId, { saved });
       onSaved(saved);
       onClose();

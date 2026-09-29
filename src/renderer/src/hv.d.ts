@@ -940,7 +940,7 @@ interface HvApi {
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   // §35 Schedules.
   schedulesList(): Promise<HvSchedule[]>;
-  scheduleSave(input: Partial<HvSchedule> & { id?: string }): Promise<HvSchedule>;
+  scheduleSave(input: Partial<HvSchedule> & { id?: string }, requestId?: string): Promise<HvSchedule>;
   scheduleDelete(id: string): Promise<void>;
   scheduleMissedAnswer(id: string, answer: "run" | "skip"): Promise<void>;
   scheduleRunNow(id: string): Promise<{ ok: true } | { ok: false; reason: "busy" | "disabled" | "gone" }>;

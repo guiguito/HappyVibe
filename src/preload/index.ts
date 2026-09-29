@@ -679,7 +679,7 @@ contextBridge.exposeInMainWorld("hv", {
   },
   // §35 Schedules.
   schedulesList: () => ipcRenderer.invoke("hv:schedules-list"),
-  scheduleSave: (input: unknown) => ipcRenderer.invoke("hv:schedule-save", input),
+  scheduleSave: (input: unknown, requestId?: string) => ipcRenderer.invoke("hv:schedule-save", input, requestId),
   scheduleDelete: (id: string) => ipcRenderer.invoke("hv:schedule-delete", id),
   scheduleMissedAnswer: (id: string, answer: "run" | "skip") => ipcRenderer.invoke("hv:schedule-missed-answer", id, answer),
   scheduleRunNow: (id: string) => ipcRenderer.invoke("hv:schedule-run-now", id),
