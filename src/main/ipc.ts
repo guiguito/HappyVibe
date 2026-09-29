@@ -2883,16 +2883,16 @@ export function registerIpc(
     return r.filePaths[0];
   });
   /**
-   * Round 11: removal is a confirmed choice between two outcomes, and neither
-   * leaves orphans behind (the old one-liner dropped the registry entry and left
-   * every session pointing at a workspace that no longer existed).
+   * Round 11: removal is a confirmed choice between two outcomes.
    *
-   *   forget — archive its sessions; re-adding the folder brings them back, and
-   *            nothing on disk is touched.
+   *   forget — stop its running agents and leave its sessions as they are.
+   *            Only registered workspaces render, so they are hidden, and
+   *            re-adding the folder brings them back unchanged — archived ones
+   *            stay archived (docs-round #27). Nothing on disk is touched.
    *   delete — permanently remove them, session files and snapshots included.
    *
-   * Both reuse the paths the session UI already calls (`hv:archive-session` /
-   * `hv:delete-session`) rather than adding a second delete implementation.
+   * Both stop an agent through `endSession`, the path `hv:archive-session` and
+   * `hv:delete-session` already take, rather than a second implementation.
    */
   ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete" = "forget") => {
     forgetSessionFeatures(ws); // §39: the per-workspace first-use set goes with it
@@ -2902,8 +2902,12 @@ export function registerIpc(
     const wtPaths = worktrees.of(ws).map((w) => w.path);
     const affected = sessionsOfProject(index.list(), ws, wtPaths);
     for (const s of affected) {
+      // docs-round #26: both outcomes stop a running agent first, as archiving
+      // does (hv:archive-session). Nothing hibernates it otherwise, so a turn
+      // nobody can see would keep running — and spending — until quit.
+      if (manager.get(s.id)) await endSession(s.id);
+      // docs-round #27: forget writes nothing else to the session.
       if (mode === "delete") {
-        if (manager.get(s.id)) await endSession(s.id);
         index.remove(s.id);
         // §5: before the session file, never after — the run ids its sub-agent
         // artifacts are filed under exist only inside it.
@@ -2912,8 +2916,6 @@ export function registerIpc(
         deleteSessionSnapshots(snapshotDir(), s.id);
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
         forgetSessionFeatures(s.id);
-      } else if (!s.archived) {
-        index.update(s.id, { archived: true });
       }
     }
     // §26: a terminal belongs to the workspace, not to a session, so nothing
@@ -5517,8 +5519,8 @@ export function registerIpc(
     const r = await removeWorktree(parent, worktreePath, force);
     if (!r.ok) return r;
 
-    // §5's Forget path, one level down: the folder is gone, so reopening a
-    // session here must fail honestly rather than resolve to nothing.
+    // Archived, unlike a forgotten workspace's sessions: this folder is gone, so
+    // reopening a session here must fail honestly rather than resolve to nothing.
     for (const s of here) if (!s.archived) index.update(s.id, { archived: true });
     sessionsChanged();
     auditGit(parent, "worktree-remove", { path: worktreePath, branch, force });

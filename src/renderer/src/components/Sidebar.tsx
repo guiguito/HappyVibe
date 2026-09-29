@@ -909,7 +909,10 @@ export function Sidebar({
   /** §29: which project's `+ ▾` menu is open, by path. One at a time. */
   const [startMenu, setStartMenu] = useState<string | null>(null);
 
-  const archivedCount = sessions.filter((s) => s.archived).length;
+  // docs-round #27: only sessions this list can show. A forgotten workspace's
+  // sessions stay in the index, archived or not, and never render here.
+  const listed = new Set(workspaces.flatMap((ws) => [ws, ...(worktrees?.[ws] ?? []).map((w) => w.path)]));
+  const archivedCount = sessions.filter((s) => s.archived && listed.has(s.workspaceId)).length;
 
   /**
    * Sessions whose agent process is LIVE — pinned to the top of their

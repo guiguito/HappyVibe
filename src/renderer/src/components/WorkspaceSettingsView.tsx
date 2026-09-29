@@ -219,8 +219,8 @@ function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onR
         <div>
           <div className="font-bold">Forget workspace</div>
           <p className="text-sm text-ink-soft mt-0.5">
-            Takes <strong>{name}</strong> out of the workspace list and archives its {sessions}. Nothing on disk is
-            touched, and adding the folder again brings them back.
+            Takes <strong>{name}</strong> out of the workspace list and stops any agent still working there. Nothing on
+            disk is touched, and adding the folder again brings its sessions back as they were.
           </p>
         </div>
         <button
@@ -263,7 +263,7 @@ function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onR
             </h2>
             <p className="text-sm text-ink-soft mt-2">
               {confirm === "forget"
-                ? `Its ${sessions} will be archived. Add the folder again and they come back.`
+                ? `Its ${sessions} leave the list, and any agent still working there stops. Add the folder again and they come back as they were.`
                 : `Its ${sessions} and their history will be permanently deleted. This cannot be undone.`}
             </p>
             <div className="mt-5 flex justify-end gap-2">
