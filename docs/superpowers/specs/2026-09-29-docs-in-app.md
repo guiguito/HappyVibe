@@ -1,55 +1,46 @@
-# The user guide, reachable from everywhere in the app
+# The user guide, inside the app
 
-Date: 2026-09-29 · Round follows the Docs round (`docs/prd.md` "Decision (Docs round, 2026-09-28)")
+Date: 2026-09-29 · Follows the Docs round (`docs/prd.md` "Decision (Docs round, 2026-09-28)")
 · Classification: bounded — every flow below already exists in the repo.
 
 ## Goal
 
-The guide is deployed at `https://happyvibe.dev/docs/`. Today the only way into it from the app is
-the "How this page works ↗" link at the foot of a settings screen. Add three more doors, each at a
-moment someone actually needs one: the menu bar, first-run setup, and a failing model call.
-
-## Already built — not part of this round
-
-- **The egress exemption.** A navigation the human starts (`hv:browser-navigate`, `ipc.ts:4237`)
-  reaches `browsers.navigate(id, url, "user")`, which approves the host outright (`browsers.ts:302`),
-  and `decideMainFrame` clears same-host follow-ups (`browserEgress.ts:73-76`). Every door below
-  goes through the same path, so `happyvibe.dev` never shows an "allow this site?" prompt and
-  needs no allowlist entry. (Read from the code; the GUI pass confirms it.)
-- **The opener.** `openDocs` (`App.tsx:2169`): a browser pane in the active workspace, or the system
-  browser while no workspace exists. All three doors reuse it.
-- **The install page.** Not linked from setup: the app is already installed by then, and that page is
-  about the installer (Windows SmartScreen).
+The guide is deployed at `https://happyvibe.dev/docs/`. Until now the only way in from the app was
+a "How this page works ↗" link that opened a browser pane. Make the guide a page of the app itself,
+reachable from the settings list, the menu bar, first-run setup and a failing model call.
 
 ## Design
 
-### 1. Help menu — every platform
-- A **Help** menu with one item, **HappyVibe Guide**, opens the guide's front page
-  (`https://happyvibe.dev/docs/?embed=1`) through `openDocs`.
-- macOS keeps its menu and gains Help. Windows and Linux stop using Electron's default menu and get
-  the same template: Edit, View, Window and Help, plus **File ▸ Quit** where macOS has the app menu.
-- **Windows and Linux: `F1`** is the item's accelerator, so Help works while `autoHideMenuBar` keeps
-  the bar hidden (Alt still reveals it). macOS: no accelerator — F1 is a hardware key there.
-- The click cannot call the renderer directly: main sends `hv:open-docs` to the focused window and
-  the renderer answers with `openDocs(docsIndexUrl)`. With **no window open** (possible on macOS)
-  main opens the system browser itself.
-- Each click opens a new pane, exactly like the per-screen links. No de-duplication.
-- An accelerator is served before the renderer sees the key, and `findConflict` only knows the
-  renderer's list — so `F1` is recorded beside the existing Mod-Shift-n / Mod-Shift-w note in
-  `shortcuts.ts`.
+### 1. A **User guide** page, under The record
+- A row **User guide** sits below the last settings group (The record: Stats, Audit log, Changelog).
+  It is a sidebar destination **outside `NAV`**, like Schedules, so the guide needs no page about
+  itself and the guide's sidebar-mirrors-the-app test is untouched.
+- Its view replaces the whole page content: a slim bar with **← Back** (to the main chat screen)
+  and **Open in browser ↗**, over an `<iframe>` of the guide filling the rest.
+- **An iframe, not a browser pane, on purpose.** A pane is a native `WebContentsView`; nothing in
+  the DOM paints above it (`.claude/rules/renderer-layers.md`), so a permission prompt or dialog
+  would hide behind it. An iframe is plain DOM.
+- The renderer CSP gains exactly one directive: `frame-src https://happyvibe.dev`. The site sends
+  no `X-Frame-Options` and no `frame-ancestors` (checked with `curl -I`), so framing works today.
+- The frame is sandboxed with `allow-scripts allow-same-origin` (the guide's search needs both).
+  The preload API is not exposed to a cross-origin frame.
+- **Leaving the guide.** A link in the guide to another site would navigate the frame away, and the
+  CSP would show a blank frame. Main catches it (`will-frame-navigate`): when the frame is showing the
+  guide and the target is not, http(s)/mailto open in the system browser and anything else is
+  blocked. Frames not showing the guide (the editor's sandboxed HTML preview) are never touched.
+- Offline, the frame is blank; **Open in browser ↗** is the way out. No error detection.
+- Clicking the row again shows the page you were last on, like a tab.
 
-### 2. First-run setup — one link
-- The setup dialog gets one link, **"Read the setup guide ↗"**, to `first-launch`. It sits in the
-  brand column, not the right column: that column is already at its height limit.
-- It shows while setup is open and not on the celebration screen.
-- It always opens the **system browser** (`window.hv.openExternal`), never `openDocs`. Setup starts
-  only with no workspaces (`shouldShowOnboarding`), but the dialog stays open after a project is
-  picked, and `openDocs` would then open a pane behind the modal where nobody can see it.
-
-### 3. Model-call errors — only where a page fixes them
-`describeProviderError` gains an optional `doc: { slug, anchor? }`. It is data in a module that
-imports nothing, so main and renderer both keep using it, and §39's "only `kind` leaves the app"
-is untouched. The error card shows **"Read the guide ↗"** beside its hint when `doc` is set.
+### 2. Every other door converges on it
+`openDocs(url)` stops opening browser panes: it sets the guide's address and shows the **User guide**
+page. So all of these now land in the app, at the right page:
+- the per-screen **How this page works ↗** link (`DocsLink`);
+- **Help ▸ HappyVibe Guide** — a Help menu on every platform. Windows and Linux stop using
+  Electron's default menu and get the same template: Edit, View, Window and Help, plus
+  **File ▸ Quit** where macOS has the app menu. **`F1`** is the item's accelerator on Windows and
+  Linux only (the bar stays hidden until Alt; on macOS F1 is a hardware key). With no window open
+  (possible on macOS) main opens the system browser instead;
+- **Read the guide ↗** on a model-call error card, only where a page fixes it:
 
 | Kind | Link | Why that page fixes it |
 |---|---|---|
@@ -58,14 +49,25 @@ is untouched. The error card shows **"Read the guide ↗"** beside its hint when
 | `context_overflow` | `models#add-a-custom-endpoint` | step 6: check each model's context window |
 | `balance`, `rate_limit`, `overloaded`, `server`, `network`, `other` | **none** | nothing on a page changes them |
 
-`docUrl(slug, anchor?)` puts the anchor after the query (`…/?embed=1#anchor`).
+Because the view needs no workspace, the old fallback (system browser while no workspace exists)
+goes away.
+
+### 3. First-run setup keeps the system browser
+The setup dialog gets one link, **Read the setup guide ↗** (to `first-launch`), in the brand column.
+It calls `window.hv.openExternal` and never `openDocs`: setup is a modal, and a page opened behind
+it would be invisible. It shows while setup is open and not on the celebration screen.
+
+## Already true — not part of this round
+- The browser pane's egress gate is not involved any more (no pane). It had already approved the
+  host of a user-started navigation (`browsers.ts:302`).
+- The install page is not linked from setup: the app is already installed by then.
 
 ## Out of scope
-- Bundling the guide for offline use; a dedicated Docs tab (rejected/deferred by the maintainer).
-- Reusing an already-open docs pane.
-- A link on `balance` errors, even though `connect-a-model` ends with a paragraph about credit.
+- Bundling the guide for offline use; a link on `balance` errors; a native `WebContentsView` guide.
 
 ## Risks
-- A slug or anchor that stops matching a real page. Pinned by a test that reads the guide's headings.
-- Windows/Linux menu behaviour cannot be exercised on the maintainer's Mac. Unit scans pin the
-  template; the real check goes on the manual list (`docs/validation/`).
+- A slug or anchor that stops matching a real page — pinned by a test that reads the guide's headings.
+- The CSP is security-relevant: pinned by a test that allows exactly `https://happyvibe.dev` and
+  nothing wider.
+- Windows/Linux menu behaviour cannot be exercised on the maintainer's Mac; unit scans pin the template
+  and the real check goes on the manual list.
