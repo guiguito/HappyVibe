@@ -34,7 +34,7 @@ Open **What a crash report contains** for the full answer. A report holds:
 
 ### Show the last report and the folder
 
-- **Show the last report** displays the most recent report sent since HappyVibe started, in full. Click **Hide the last report** to fold it away. If none has been sent since the app started, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
+- **Show the last report** displays the most recent report sent from this computer, in full. A copy stays on your computer, so it's still there after HappyVibe restarts. Click **Hide the last report** to fold it away. If none has been sent yet, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
 - **Reveal crash reports** shows the folder where crash snapshots are kept on your computer, selected in Finder on macOS or File Explorer on Windows. On Linux it opens in your file manager.
 
 ## Turn crash reports off
@@ -47,7 +47,7 @@ From that moment, nothing is sent. Click it again whenever you want to turn repo
 ## Check what was sent
 
 1. Open **Privacy**.
-2. Click **Show the last report** to read the most recent one since the app started.
+2. Click **Show the last report** to read the most recent one.
 3. Open the [Audit log](/docs/audit-log/) to see every report that was sent, and when.
 
 ## During a session

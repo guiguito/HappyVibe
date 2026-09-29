@@ -15,7 +15,9 @@
  * at install time. Same division of labour as `platform.ts` and `schedules.ts`,
  * for the same measured reason.
  */
-import type { CrashReportInput } from "inlet-sdk/crash";
+import fs from "node:fs";
+import path from "node:path";
+import type { CrashEnvelope, CrashReportInput } from "inlet-sdk/crash";
 import type { EventLog } from "../log";
 
 export interface CrashRow {
@@ -59,4 +61,29 @@ export function attachCrashAudit(log: EventLog): void {
 export function recordCrashSent(row: CrashRow): void {
   if (auditLog) void auditLog.append({ type: "crash.sent", data: { ...row } });
   else pending.push(row);
+}
+
+/**
+ * docs-round #10: the last report that LEFT, kept so the Privacy page can still show it
+ * after a restart. Its own file, beside the SDK's store, because the EventLog takes ids,
+ * never content. The envelope is already scrubbed (`beforeSendSync`), so this file holds
+ * exactly what was sent.
+ */
+export const LAST_REPORT_FILE = "last-report.json";
+
+export function writeLastReport(dir: string, envelope: CrashEnvelope): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, LAST_REPORT_FILE), JSON.stringify(envelope));
+  } catch {
+    // A missing copy only means the page says nothing was sent. Never worth a crash.
+  }
+}
+
+export function readLastReport(dir: string): CrashEnvelope | null {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dir, LAST_REPORT_FILE), "utf8")) as CrashEnvelope;
+  } catch {
+    return null;
+  }
 }

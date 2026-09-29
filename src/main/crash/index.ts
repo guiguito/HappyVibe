@@ -15,7 +15,7 @@ import { setEnabled } from "inlet-sdk/crash";
 import { resolveFeedbackConfig } from "../feedback/config";
 import { getCrashReports, setCrashReports } from "../config";
 import { TAG_ALLOW, redactMessage, scrubEnvelope } from "./policy";
-import { captureCrash, recordCrashSent, setCrashCapture, type CrashRow } from "./client";
+import { captureCrash, readLastReport, recordCrashSent, setCrashCapture, writeLastReport, type CrashRow } from "./client";
 
 /** Injected by electron-vite (`main.define`), the same string the Changelog shows. */
 declare const __RUNTIME_PINS__: string;
@@ -40,7 +40,9 @@ export function crashInfo(): {
     enabled: getCrashReports(),
     installed: client !== null,
     lastSent,
-    lastReport: recent.at(-1) ?? null,
+    // docs-round #10: after a restart `recent` is empty, and the file is what left last.
+    // `lastSent` above deliberately does NOT fall back: App's launch notice keys on it.
+    lastReport: recent.at(-1) ?? (queueDir ? readLastReport(queueDir) : null),
     queueDir,
     dumpsDir: app.getPath("crashDumps"),
   };
@@ -129,6 +131,7 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
     lastSent = row;
     recent.push(envelope);
     if (recent.length > 5) recent.shift();
+    writeLastReport(queueDir, envelope);
     recordCrashSent(row);
     broadcast("hv:crash-sent", row);
   };
