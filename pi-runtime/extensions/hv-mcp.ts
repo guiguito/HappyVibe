@@ -4,10 +4,11 @@
  * pi-mcp-adapter registers ONE proxy tool named `mcp`; the real MCP tool a
  * call targets is buried in its params ({tool, args}). This module maps a
  * proxy call to (a) a virtual tool name the hv-rules engine evaluates —
- * "mcp:<tool>" — so rules can target individual MCP tools (pattern
- * `mcp:github_*` etc.), and (b) a human display string, so the permission
- * prompt and tool cards never show a bare "mcp". Same discipline as
- * hv-rules.ts: imported by the bridge, src/renderer, and vitest.
+ * "mcp:<tool>" for an invoke, so rules can target individual MCP tools (pattern
+ * `mcp:github_*` etc.), or "mcp-manage:<…>" for a call that adds a server or signs
+ * in to one (kind "manage", deliberately outside `mcp:`) — and (b) a human display
+ * string, so the permission prompt and tool cards never show a bare "mcp". Same
+ * discipline as hv-rules.ts: imported by the bridge, src/renderer, and vitest.
  */
 
 export interface McpCallInfo {
@@ -68,7 +69,14 @@ export function unwrapMcpCall(input: Record<string, unknown>): McpCallInfo {
   // call while the adapter runs another: `{tool:"x", action:"install"}` ran an install.
   const action = str("action");
   if (action === "install") {
-    const url = str("url") ?? "(no URL given)";
+    // The headline is the question the user answers, so it must be FACT, not model prose: the
+    // URL is shown in the canonical form the adapter writes (`new URL(...).toString()`, as its
+    // `normalizeMcpInstallRequest` does), and one it can't parse is never echoed.
+    const raw = str("url");
+    let url = "(no URL given)";
+    if (raw) {
+      try { url = new URL(raw.trim()).toString(); } catch { url = "(not a valid URL)"; }
+    }
     const where = input.target === "project" ? "this project's MCP config" : "your global MCP config";
     return { kind: "manage", ruleTool: `${MCP_MANAGE_PREFIX}install:${url}`, display: `MCP: install ${url} into ${where}` };
   }
@@ -76,6 +84,8 @@ export function unwrapMcpCall(input: Record<string, unknown>): McpCallInfo {
     const server = str("server") ?? "(no server given)";
     return { kind: "manage", ruleTool: `${MCP_MANAGE_PREFIX}auth:${server}`, display: `MCP: sign in to ${server}`, server };
   }
+  // An action a Pi bump adds to MCP_MANAGE_ACTIONS is asked by adding it to the set, nothing else.
+  if (action && MCP_MANAGE_ACTIONS.has(action)) return { kind: "manage", ruleTool: `${MCP_MANAGE_PREFIX}${action}`, display: `MCP: ${action}` };
   if (action && MCP_READ_ACTIONS.has(action)) return { kind: "discovery", ruleTool: "mcp", display: `MCP: ${action}` };
   // Any other action is ignored by the adapter's dispatch, which moves on to the keys
   // below, so this does too.

@@ -69,6 +69,29 @@ test("#34 install is a manage call that names the URL and where it is written", 
   expect(unwrapMcpCall({ action: "install" }).display).toBe("MCP: install (no URL given) into your global MCP config");
 });
 
+test("#34 the headline shows the canonical URL the adapter writes, never model text folded into it", () => {
+  // `new URL` accepts this and encodes the spaces; the adapter then writes the canonical form GLOBALLY.
+  const g = unwrapMcpCall({ action: "install", url: "https://a.example/mcp into this project's MCP config" });
+  expect(g.kind).toBe("manage");
+  expect(g.display).toContain("%20");
+  expect(g.display).not.toContain("mcp into this project's MCP config");
+  expect(g.display).toMatch(/ into your global MCP config$/);
+  expect(g.ruleTool).not.toMatch(/ /);
+  expect(g.ruleTool).toBe("mcp-manage:install:https://a.example/mcp%20into%20this%20project's%20MCP%20config");
+  // Surrounding whitespace is trimmed, as the adapter trims it.
+  expect(unwrapMcpCall({ action: "install", url: "  https://x.example/mcp \n" }).ruleTool).toBe("mcp-manage:install:https://x.example/mcp");
+});
+
+test("#34 a URL that doesn't parse is never echoed into the headline or the rule name", () => {
+  const g = unwrapMcpCall({ action: "install", url: "not a url; safe" });
+  expect(g.kind).toBe("manage");
+  expect(g.display).toBe("MCP: install (not a valid URL) into your global MCP config");
+  expect(g.ruleTool).toBe("mcp-manage:install:(not a valid URL)");
+  // A missing URL keeps its own words; a canonical one is unchanged.
+  expect(unwrapMcpCall({ action: "install" }).display).toBe("MCP: install (no URL given) into your global MCP config");
+  expect(unwrapMcpCall({ action: "install", url: "http://127.0.0.1:9/mcp" }).display).toBe("MCP: install http://127.0.0.1:9/mcp into your global MCP config");
+});
+
 test("#34 both sign-in actions are manage calls that name the server", () => {
   for (const action of ["auth-start", "auth-complete"]) {
     const g = unwrapMcpCall({ action, server: "linear" });
@@ -97,6 +120,20 @@ test("#34 an action the adapter doesn't know falls through to the next key, like
   expect(alone.kind).toBe("manage");
   expect(alone.ruleTool).toBe("mcp-manage:bogus");
   expect(alone.display).toBe("MCP: bogus");
+});
+
+test("#34 every action in MCP_MANAGE_ACTIONS is asked, even beside a discovery key (adding one to the set IS the fix)", () => {
+  for (const a of MCP_MANAGE_ACTIONS) expect(unwrapMcpCall({ action: a, search: "x" }).kind, a).toBe("manage");
+  // The branch for an action with no hard-coded case: a bump adds `uninstall` to the set and nothing else.
+  const set = MCP_MANAGE_ACTIONS as Set<string>;
+  set.add("uninstall");
+  try {
+    const g = unwrapMcpCall({ action: "uninstall", search: "x" });
+    expect(g.kind).toBe("manage");
+    expect(g.ruleTool).toBe("mcp-manage:uninstall");
+  } finally {
+    set.delete("uninstall");
+  }
 });
 
 test("#34 connect beats describe beats instructions beats search, like the adapter", () => {

@@ -157,7 +157,7 @@ test.skipIf(!KEY)("docs-round #34: an MCP install asks with the URL, and Deny wr
   const p = prompts.find(isInstall)!;
   expect(p.tool).toBe(`mcp-manage:install:${url}`);
   expect(p.summary).toBe(`MCP: install ${url} into your global MCP config`);
-  // Denied: neither config the adapter can write to exists.
+  // Denied: neither config the adapter can write to exists (global <agentDir>/mcp.json, project <cwd>/.mcp.json).
   expect(fs.existsSync(path.join(agentDir, "mcp.json"))).toBe(false);
-  expect(fs.existsSync(path.join(tmp, ".pi", "mcp.json"))).toBe(false);
+  expect(fs.existsSync(path.join(tmp, ".mcp.json"))).toBe(false);
 }, 180_000);
