@@ -1343,7 +1343,7 @@ interface HvApi {
     plugin: string,
   ): Promise<{ ok: true; skills: number; commands: number } | { ok: false; error: string }>;
 
-  // MCP server config (additive). Changes apply to new sessions.
+  // MCP server config (additive). A change restarts open sessions once they're idle.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;
   mcpSetServer(
     scope: "global" | "workspace",

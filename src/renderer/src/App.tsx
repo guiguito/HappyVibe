@@ -19,6 +19,7 @@ import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
+import { reloadNotice } from "./reloadNotice";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
 import { FeedbackDialog } from "./components/FeedbackDialog";
@@ -1805,13 +1806,11 @@ export default function App(): React.JSX.Element {
 
     // Cleanup: without this, StrictMode's dev double-mount leaves two
     // listeners registered and every stream delta renders twice.
-    // MCP config/auth changed → main respawns this session (resumed) to apply it.
-    // The intentional exit clears the crash banner (onPiExit); note why it blinked.
-    const offReloading = window.hv.onSessionReloading(({ sessionId }) => {
-      appendItem(sessionId, {
-        kind: "notice",
-        text: "Reloading to apply MCP server changes — permission grants and dangerous mode reset to safe defaults.",
-      });
+    // A config change (MCP, skills, prompts, built-in tools) → main respawns this
+    // session (resumed) to apply it, and says which. The intentional exit clears
+    // the crash banner (onPiExit); note why it blinked.
+    const offReloading = window.hv.onSessionReloading(({ sessionId, reason }) => {
+      appendItem(sessionId, { kind: "notice", text: reloadNotice(reason) });
     });
 
     // An extension asked for a prompt HappyVibe has no UI for. Main already

@@ -165,7 +165,8 @@ export function McpConnectResult({
  * MCP servers CRUD (Agents & Tools page). Writes standard mcpServers JSON
  * vendored pi-mcp-adapter reads: global → app agent dir mcp.json,
  * workspace → <workspace>/.mcp.json (shareable with other MCP hosts).
- * Config read at session start — changes apply to new sessions.
+ * Config read at session start — a change respawns open sessions once they're
+ * idle (ipc.ts scheduleMcpReload).
  */
 export function McpServersSection({
   workspaceId,
@@ -294,8 +295,8 @@ export function McpServersSection({
         </button>
       </div>
       <p className="text-xs text-ink-soft mb-3">
-        Model Context Protocol servers add external tools. Changes apply to new sessions only —
-        every MCP call still goes through your permission rules.
+        Model Context Protocol servers add external tools. Open sessions restart to pick up a change once
+        they're idle — every MCP call still goes through your permission rules.
       </p>
       {error && <div className="mb-2 text-sm font-semibold text-berry">{error}</div>}
       {/* Explains the status badge, so it sits with the list rather than in the
@@ -584,7 +585,7 @@ function McpServerEditor({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="font-black text-xl leading-tight mb-1">{server ? `Edit ${server.name}` : "Add MCP server"}</h2>
-        <p className="text-sm text-ink-soft">Applies to new sessions. Every MCP call goes through your permission rules.</p>
+        <p className="text-sm text-ink-soft">Open sessions restart to pick it up once they're idle. Every MCP call goes through your permission rules.</p>
         {error && <div className="mt-2 text-sm font-semibold text-berry">{error}</div>}
 
         <label className={labelCls}>Name</label>

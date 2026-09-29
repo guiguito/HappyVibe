@@ -23,7 +23,7 @@ import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalRunCard, TerminalTail, type TerminalRun } from "./TerminalRunCard";
 import { type IconKind } from "../toolLabel";
 import { insertAtComposer } from "../composerText";
-import { mcpChipLabel, serversForWorkspace } from "../mcpChip";
+import { mcpChipLabel, mcpChipTitle, serversForWorkspace } from "../mcpChip";
 import { folderHasCode } from "../onboarding";
 import { MicButton } from "./MicButton";
 import { VoiceActivateModal } from "./VoiceActivateModal";
@@ -2877,14 +2877,13 @@ function McpChip({
   onManage?: () => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const up = rows.filter((r) => r.state === "connected").length;
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        title={`${up} of ${rows.length} MCP server${rows.length === 1 ? "" : "s"} connected for this session`}
+        title={mcpChipTitle(rows)}
         className={`flex items-center gap-1 rounded-full ${CHIP_TONE.mcp} text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105`}
       >
         <span aria-hidden>🔌</span> {mcpChipLabel(rows)}

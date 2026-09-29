@@ -233,8 +233,9 @@ export function promptTemplateNotifyMessage(
   return JSON.stringify({ ...payload, typed });
 }
 
-/** Which config source a live respawn is applying — cosmetic, shown in the renderer notice. */
-type ReloadReason = "mcp" | "skills" | "promptTemplates";
+/** Which config source a live respawn is applying — cosmetic, shown in the renderer notice
+    (one line per value in src/renderer/src/reloadNotice.ts, pinned by tests/mcp-reload-copy.test.ts). */
+type ReloadReason = "mcp" | "skills" | "promptTemplates" | "tools";
 
 /** §23: a plan-family notify (hv.plan | hv.plan-status | hv.plan.blocked), else null. */
 function parsePlanNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
@@ -2757,7 +2758,7 @@ export function registerIpc(
   // (pendingMcpReload is declared earlier so the session-exit handler can clear it.)
   const reloadingMcp = new Set<string>();
 
-  // Reason for each pending/in-flight reload (mcp | skills | commands) —
+  // Reason for each pending/in-flight reload (mcp | skills | promptTemplates | tools) —
   // cosmetic (renderer notice text); coalesced last-writer-wins per session.
   const reloadReasons = new Map<string, ReloadReason>();
   const reloadSession = async (sessionId: string): Promise<void> => {
@@ -4303,7 +4304,7 @@ export function registerIpc(
       if (typeof v === "boolean" && prev[k] !== v) track("builtin_toggled", { item: k, kind: "builtin_tool", on: v });
     }
     setBuiltinTools(t);
-    scheduleRuntimeReload("skills", "global", null);
+    scheduleRuntimeReload("tools", "global", null);
   });
   // §32: the web service. Main reads it PER CALL, so a change applies to the
   // next tool call with no respawn — the row says so. Test is the only call

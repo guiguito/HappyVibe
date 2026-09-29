@@ -30,3 +30,13 @@ export function mcpChipLabel(rows: McpRowLike[]): string {
   const up = rows.filter((r) => r.state === "connected").length;
   return `${up}/${rows.length} MCP`;
 }
+
+/**
+ * docs round #14 — the chip's tooltip. The number is main's own probe
+ * (`hv:mcp-status`, app-wide), not this session's connection, so it says so,
+ * in the words the MCP page uses for the same badge.
+ */
+export function mcpChipTitle(rows: McpRowLike[]): string {
+  const up = rows.filter((r) => r.state === "connected").length;
+  return `${up} of ${rows.length} MCP server${rows.length === 1 ? "" : "s"} answered HappyVibe's check`;
+}
