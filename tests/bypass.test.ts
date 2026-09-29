@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import { resolveBypass } from "../src/main/bypass";
 
 /** Round 3 #14 — persistent bypass precedence: workspace ?? global ?? off. */
@@ -13,5 +14,22 @@ describe("resolveBypass precedence (#14)", () => {
   test("workspace overrides global in both directions", () => {
     expect(resolveBypass(false, true)).toBe(true); // ws turns it ON despite global off
     expect(resolveBypass(true, false)).toBe(false); // ws turns it OFF despite global on
+  });
+});
+
+describe("docs round #2: the bypass switches reach open sessions, and the copy says so", () => {
+  test("a workspace switch reaches that project's open sessions, worktree sessions included", () => {
+    const ipc = readFileSync("src/main/ipc.ts", "utf8");
+    const at = ipc.indexOf('ipcMain.handle("hv:set-workspace-bypass"');
+    expect(at).toBeGreaterThan(0);
+    const handler = ipc.slice(at, at + 500);
+    expect(handler).toContain('if (worktrees.projectOf(index.get(id)?.workspaceId ?? "") === workspace) applyBypassLive(id);');
+  });
+
+  test("the workspace hint says it applies to open sessions too", () => {
+    const view = readFileSync("src/renderer/src/components/WorkspaceSettingsView.tsx", "utf8");
+    // Scoped to the bypass hint: the model picker's own "Applies to new or restarted sessions." (:86) is true.
+    expect(view).not.toMatch(/banner shows in each session\)\. Applies to new or restarted sessions\./);
+    expect(view).toContain("banner shows in each session). Applies to open sessions at once, and to every session you start.");
   });
 });

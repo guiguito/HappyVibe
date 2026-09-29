@@ -120,7 +120,7 @@ export function WorkspaceSettingsView({
             </div>
             <p className="text-xs text-ink-soft mt-1.5">
               Overrides the global setting for this workspace. "On" auto-approves every action with no prompts (a red
-              banner shows in each session). Applies to new or restarted sessions.
+              banner shows in each session). Applies to open sessions at once, and to every session you start.
             </p>
           </div>
 

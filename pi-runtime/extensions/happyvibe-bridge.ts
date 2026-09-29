@@ -752,6 +752,13 @@ export default function (pi: ExtensionAPI) {
     // than persisted state — the mode comes from the environment on every
     // spawn, so a respawn re-announces it without anything to restore.
     if (readonly) ctx.ui.notify(JSON.stringify({ kind: "hv.readonly", enabled: true }), "info");
+    // docs round #2: the red banner's only signal. The persistent setting arrives as
+    // HV_BYPASS at every spawn, so `dangerous` is already true here, and nothing else
+    // would say so; `/hv-dangerous` announces its own toggles. Only when ON: a notify
+    // on every fresh session would be the first ui-request other bridge tests wait on.
+    // Never in a read-only run: bypass doesn't reach it (the tool_call gate), and a
+    // banner saying every call runs without asking would be false.
+    if (dangerous && !readonly) ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on: true }), "warning");
     busUi = ctx.ui;
   });
 

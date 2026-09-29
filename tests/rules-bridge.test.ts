@@ -121,6 +121,46 @@ test("/hv-dangerous toggles per-session and emits hv.dangerous notifies", async 
   expect(String(payloadOf(err).message)).toContain("Usage");
 });
 
+/**
+ * docs round #2: the red banner's only signal is an hv.dangerous notify. The persistent
+ * bypass reaches a session as HV_BYPASS=1 at spawn (ipc.ts spawnOpts), so the bridge must
+ * announce it at session_start, before any command. Otherwise a session started or
+ * restarted with bypass on runs every call without asking and shows no banner. A read-only
+ * run holds even under bypass, so it must NOT announce it.
+ */
+const bootAndCollect = async (env: Record<string, string>, until: (seen: UiReq[]) => boolean): Promise<UiReq[]> => {
+  const seen: UiReq[] = [];
+  const c = makeClient(env);
+  c.on("ui-request", (m) => seen.push(m as UiReq));
+  try {
+    await c.start();
+    // No boot handshake in RPC mode: session_start fires when the boot ends (up to ~16 s cold).
+    const deadline = Date.now() + 45_000;
+    while (!until(seen) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    return seen;
+  } finally {
+    c.stop();
+  }
+};
+
+test("HV_BYPASS=1 announces bypass at session_start, with no command sent", async () => {
+  const seen = await bootAndCollect({ HV_BYPASS: "1" }, (s) => s.some((r) => isKind(r, "hv.dangerous")));
+  const on = seen.find((r) => isKind(r, "hv.dangerous"));
+  expect(on, `no hv.dangerous notify; saw ${JSON.stringify(seen)}`).toBeTruthy();
+  expect(on!.method).toBe("notify");
+  expect(payloadOf(on!)).toEqual({ kind: "hv.dangerous", on: true });
+}, 60_000);
+
+test("a read-only run under HV_BYPASS=1 announces read-only, never bypass", async () => {
+  let readonlyAt = 0;
+  const seen = await bootAndCollect({ HV_BYPASS: "1", HV_READONLY: "1" }, (s) => {
+    if (!readonlyAt && s.some((r) => isKind(r, "hv.readonly"))) readonlyAt = Date.now();
+    return readonlyAt > 0 && Date.now() - readonlyAt > 1000; // both would come from the same handler
+  });
+  expect(seen.some((r) => isKind(r, "hv.readonly")), `saw ${JSON.stringify(seen)}`).toBe(true);
+  expect(seen.filter((r) => isKind(r, "hv.dangerous"))).toEqual([]);
+}, 60_000);
+
 test.skipIf(!KEY)(
   "rule-deny blocks the tool with NO permission prompt and emits an hv.audit deny notify",
   async () => {

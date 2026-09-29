@@ -4245,7 +4245,8 @@ export function registerIpc(
     setWorkspaceBypass(workspace, on);
     if (on !== null) track("bypass_changed", { on: !!on, scope: "workspace" });
     for (const id of manager.activeIds()) {
-      if ((index.get(id)?.workspaceId ?? null) === workspace) applyBypassLive(id);
+      // §29: a worktree session's workspaceId is the worktree root; its bypass is its project's.
+      if (worktrees.projectOf(index.get(id)?.workspaceId ?? "") === workspace) applyBypassLive(id);
     }
   });
 
