@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { MIC_DENIED_HINT, MOD } from "../platformCopy";
+import { MIC_DENIED_HINT, MIC_SETTINGS_BUTTON, MOD } from "../platformCopy";
 import { Toggle } from "./Toggle";
 import { Section } from "./Section";
 // Electron-free main modules, imported rather than restated — the pattern
@@ -410,7 +410,7 @@ export function VoiceView({
                   onClick={() => void window.hv.voiceOpenMicSettings()}
                   className="text-[13px] font-semibold px-3 py-1.5 rounded-xl hover:bg-paper-deep/40 cursor-pointer transition-colors"
                 >
-                  Open System Settings
+                  {MIC_SETTINGS_BUTTON}
                 </button>
               )}
             </div>

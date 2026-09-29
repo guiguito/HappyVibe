@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { modKey, revealLabel, THIS_COMPUTER, YOUR_COMPUTER } from "../src/renderer/src/platformCopy";
+import { micSettingsLabel, modKey, revealLabel, shellCopy, THIS_COMPUTER, YOUR_COMPUTER } from "../src/renderer/src/platformCopy";
 import { FIXED_SHORTCUTS, formatBinding } from "../src/renderer/src/shortcuts";
 import { basename } from "../src/renderer/src/basename";
 
@@ -206,5 +206,40 @@ describe("a path's last segment is found on both separators", () => {
       }
     }
     expect(offenders, "use basename() instead").toEqual([]);
+  });
+});
+
+describe("docs-round #22 — per-OS copy the Windows round missed", () => {
+  it("the terminal Shell rows say what a blank path really starts, per OS", () => {
+    const win = shellCopy("win32");
+    expect(win.pathHint).toBe("Blank uses PowerShell 7, then Windows PowerShell, then the Command Prompt.");
+    expect(win.placeholder).toBe("pwsh.exe");
+    for (const s of Object.values(win)) expect(s).not.toMatch(/\$SHELL|login shell/);
+    for (const p of ["darwin", "linux"]) {
+      expect(shellCopy(p).pathHint, p).toBe("Blank uses your login shell ($SHELL).");
+      expect(shellCopy(p).placeholder, p).toBe("$SHELL");
+      expect(shellCopy(p).argsHint, p).toBe("Space-separated. -l starts a login shell, so your real PATH and version managers work.");
+    }
+    for (const p of ["darwin", "linux", "win32"]) {
+      for (const s of Object.values(shellCopy(p))) expect(s, p).not.toContain("`"); // plain text, not markdown
+    }
+  });
+
+  it("TerminalView renders them instead of its own literals", () => {
+    const src = code(path.join(SRC, "components", "TerminalView.tsx"));
+    for (const k of ["subtitle", "pathHint", "placeholder", "argsHint"]) expect(src).toContain(`SHELL_COPY.${k}`);
+    expect(src).not.toContain("Blank uses $SHELL");
+    expect(src).not.toContain("`-l`");
+  });
+
+  it("the microphone button names the OS's settings app; the crash-reports button names its file manager", () => {
+    expect(micSettingsLabel("darwin")).toBe("Open System Settings");
+    expect(micSettingsLabel("win32")).toBe("Open Settings");
+    const voice = code(path.join(SRC, "components", "VoiceView.tsx"));
+    expect(voice).toContain("{MIC_SETTINGS_BUTTON}");
+    expect(voice).not.toContain("Open System Settings");
+    const privacy = code(path.join(SRC, "components", "PrivacyView.tsx"));
+    expect(privacy).toContain("{REVEAL_IN_FILE_MANAGER}");
+    expect(privacy).not.toContain("Reveal crash reports");
   });
 });

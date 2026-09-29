@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Section } from "./Section";
 import { HowItWorks } from "./HowItWorks";
 import type { HvCrashInfo } from "../hv";
+import { REVEAL_IN_FILE_MANAGER } from "../platformCopy";
 
 /**
  * §37 — the one page that answers "what does this app send".
@@ -130,7 +131,7 @@ export function PrivacyView(): React.JSX.Element {
             className={`${smallBtn} bg-card border-line hover:border-leaf`}
             onClick={() => void window.hv.crashReveal()}
           >
-            Reveal crash reports
+            {REVEAL_IN_FILE_MANAGER}
           </button>
           {!info?.lastReport && (
             <span className="text-xs text-ink-soft">Nothing has been sent from this computer yet.</span>

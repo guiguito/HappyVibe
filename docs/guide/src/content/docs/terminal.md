@@ -30,10 +30,10 @@ Every row has its own **Reset** button, which appears once you've changed that r
 
 ### Shell
 
-"What gets started, and in what environment. Leave the path blank to use your login shell." Your login shell is the shell your computer starts for you, with your usual settings loaded.
+"What gets started, and in what environment. Leave the path blank to use your login shell." Your login shell is the shell your computer starts for you, with your usual settings loaded. On Windows the sentence ends "to use the default shell."
 
 - **Shell path**: leave it blank, and HappyVibe picks the right shell for you. Type a path only if you want a different one. (The details: on macOS and Linux it's your login shell, `$SHELL`, falling back to `/bin/zsh` on macOS and `/bin/bash` on Linux. On Windows it's PowerShell 7, then Windows PowerShell, then the Command Prompt.)
-- **Shell arguments**: "Space-separated. `-l` starts a login shell, so your real PATH and version managers work." On Windows, the default shell starts without `-l`, because PowerShell rejects it.
+- **Shell arguments**: "Space-separated. -l starts a login shell, so your real PATH and version managers work." On Windows it reads "Space-separated. While the path is blank, the default shell starts without -l, because PowerShell rejects it."
 - **Extra environment**: "One KEY=value per line. Merged over the inherited environment."
 
 ### Behaviour

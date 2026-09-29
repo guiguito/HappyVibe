@@ -35,7 +35,7 @@ Open **What a crash report contains** for the full answer. A report holds:
 ### Show the last report and the folder
 
 - **Show the last report** displays the most recent report sent from this computer, in full. A copy stays on your computer, so it's still there after HappyVibe restarts. Click **Hide the last report** to fold it away. If none has been sent yet, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
-- **Reveal crash reports** shows the folder where crash snapshots are kept on your computer, selected in Finder on macOS or File Explorer on Windows. On Linux it opens in your file manager.
+- **Reveal in Finder** (**Show in File Explorer** on Windows, **Show in file manager** on Linux) shows the folder where crash snapshots are kept on your computer.
 
 ## Turn crash reports off
 
