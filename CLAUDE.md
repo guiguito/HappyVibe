@@ -122,7 +122,7 @@ permission UX and context-window visibility as the differentiators.
 
 ## Import hygiene — each of these typechecks, runs in dev, and fails later
 - **Anything the renderer imports must not reach Node.** `schedules.ts`, `hv-paths.ts`,
-  `update/state.ts`, `usage/events.ts`, `remoteConfig/defaults.ts` and `providerError.ts` import nothing; `terminalSettings.ts` imports the platform seam TYPE-only. A
+  `update/state.ts`, `usage/events.ts`, `remoteConfig/defaults.ts`, `providerError.ts` and `docsBase.ts` import nothing; `terminalSettings.ts` imports the platform seam TYPE-only. A
   runtime import puts `node:*` in the browser bundle and only `npm run build` fails — *"X is not
   exported by __vite-browser-external"*, naming a file one hop from the real cause.
 - **Anything vitest imports must not reach `electron`.** `ipc.ts` never imports `./crash`, `./update`
