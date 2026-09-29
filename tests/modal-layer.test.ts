@@ -45,7 +45,7 @@ describe("the modal layer (§28 round 1)", () => {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) walk(full);
         else if (/\.tsx?$/.test(e.name) && /\bhv-prompt\b/.test(fs.readFileSync(full, "utf8")))
-          users.push(path.relative(process.cwd(), full));
+          users.push(path.relative(process.cwd(), full).split(path.sep).join("/")); // Windows returns `\`
       }
     };
     walk(path.join(process.cwd(), "src/renderer/src"));
