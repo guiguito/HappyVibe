@@ -375,7 +375,7 @@ export function McpServersSection({
                   </button>
                 )}
                 {/* Log out — shown when connected on an OAuth server (has url) */}
-                {status?.state === "connected" && isHttp && (
+                {!off && status?.state === "connected" && isHttp && (
                   <button
                     type="button"
                     onClick={() => void window.hv.mcpLogout(s.name).catch((e) => setError(String(e)))}

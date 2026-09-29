@@ -218,6 +218,16 @@ describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
     expect(between(ipc, "const httpByName", "const wanted").match(/isMcpServerOff\(cfg\)/g)).toHaveLength(2);
   });
 
+  it("cleanup C5: a failed Connect on an off server leaves no status, Log out hides on off, saving an off server reloads nothing", () => {
+    const ipc = read("src/main/ipc.ts");
+    const flow = between(ipc, '"hv:mcp-connect-flow"', 'ipcMain.handle("hv:mcp-status"');
+    expect(flow).toMatch(/mcpStatusMap\.delete\(statusKey\(scope, workspaceId, name\)\);\s*mcpStatusChanged\(\);/);
+    const set = between(ipc, '"hv:mcp-set-server"', '"hv:mcp-install-catalog"');
+    expect(set).toMatch(/if \(!\(cfg && isMcpServerOff\(cfg\) && \(isNew \|\| wasOff\)\)\) scheduleMcpReload\(scope, workspaceId\);/);
+    const src = read("src/renderer/src/components/McpServersSection.tsx");
+    expect(src).toMatch(/\{!off && status\?\.state === "connected" && isHttp && \(/);
+  });
+
   it("the MCP page shows an off server as off, with Connect in place of Reconnect and no Authenticate", () => {
     expect(MCP_OFF_PILL.label).toBe("off");
     expect(MCP_OFF_PILL.title).toBe("Installed by a plugin and switched off. Sessions can't use it until you click Connect.");

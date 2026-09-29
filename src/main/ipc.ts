@@ -5823,7 +5823,9 @@ export function registerIpc(
     // the OS keychain through the sidecar, which is a round-trip.
     async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
-      const isNew = cfg !== null && !readMcpFile(file).mcpServers[name];
+      const prev = readMcpFile(file).mcpServers[name];
+      const isNew = cfg !== null && !prev;
+      const wasOff = !!prev && isMcpServerOff(prev);
       writeMcpServer(file, name, cfg);
       if (isNew && cfg) track("mcp_server_added", mcpParams("manual", cfg));
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
@@ -5852,7 +5854,8 @@ export function registerIpc(
             data: { name, action: "credentials-deleted", reason: "server-removed" } });
         }
       }
-      scheduleMcpReload(scope, workspaceId); // apply to running sessions
+      // Saving a server that stays off changes nothing a session can see. (On to off still reloads.)
+      if (!(cfg && isMcpServerOff(cfg) && (isNew || wasOff))) scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return readMcpFile(file);
     },
   );
@@ -5947,12 +5950,16 @@ export function registerIpc(
       // docs-round #25: Connect is the switch for a server that arrived off (a plugin's).
       // Re-read the file rather than trust `cfg`: the OAuth leg can take minutes. A failed
       // connect leaves it off.
+      const now = readMcpFile(file).mcpServers[name];
       if (result.state === "connected") {
-        const now = readMcpFile(file).mcpServers[name];
         if (now && isMcpServerOff(now)) {
           writeMcpServer(file, name, withoutOffFlag(now));
           scheduleMcpReload(scope, workspaceId);
         }
+      } else if (now && isMcpServerOff(now)) {
+        // Still off: a failed Connect leaves no status, so the chip doesn't count it.
+        mcpStatusMap.delete(statusKey(scope, workspaceId, name));
+        mcpStatusChanged();
       }
       return result.state === "connected"
         ? { ok: true as const, tools: result.tools ?? [] }
