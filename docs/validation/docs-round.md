@@ -8,6 +8,8 @@ the same session. Implementation plan: `docs/superpowers/plans/2026-09-29-docs-r
 Every fix below that changes what a screen does or says also updates the guide page named with it,
 in the same commit (CLAUDE.md, "Docs workflow").
 
+**Fixed 2026-09-29** on `guiguito/fixes` (commits `60ddd74..HEAD`): every item below except the closed ones, plus a cleanup batch of review follow-ups. Gate green; live batch green (24/25 in the batch, the 25th green on a solo rerun, see Open below); guide build and docs-reviewer pass clean. The GUI pass is still outstanding.
+
 Still to confirm live, because the code alone can't settle it: the keyboard half of #4 (xterm's paste
 handler), #25 and #34 (what the adapter does with the call).
 
@@ -273,3 +275,11 @@ handler), #25 and #34 (what the adapter does with the call).
   true (`browsers.ts:103`), and the Models placeholder counts providers live.
 - **33.** The same bug as #29's Open at login.
 - **11, the Linux button:** **Open System Settings** can't appear on Linux (the row's wording is still fixed, above).
+
+## Open after the fix round
+
+- **GUI pass not run yet.** Every task's GUI assertions (plan Task 21 step 4) still need the app. The Windows and Linux key-hint and copy checks need those machines.
+- **35 (new, pre-existing, found by the live batch): MCP namespace tools bypass `mcp:<tool>` rules.** pi-mcp-adapter 2.35.0 (pinned since `8247973`) registers one `mcp__<server>` tool per proxy-only server that takes `{tool, args}` and runs the MCP tool. The bridge unwraps only the tool named `mcp` (`happyvibe-bridge.ts:996`), so a `mcp__echo` call is gated under its raw name: it still asks by default, but a deny rule on `mcp:<tool>` doesn't cover it and the prompt shows raw JSON. `tests/mcp-bridge.test.ts` fails whenever the model picks the namespace tool. Fix: unwrap `mcp__<server>` calls with `unwrapMcpCall` (forcing `server`), and add them to the Agent tools per-call pills.
+- **36 (new, pre-existing): sub-agents ignore a live bypass Turn off.** The child guard reads `HV_BYPASS` once per child (`hv-child-guard.ts:205`), not the parent's live `dangerous && !plan.enabled && !readonly`. Fix: a `ChildPolicy.bypass()` getter from the bridge.
+- **Always allow persists a wildcard.** A persistent grant stores `pattern: tool` as a glob, so a model-chosen install URL such as `https://*/mcp` becomes a rule matching every such install. Needs a decision: escape `*`/`?` in grants, or don't offer Always allow on `mcp-manage:` prompts.
+
