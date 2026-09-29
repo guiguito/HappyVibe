@@ -5,7 +5,7 @@ description: See every keyboard shortcut in HappyVibe, change the ones you can, 
 
 All of HappyVibe's shortcuts, on one page. Most are yours to change: "Click a shortcut to record a new one. Esc cancels."
 
-Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the keys for the computer you're on (except the **Built-in** list, which always shows ⇧ for Shift).
+Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the keys for the computer you're on.
 
 ## Where to find it
 
@@ -44,7 +44,7 @@ A worktree is a second copy of your project's files, on its own branch, in its o
 | Action | Keys |
 |---|---|
 | Send the message | Enter |
-| New line in the composer | ⇧Enter (Shift+Enter) |
+| New line in the composer | ⇧Enter on macOS, Shift+Enter on Windows and Linux |
 | Reference a file or folder in the composer | @ |
 | Close a dialog or search | Esc |
 | Dictate into the composer (tap to keep recording) | Hold right ⌘ on macOS, right Ctrl on Windows and Linux |
@@ -72,7 +72,7 @@ The same check applies to **Reset**: if another action now holds the default key
 
 ## During a session
 
-The app shows the keys you've chosen, not the defaults. The tab strip's **+** menu, for example, lists your keys next to **New session**, **New terminal** and **New browser**.
+The app shows the keys you've chosen, not the defaults. The tab strip's **+** menu, for example, lists your keys next to **New session**, **New terminal** and **New browser**, and tooltips like "Find a session" and the editor's **Save** name them too.
 
 ## Related
 

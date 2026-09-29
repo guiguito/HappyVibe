@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MOD } from "../platformCopy";
+import { formatBinding } from "../shortcuts";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -31,6 +31,7 @@ export function TerminalTab({
   gridArea,
   hidden,
   searchKey,
+  closeKey,
   dividerClass,
   onExit,
 }: {
@@ -44,6 +45,8 @@ export function TerminalTab({
   hidden: boolean;
   /** The one `search` action, focus-scoped — a third consumer beside chat and editor. */
   searchKey: string;
+  /** docs-round #12: the resolved `closeTab` binding, printed in the exit bar. */
+  closeKey: string;
   onExit?: (code: number) => void;
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
@@ -294,7 +297,7 @@ export function TerminalTab({
         // under someone. The scrollback stays readable, which is usually the
         // whole reason they are looking.
         <div className="pointer-events-none absolute inset-x-0 bottom-0 border-t-2 border-line-strong bg-paper/95 px-3 py-1.5 text-[12px] font-bold text-ink-soft">
-          process exited (code {exited}) — {MOD}W closes this tab
+          process exited (code {exited}) — {formatBinding(closeKey)} closes this tab
         </div>
       )}
     </div>

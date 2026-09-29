@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { modKey, revealLabel, THIS_COMPUTER, YOUR_COMPUTER } from "../src/renderer/src/platformCopy";
-import { formatBinding } from "../src/renderer/src/shortcuts";
+import { FIXED_SHORTCUTS, formatBinding } from "../src/renderer/src/shortcuts";
 import { basename } from "../src/renderer/src/basename";
 
 /**
@@ -78,6 +78,57 @@ describe("no literal ⌘ survives in rendered copy", () => {
   it("and the allowlist is exactly the three places it belongs", () => {
     // Kept small deliberately: each entry is a place the glyph is CHOSEN, not typed.
     expect([...ALLOW].sort()).toEqual(["platformCopy.ts", "shortcuts.ts", "voice/useDictation.ts"]);
+  });
+});
+
+describe("docs-round #28/#12/#22/#11: a key hint follows the binding", () => {
+  /**
+   * `${MOD}K` printed "CtrlK" off macOS — no separator — and ignored a rebound
+   * shortcut, because MOD is a glyph, not a binding. MOD stays for naming the
+   * key itself ("Hold right Ctrl"); a COMBINATION goes through formatBinding.
+   */
+  it("no hint glues MOD to a key", () => {
+    const offenders: string[] = [];
+    for (const f of walk(SRC)) {
+      const rel = path.relative(SRC, f).split(path.sep).join("/");
+      for (const line of code(f).split("\n")) {
+        if (/\{MOD\}[A-Za-z0-9\\,./]/.test(line)) offenders.push(`${rel}: ${line.trim().slice(0, 90)}`);
+      }
+    }
+    expect(offenders, "use formatBinding(binding) instead").toEqual([]);
+  });
+
+  it("no ⌘ hides behind a \\u2318 escape — a JSX attribute prints it as six characters", () => {
+    const offenders = walk(SRC)
+      .filter((f) => /\\u2318/i.test(code(f)))
+      .map((f) => path.relative(SRC, f).split(path.sep).join("/"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("the Built-in list names Shift the way the running platform does", () => {
+    expect(code(path.join(SRC, "shortcuts.ts"))).not.toContain('"⇧Enter"');
+    expect(code(path.join(SRC, "shortcuts.ts"))).toContain('formatBinding("Shift-Enter")');
+    expect(FIXED_SHORTCUTS.map((s) => s.keys)).toContain(formatBinding("Shift-Enter"));
+    expect(formatBinding("Shift-Enter", false)).toBe("Shift+Enter");
+    expect(formatBinding("Shift-Enter", true)).toBe("⇧Enter");
+  });
+
+  it("every hinted surface gets the RESOLVED binding from App", () => {
+    const app = code(path.join(SRC, "App.tsx"));
+    expect(app).toContain("findSessionKey={formatBinding(bindings.findSession)}");
+    expect(app).toContain("sidebarKey={formatBinding(bindings.toggleSidebar)}");
+    expect(app).toContain("closeKey={bindings.closeTab}");
+    const sites: Array<[string, string]> = [
+      ["components/Sidebar.tsx", "Find a session (${findSessionKey})"],
+      ["components/Sidebar.tsx", "Collapse sidebar (${sidebarKey})"],
+      ["components/Sidebar.tsx", "Expand sidebar (${sidebarKey})"],
+      ["components/FileTab.tsx", "Save (${formatBinding(saveKey)})"],
+      ["components/ChatView.tsx", "Search this conversation (${formatBinding(searchKey)})"],
+      ["components/TerminalTab.tsx", "{formatBinding(closeKey)} closes this tab"],
+      ["components/feedbackCopy.ts", 'Paste an image (${formatBinding("Mod-v")}) or'],
+      ["components/VoiceView.tsx", "Hold right ${MOD} to dictate"],
+    ];
+    for (const [file, hint] of sites) expect(code(path.join(SRC, file)), file).toContain(hint);
   });
 });
 

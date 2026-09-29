@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { MIC_DENIED_HINT } from "../platformCopy";
+import { MIC_DENIED_HINT, MOD } from "../platformCopy";
 import { Toggle } from "./Toggle";
 import { Section } from "./Section";
 // Electron-free main modules, imported rather than restated — the pattern
@@ -333,7 +333,7 @@ export function VoiceView({
         <Section
           icon="voice"
           title="Behaviour"
-          subtitle="Hold right \u2318 (right Ctrl on Windows and Linux) to dictate while held; tap it to keep recording until you tap again. It is listed under Built-in on the Keyboard shortcuts page."
+          subtitle={`Hold right ${MOD} to dictate while held; tap it to keep recording until you tap again. It is listed under Built-in on the Keyboard shortcuts page.`}
         >
           <Row
             label="Hold threshold"

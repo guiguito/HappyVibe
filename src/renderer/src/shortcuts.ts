@@ -80,7 +80,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     Listed on the page with a "built-in" tag so the page stays a complete map. */
 export const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: "Enter", label: "Send the message" },
-  { keys: "⇧Enter", label: "New line in the composer" },
+  { keys: formatBinding("Shift-Enter"), label: "New line in the composer" },
   { keys: "@", label: "Reference a file or folder in the composer" },
   { keys: "Esc", label: "Close a dialog or search" },
   // §27. NOT a SHORTCUT_ACTIONS entry, and it cannot become one: eventToBinding

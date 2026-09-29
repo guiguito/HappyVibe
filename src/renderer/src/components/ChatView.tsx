@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basename } from "../basename";
-import { MOD } from "../platformCopy";
 import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
 import { usePresence } from "../usePresence";
 import { Unfold } from "./Unfold";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
-import { matchesBinding } from "../shortcuts";
+import { formatBinding, matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
 import { PlanCard, type PlanCardData } from "./PlanCard";
@@ -1097,7 +1096,7 @@ export function ChatView({
           type="button"
           onClick={() => onSearchOpenChange(!searchOpen)}
           aria-pressed={searchOpen}
-          title={`Search this conversation (${MOD}F)`}
+          title={`Search this conversation (${formatBinding(searchKey)})`}
           aria-label="Search this conversation"
           className={`text-sm rounded-full border-2 px-2.5 py-0.5 cursor-pointer transition-colors ${
             searchOpen ? "border-tangerine bg-honey-soft text-tangerine-deep" : "border-line bg-card text-ink-soft hover:border-honey hover:text-ink"

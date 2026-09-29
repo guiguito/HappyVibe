@@ -3304,6 +3304,8 @@ export default function App(): React.JSX.Element {
         onNewWorktree={startNewWorktree}
         newSessionKey={formatBinding(bindings.newSession)}
         newWorktreeKey={formatBinding(bindings.newWorktree)}
+        findSessionKey={formatBinding(bindings.findSession)}
+        sidebarKey={formatBinding(bindings.toggleSidebar)}
         onBranchMenu={(ws) => {
           // The branch menu lives in the panel, where switching also gets the
           // three-choice dialog for a dirty tree — one implementation, not two.
@@ -3686,6 +3688,7 @@ export default function App(): React.JSX.Element {
                     gridArea={area ?? undefined}
                     hidden={area === null}
                     searchKey={bindings.search}
+                    closeKey={bindings.closeTab}
                     dividerClass={paneDivider(area)}
                   />
                 );
