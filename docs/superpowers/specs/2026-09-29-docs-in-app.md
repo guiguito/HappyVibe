@@ -19,7 +19,7 @@ reachable from the settings list, the menu bar, first-run setup and a failing mo
   a left column of its own; two read as one too many). It is hidden with CSS, not unmounted, so its
   open groups, scroll and dialogs are there after you close the guide. The page is the guide itself, an
   `<iframe>` with the site's own **HappyVibe header** (no `?embed=1`, which hid it), and no bar of our
-  own — only one **large circled ✕** at the top right, which returns to the main chat screen.
+  own — only one **large circled ✕** at the top right, which returns to the main chat screen. **Esc** closes it too, including with focus inside the frame (main forwards the key via `before-input-event`; the view acts on it only when the frame holds focus, and a dialog that already used the key wins).
 - **An iframe, not a browser pane, on purpose.** A pane is a native `WebContentsView`; nothing in
   the DOM paints above it (`.claude/rules/renderer-layers.md`), so a permission prompt or dialog
   would hide behind it. An iframe is plain DOM.

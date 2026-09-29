@@ -309,6 +309,13 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     details.preventDefault()
     if (action === 'external') void shell.openExternal(details.url)
   })
+  // Docs in the app: Esc closes the User guide, but once focus is inside its iframe the keypress goes
+  // to the frame and the renderer never sees it; before-input-event does. It is forwarded as-is —
+  // never prevented, the guide's own search closes on Esc too — and the guide acts on it only when
+  // the frame holds focus (a keydown that reached the app was already handled there).
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') win.webContents.send('hv:esc-key')
+  })
 
   // §37: the repair, not the report — the SDK's own `render-process-gone`
   // handler on `app` files that. Once per window, because a view that crashes

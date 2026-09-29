@@ -1206,6 +1206,8 @@ interface HvApi {
     at?: { x: number; y: number };
   }): Promise<boolean>;
   onTabArrive(h: (p: { tab: string; ws: string; draft?: string }) => void): () => void;
+  /** Docs in the app: Esc pressed anywhere in the window, including inside the guide's iframe. */
+  onEscapeKey(h: () => void): () => void;
   /** Docs in the app: the Help menu's guide item was clicked. */
   onOpenDocs(h: () => void): () => void;
   setWindowTabs(t: Record<string, unknown>): Promise<void>;

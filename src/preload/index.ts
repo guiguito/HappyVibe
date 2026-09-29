@@ -80,6 +80,12 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:tab-arrive", l);
     return () => ipcRenderer.off("hv:tab-arrive", l);
   },
+  /** Docs in the app: Esc pressed anywhere in the window, including inside the guide's iframe. */
+  onEscapeKey: (h: () => void) => {
+    const l = (): void => h();
+    ipcRenderer.on("hv:esc-key", l);
+    return () => ipcRenderer.off("hv:esc-key", l);
+  },
   /** Docs in the app (2026-09-29): Help ▸ HappyVibe Guide, from the menu bar in main. */
   onOpenDocs: (h: () => void) => {
     const l = (): void => h();

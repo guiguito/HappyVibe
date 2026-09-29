@@ -83,7 +83,7 @@ export const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: "Enter", label: "Send the message" },
   { keys: formatBinding("Shift-Enter"), label: "New line in the composer" },
   { keys: "@", label: "Reference a file or folder in the composer" },
-  { keys: "Esc", label: "Close a dialog or search" },
+  { keys: "Esc", label: "Close a dialog, a search or the User guide" },
   // §27. NOT a SHORTCUT_ACTIONS entry, and it cannot become one: eventToBinding
   // returns null for a modifier key and again when no Mod (Cmd/Ctrl) accompanies it,
   // the canonical form carries no left/right (e.key is "Meta" for both ⌘s), and

@@ -48,7 +48,7 @@ A worktree is a second copy of your project's files, on its own branch, in its o
 | Send the message | Enter |
 | New line in the composer | ⇧Enter on macOS, Shift+Enter on Windows and Linux |
 | Reference a file or folder in the composer | @ |
-| Close a dialog or search | Esc |
+| Close a dialog, a search or the User guide | Esc |
 | Dictate into the composer (tap to keep recording) | Hold right ⌘ on macOS, right Ctrl on Windows and Linux |
 
 In this list, the composer is the message box.

@@ -5,6 +5,7 @@ import { describeProviderError } from "../src/main/providerError";
 import { docUrl, docsIndexUrl, ERROR_GUIDE_LABEL, GUIDE_COPY } from "../src/renderer/src/docsLinks";
 import { NAV } from "../src/renderer/src/components/Sidebar";
 import { frameNavAction } from "../src/main/navGuard";
+import { FIXED_SHORTCUTS } from "../src/renderer/src/shortcuts";
 import { ONBOARDING_COPY } from "../src/renderer/src/onboarding";
 
 const ROOT = path.join(import.meta.dirname, "..");
@@ -206,5 +207,36 @@ describe("the frame showing the guide cannot wander off it", () => {
     expect(/frame-src ([^;]*)/.exec(csp)?.[1]?.trim()).toBe("https://happyvibe.dev");
     expect(csp).toContain("script-src 'self';");
     expect(csp).toContain("default-src 'self'");
+  });
+});
+
+describe("Esc closes the User guide (Docs in the app, 2026-09-29)", () => {
+  const view = read("src", "renderer", "src", "components", "GuideView.tsx");
+  const index = read("src", "main", "index.ts");
+
+  it("with focus in the app, an Escape keydown on the window closes it — unless a dialog already used it", () => {
+    expect(view).toMatch(/addEventListener\("keydown"/);
+    expect(view).toMatch(/e\.key === "Escape" && !e\.defaultPrevented/);
+  });
+
+  it("with focus INSIDE the frame the app never sees the key: main forwards it, and the view acts only when the frame holds focus", () => {
+    expect(index).toContain("before-input-event");
+    expect(index).toMatch(/input\.key === 'Escape'/);
+    expect(index).toContain("send('hv:esc-key')");
+    expect(read("src", "preload", "index.ts")).toContain('"hv:esc-key"');
+    expect(read("src", "renderer", "src", "hv.d.ts")).toContain("onEscapeKey(");
+    // Not a second close when focus is in the app: that keydown already handled it.
+    expect(view).toMatch(/document\.activeElement === frame\.current/);
+  });
+
+  it("main forwards the key without swallowing it — the guide's own search closes on Esc too", () => {
+    const at = index.indexOf("before-input-event");
+    expect(index.slice(at, at + 300)).not.toContain("preventDefault");
+  });
+
+  it("the shortcuts list and the guide page say so", () => {
+    const esc = FIXED_SHORTCUTS.find((s) => s.keys === "Esc");
+    expect(esc?.label).toBe("Close a dialog, a search or the User guide");
+    expect(read("docs", "guide", "src", "content", "docs", "keyboard-shortcuts.md")).toContain(`| ${esc?.label} | Esc |`);
   });
 });
