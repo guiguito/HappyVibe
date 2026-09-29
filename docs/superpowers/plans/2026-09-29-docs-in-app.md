@@ -307,3 +307,30 @@ Main changed ⇒ restart the dev server first, then `grep -c "hv:open-docs" out/
 ## Found, deliberately not fixed
 
 `providerError.ts:110,144` hints say "Settings → LLM Setup", but that section became the **Models** page (`ModelsView.tsx:11`). The new link sits right beside that text, so the mismatch becomes visible. A one-line copy fix, kept out of this round so the diff stays about doors.
+
+---
+
+## Round 2 addendum (same day) — the guide becomes a page inside the app
+
+The maintainer asked for the guide inside the app, below The record, replacing the page content with a
+Back button. Decided: an iframe with one CSP entry, and every existing link converges on it. This
+**supersedes Tasks 1–4's browser-pane routing** (spec and PRD rewritten first). Built on the same branch:
+
+| Change | Files |
+|---|---|
+| `GuideView` — bar (**← Back**, **User guide**, **Open in browser ↗**) over a sandboxed iframe | `components/GuideView.tsx` (new), `docsLinks.ts` (`externalDocUrl`, `GUIDE_COPY`) |
+| Settings row below the last group, outside `NAV`; new `View` `"guide"` | `Sidebar.tsx`, `usage/events.ts` (`SCREENS`, pinned equal to `View`) |
+| `openDocs` shows the page; only `keyState === "missing"` still uses the system browser | `App.tsx` |
+| CSP `frame-src https://happyvibe.dev`; `frameNavAction` for subframes | `index.html`, `navGuard.ts`, `index.ts` (`will-frame-navigate`) |
+| Old pin replaced ("falls back to the system browser" → "opens the in-app guide") | `tests/docs-links.test.ts` |
+
+### GUI verification — what must be TRUE on screen
+
+1. **Row.** With Settings expanded, a **User guide** row sits below the Changelog row, outside every group. **Absence:** it is not listed under The record's header; `NAV` has no `guide`.
+2. **Page.** Clicking it: the whole content area is the bar plus one `<iframe>` whose `src` is `https://happyvibe.dev/docs/?embed=1`, taller than 400px, showing the guide with **no** site title.
+3. **Back.** **← Back** returns to the chat screen with the settings list unchanged.
+4. **Other doors, same view.** From **Models**, "How this page works ↗" lands on the guide page at `/docs/models/`. **Absence:** no browser tab appears in the tab strip. Help ▸ HappyVibe Guide does the same from Models and from chat.
+5. **Leaving the guide.** Click an external link in the guide (Models page has one to ollama.com): the system browser opens, and the frame stays on the guide. **Absence:** no `Refused to frame` message in `get_console_messages level:error`.
+6. **Error link.** Custom endpoint returning 401 → the error card's **Read the guide ↗** opens the guide at `connect-a-model` (anchor `if-the-provider-rejects-the-key`).
+7. **Regression the CSP risks.** Open an `.html` file in the editor's preview: it still renders (the sandboxed `srcdoc` frame is unaffected by `frame-src`), with no CSP errors.
+8. **Not verifiable here:** before any model is connected the link opens the system browser (a fresh profile is needed); Windows/Linux menu and `F1`.

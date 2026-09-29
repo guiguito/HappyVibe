@@ -55,7 +55,7 @@ export type UsageEventName = keyof typeof USAGE_EVENTS;
 
 /** The `View` union in `src/renderer/src/components/Sidebar.tsx`; tests/usage-catalog.test.ts pins equality. */
 export const SCREENS = [
-  "chat", "schedules", "workspace",
+  "chat", "schedules", "workspace", "guide",
   "models", "builtinTools", "memory", "plugins", "skills", "promptTemplates", "mcp", "agents", "sysprompt",
   "permissions", "tools", "terminal", "voice", "onBehalf", "shortcuts", "privacy", "stats", "audit", "changelog",
 ] as const;
