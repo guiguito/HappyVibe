@@ -32,4 +32,21 @@ describe("docs round #2: the bypass switches reach open sessions, and the copy s
     expect(view).not.toMatch(/banner shows in each session\)\. Applies to new or restarted sessions\./);
     expect(view).toContain("banner shows in each session). Applies to open sessions at once, and to every session you start.");
   });
+
+  test("the global switch reads a worktree session's override from its project, like the workspace switch", () => {
+    const ipc = readFileSync("src/main/ipc.ts", "utf8");
+    const at = ipc.indexOf('ipcMain.handle("hv:set-global-bypass"');
+    expect(at).toBeGreaterThan(0);
+    const handler = ipc.slice(at, at + 600);
+    expect(handler).toContain("getWorkspaceBypass(worktrees.projectOf(ws)) === null");
+  });
+
+  test("a session spawned with HV_BYPASS=1 seeds the analytics state, so its Turn off click counts", () => {
+    const ipc = readFileSync("src/main/ipc.ts", "utf8");
+    expect(ipc).toContain("if (sessionId) sessionBypass.set(sessionId, bypass);");
+    expect(ipc).toContain("const bypass = resolveBypass(project ?? null);");
+    // and a live toggle keeps it current, so the next click is measured against what the session runs
+    const at = ipc.indexOf("const applyBypassLive");
+    expect(ipc.slice(at, at + 700)).toContain("sessionBypass.set(id, on);");
+  });
 });

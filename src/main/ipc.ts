@@ -140,6 +140,7 @@ import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
 import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { PendingPrompts } from "./pendingPrompts";
+import { BypassNotices } from "./bypassNotices";
 import { humanRecurrence, runTitle, type Schedule } from "./schedules";
 import { editPatch, ScheduleStore, validateScheduleInput, type NewSchedule } from "./scheduleStore";
 import { parseScheduleEnvelope, permissionSummary, renderScheduleList } from "./scheduleEnvelopes";
@@ -979,6 +980,10 @@ export function registerIpc(
      * changes meaning for a user who has no worktrees.
      */
     const project = workspace ? worktrees.projectOf(workspace) : undefined;
+    // The session starts with this bypass (HV_BYPASS), so §39's session-bypass analytics
+    // start from it: a click on the banner's "Turn off" is then a change, and counted.
+    const bypass = resolveBypass(project ?? null);
+    if (sessionId) sessionBypass.set(sessionId, bypass);
     // §14: resolve the approved ∩ enabled ∩ active-for-workspace skill set and
     // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
@@ -1009,7 +1014,7 @@ export function registerIpc(
       rulesFile: rulesFile(),
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
-      bypass: resolveBypass(project ?? null),
+      bypass,
       // §35: a run whose schedule says Read-only spawns clamped. Re-derived here
       // rather than stored on the session, so a resume, a hibernation wake and
       // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
@@ -1170,6 +1175,8 @@ export function registerIpc(
    * pendingPrompts.ts and the `hv:pending-ui-requests` handler below.
    */
   const pendingUi = new PendingPrompts(BLOCKING_UI_METHODS);
+  // docs round #2: the latest ON `hv.dangerous` notify per session, replayed to a window that opens later.
+  const bypassNotices = new BypassNotices();
   const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
     if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
@@ -1192,7 +1199,8 @@ export function registerIpc(
     // badge. The replayed prompt reaches its queue, but nothing on screen says
     // to go and look at it — which for an unattended run is the whole point.
     pendingChanged();
-    return pendingUi.list().map((r) => stampPrompt(r));
+    // The bypass banner's notifies ride along (docs round #2). Notifies, so nothing answers them.
+    return [...pendingUi.list().map((r) => stampPrompt(r)), ...bypassNotices.list().map((r) => stampPrompt(r))];
   });
   /**
    * What each window currently shows, declared by its own renderer on every
@@ -2528,6 +2536,7 @@ export function registerIpc(
       }
       uiOwners.set(r.id, sessionId);
       notePending(r, sessionId);
+      if (r.method) bypassNotices.note({ ...r, method: r.method, sessionId });
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) {
         activity.promptOpened(sessionId);
@@ -2628,7 +2637,8 @@ export function registerIpc(
     // §39: an exited Pi never sends agent_end — close the in-flight turn here.
     answeredWaits.delete(sessionId); // §39: its unpaired waits and open prompts die with it
     for (const [id, p] of promptShownAt) if (p.sid === sessionId) promptShownAt.delete(id);
-    sessionBypass.delete(sessionId); // a respawn starts with the session bypass off
+    sessionBypass.delete(sessionId); // spawnOpts re-seeds it at the next spawn
+    bypassNotices.drop(sessionId); // the respawned Pi announces its own bypass at session_start
     noModelOnce.forget(sessionId);
     // An exit WE asked for (hibernate, close, reload) mid-turn is a stop, not a crash.
     if (turns.isBusy(sessionId)) endTurn(sessionId, intentional ? { outcome: "aborted" } : { outcome: "error", errorKind: "pi_exit" });
@@ -4228,6 +4238,7 @@ export function registerIpc(
     // project's — the same resolution spawnOpts does, so the live toggle and
     // the next respawn cannot disagree.
     const on = resolveBypass(ws ? worktrees.projectOf(ws) : null);
+    sessionBypass.set(id, on); // §39: what the session now runs, so its next "Turn off" is measured against it
     void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: `/hv-dangerous ${on ? "on" : "off"}` }).catch(() => {});
   };
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
@@ -4237,7 +4248,8 @@ export function registerIpc(
     // Only sessions that inherit the global default (no explicit workspace override).
     for (const id of manager.activeIds()) {
       const ws = index.get(id)?.workspaceId ?? null;
-      if (!ws || getWorkspaceBypass(ws) === null) applyBypassLive(id);
+      // A worktree root never carries an override of its own: read its project's.
+      if (!ws || getWorkspaceBypass(worktrees.projectOf(ws)) === null) applyBypassLive(id);
     }
   });
   ipcMain.handle("hv:get-workspace-bypass", (_e, workspace: string) => getWorkspaceBypass(workspace));
