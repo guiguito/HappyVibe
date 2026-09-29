@@ -5,8 +5,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ModelSelect } from "./ModelSelect";
 
-/** §20 round 17 — plan-card dismissals persist per plan file. */
-const PLAN_DISMISS_KEY = "hv:plan-dismissed:";
+/** §20 round 17 — plan-card dismissals persist per plan file. Exported for App,
+ *  which clears one when that plan is revised (docs-round #6). */
+export const PLAN_DISMISS_KEY = "hv:plan-dismissed:";
 
 /**
  * §23 Plan Mode — the plan-ready card in the transcript. Self-contained: it

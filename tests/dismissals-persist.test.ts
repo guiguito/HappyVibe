@@ -60,3 +60,32 @@ describe("the keys follow the app's storage convention", () => {
     }
   });
 });
+
+describe("a revised plan gets its buttons back (docs-round #6)", () => {
+  // A revision rewrites the SAME file (tests/plans.test.ts:34-42), so the per-path
+  // dismissal outlived the plan it dismissed and ensurePlanCard deduped the new one away.
+  const app = fs
+    .readFileSync(path.resolve(__dirname, "../src/renderer/src/App.tsx"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const fn = app.slice(app.indexOf("const ensurePlanCard"), app.indexOf("const loadEarlier"));
+
+  it("the key is PlanCard's own, exported and imported — never re-typed", () => {
+    expect(rendered("PlanCard.tsx")).toMatch(/export const PLAN_DISMISS_KEY = "hv:plan-dismissed:"/);
+    expect(app).toMatch(/import \{ PLAN_DISMISS_KEY, type PlanCardData \} from "\.\/components\/PlanCard"/);
+    expect(app).not.toContain('"hv:plan-dismissed:"');
+  });
+
+  it("a fresh draft clears that plan's dismissal", () => {
+    expect(fn).toMatch(/if \(freshDraft\) localStorage\.removeItem\(`\$\{PLAN_DISMISS_KEY\}\$\{planPath\}`\)/);
+  });
+
+  it("and remounts the existing card under a new id instead of deduping it away", () => {
+    expect(fn).toMatch(/next\[at\] = \{ \.\.\.items\[at\], id: idCounter\.current\+\+ \}/);
+    expect(fn).toMatch(/if \(!freshDraft\) return p;/);
+  });
+
+  it("only a live plan_complete is a fresh draft — /hv-plan off re-sends the path with enabled:false", () => {
+    expect(app).toMatch(/if \(pl\.planPath && wsId && !pl\.restored\) ensurePlanCard\(sid, wsId, pl\.planPath, pl\.enabled\);/);
+  });
+});

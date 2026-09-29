@@ -15,7 +15,7 @@ import { AuditView } from "./components/AuditView";
 import { ChangelogView } from "./components/ChangelogView";
 import { PrivacyView } from "./components/PrivacyView";
 import { type TranscriptItem } from "./components/Transcript";
-import { type PlanCardData } from "./components/PlanCard";
+import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
@@ -717,14 +717,25 @@ export default function App(): React.JSX.Element {
   };
 
   // §23: append a PlanCard for a plan path once (progress fills in via
-  // onPlanChanged); no-op if a card for that path already exists in the session.
-  const ensurePlanCard = (sid: string, wsId: string, planPath: string): void =>
+  // onPlanChanged). docs-round #6: a revision rewrites the SAME file, so a
+  // `freshDraft` (a live plan_complete) for a path that already has a card clears
+  // that plan's "Keep planning" dismissal and gives the card a new id. The new id
+  // remounts it, so the buttons come back and it re-reads the revised text.
+  const ensurePlanCard = (sid: string, wsId: string, planPath: string, freshDraft: boolean): void => {
+    if (freshDraft) localStorage.removeItem(`${PLAN_DISMISS_KEY}${planPath}`);
     setTranscripts((p) => {
       const items = p[sid] ?? [];
-      if (items.some((i) => i.kind === "plan" && i.card.path === planPath)) return p;
+      const at = items.findIndex((i) => i.kind === "plan" && i.card.path === planPath);
+      if (at >= 0) {
+        if (!freshDraft) return p;
+        const next = [...items];
+        next[at] = { ...items[at], id: idCounter.current++ };
+        return { ...p, [sid]: next };
+      }
       const withId = { kind: "plan" as const, card: { sessionId: sid, workspaceId: wsId, path: planPath, status: "draft", done: 0, total: 0 }, id: idCounter.current++ };
       return { ...p, [sid]: [...items, withId] };
     });
+  };
 
   // §9 round 9: pull the pre-compaction history in for DISPLAY. It never
   // re-enters Pi's context — main reads the session file, sends nothing to the
@@ -1134,7 +1145,10 @@ export default function App(): React.JSX.Element {
         // compaction dropped the plan_complete from context it should not
         // reappear at all. Appending it anyway produced a misplaced card frozen
         // at "draft" that claimed an implemented plan was still pending.
-        if (pl.planPath && wsId && !pl.restored) ensurePlanCard(sid, wsId, pl.planPath);
+        // `pl.enabled`: plan_complete emits enabled:true. /hv-plan off (Implement,
+        // Discard, the toggle) re-sends the same path with enabled:false and must not
+        // bring a dismissed card's buttons back.
+        if (pl.planPath && wsId && !pl.restored) ensurePlanCard(sid, wsId, pl.planPath, pl.enabled);
         // A LIVE plan_complete is genuinely a fresh draft, so seeding "draft"
         // here is a fact, not a guess. A RESTORED plan's status is unknown from
         // the notify alone — main pushes it via hv:plan-changed (with sessionId)
