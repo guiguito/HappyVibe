@@ -69,6 +69,9 @@ export function duplicateAgent(allowedDirs: string[], filePath: string): string 
   // The name comes from the file's own frontmatter (free text, and a repo can supply it), so
   // the copy's path is confined too: a `/` or `..` in it would land outside the agent folders.
   const target = confineAgentPath(allowedDirs, path.join(dir, `${newName}.md`));
-  fs.writeFileSync(target, serializeAgentFile({ ...frontmatter, name: newName }, body), "utf8");
+  // `x/../fine` collapses to a sibling file inside the same folder and passes the confinement above.
+  if (path.basename(target, ".md") !== newName) throw new Error("Agent name can't contain a path");
+  // "wx": never overwrite (also covers case-insensitive filesystems).
+  fs.writeFileSync(target, serializeAgentFile({ ...frontmatter, name: newName }, body), { encoding: "utf8", flag: "wx" });
   return target;
 }

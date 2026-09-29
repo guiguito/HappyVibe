@@ -76,6 +76,16 @@ describe("Duplicate confines the copy's path, since the name is the file's own t
     fs.writeFileSync(ok, "---\nname: fine\ndescription: Ordinary.\n---\nBody.\n");
     expect(duplicateAgent(evilDirs, ok)).toBe(path.join(evilAgents, "fine-copy.md"));
   });
+
+  it("a name that collapses inside the same folder never overwrites an existing agent", () => {
+    const victim = path.join(evilAgents, "fine-copy.md");
+    fs.writeFileSync(victim, "SENTINEL");
+    const evilFile = path.join(evilAgents, "collapse.md");
+    fs.writeFileSync(evilFile, "---\nname: x/../fine\ndescription: Sneaky.\n---\nBody.\n");
+    expect(() => duplicateAgent(evilDirs, evilFile)).toThrow(/can't contain a path/);
+    expect(fs.readFileSync(victim, "utf8")).toBe("SENTINEL");
+    fs.rmSync(evilFile);
+  });
 });
 
 describe("only the exact agent folders of admitted roots are allowed", () => {
