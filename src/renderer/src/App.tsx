@@ -3507,7 +3507,7 @@ export default function App(): React.JSX.Element {
           {activeView === "privacy" && <PrivacyView />}
           {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
           {activeView === "guide" && (
-            <GuideView url={guide.url} nonce={guide.nonce} onBack={() => navigate({ view: "chat" })} />
+            <GuideView url={guide.url} nonce={guide.nonce} onClose={() => navigate({ view: "chat" })} />
           )}
           {activeView === "schedules" && (
             <SchedulesView

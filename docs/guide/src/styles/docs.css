@@ -56,7 +56,7 @@
 }
 .hv-copy-md:hover { background: var(--color-paper-deep); }
 
-/* In the app's browser pane (?embed=1), the page reads as part of the app, with no link back to the
+/* With ?embed=1 (opt-in; the app no longer sends it), the page reads as part of the app, with no link back to the
    website. Search and the page menu stay: a narrow pane has no other way around. */
 :root[data-embed] .site-title { display: none; }
 

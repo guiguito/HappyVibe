@@ -17,8 +17,9 @@ reachable from the settings list, the menu bar, first-run setup and a failing mo
   itself and the guide's sidebar-mirrors-the-app test is untouched.
 - Its view takes the **whole window**: the app's own sidebar is hidden while it is open (the guide has
   a left column of its own; two read as one too many). It is hidden with CSS, not unmounted, so its
-  open groups, scroll and dialogs are there after **← Back**. The page is a slim bar with **← Back** (to the main chat screen)
-  and **Open in browser ↗**, over an `<iframe>` of the guide filling the rest.
+  open groups, scroll and dialogs are there after you close the guide. The page is the guide itself, an
+  `<iframe>` with the site's own **HappyVibe header** (no `?embed=1`, which hid it), and no bar of our
+  own — only one **large circled ✕** at the top right, which returns to the main chat screen.
 - **An iframe, not a browser pane, on purpose.** A pane is a native `WebContentsView`; nothing in
   the DOM paints above it (`.claude/rules/renderer-layers.md`), so a permission prompt or dialog
   would hide behind it. An iframe is plain DOM.
@@ -30,7 +31,7 @@ reachable from the settings list, the menu bar, first-run setup and a failing mo
   CSP would show a blank frame. Main catches it (`will-frame-navigate`): when the frame is showing the
   guide and the target is not, http(s)/mailto open in the system browser and anything else is
   blocked. Frames not showing the guide (the editor's sandboxed HTML preview) are never touched.
-- Offline, the frame is blank; **Open in browser ↗** is the way out. No error detection.
+- Offline, the frame is blank; the ✕ is the way out. No error detection, and no separate "open in browser" button.
 - Clicking the row again shows the page you were last on, like a tab.
 
 ### 2. Every other door converges on it

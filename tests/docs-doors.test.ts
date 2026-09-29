@@ -2,7 +2,7 @@ import { describe, expect, it, test } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { describeProviderError } from "../src/main/providerError";
-import { docUrl, docsIndexUrl, ERROR_GUIDE_LABEL, externalDocUrl, GUIDE_COPY } from "../src/renderer/src/docsLinks";
+import { docUrl, docsIndexUrl, ERROR_GUIDE_LABEL, GUIDE_COPY } from "../src/renderer/src/docsLinks";
 import { NAV } from "../src/renderer/src/components/Sidebar";
 import { frameNavAction } from "../src/main/navGuard";
 import { ONBOARDING_COPY } from "../src/renderer/src/onboarding";
@@ -15,13 +15,16 @@ const headings = (slug: string): string[] =>
 
 describe("guide URLs (Docs in the app, 2026-09-29)", () => {
   it("a slug alone keeps the per-screen shape", () => {
-    expect(docUrl("mcp")).toBe("https://happyvibe.dev/docs/mcp/?embed=1");
+    expect(docUrl("mcp")).toBe("https://happyvibe.dev/docs/mcp/");
   });
-  it("an anchor goes AFTER the query, or the browser reads it as part of the path", () => {
-    expect(docUrl("models", "add-a-custom-endpoint")).toBe("https://happyvibe.dev/docs/models/?embed=1#add-a-custom-endpoint");
+  it("an anchor goes on the page's own address", () => {
+    expect(docUrl("models", "add-a-custom-endpoint")).toBe("https://happyvibe.dev/docs/models/#add-a-custom-endpoint");
+  });
+  it("no link asks the site to hide its HappyVibe header — the in-app guide keeps the brand", () => {
+    for (const u of [docUrl("mcp"), docUrl("models", "x"), docsIndexUrl]) expect(u).not.toContain("embed");
   });
   it("the front page has no slug and no double slash", () => {
-    expect(docsIndexUrl).toBe("https://happyvibe.dev/docs/?embed=1");
+    expect(docsIndexUrl).toBe("https://happyvibe.dev/docs/");
     expect(docsIndexUrl.replace("https://", "")).not.toContain("//");
   });
   it("the error-card label is one string", () => {
@@ -123,24 +126,20 @@ describe("the guide is a page inside the app (Docs in the app, 2026-09-29)", () 
   const app = read("src", "renderer", "src", "App.tsx");
   const sidebar = read("src", "renderer", "src", "components", "Sidebar.tsx");
 
-  it("Open in browser drops ?embed=1 but keeps the anchor", () => {
-    expect(externalDocUrl("https://happyvibe.dev/docs/models/?embed=1#add-a-custom-endpoint")).toBe(
-      "https://happyvibe.dev/docs/models/#add-a-custom-endpoint",
-    );
-    expect(externalDocUrl(docsIndexUrl)).toBe("https://happyvibe.dev/docs/");
-  });
-
   it("the copy is one record", () => {
-    expect(GUIDE_COPY).toEqual({ title: "User guide", back: "← Back", external: "Open in browser ↗" });
+    expect(GUIDE_COPY).toEqual({ title: "User guide", close: "Close the guide" });
   });
 
-  it("the view is a sandboxed iframe with a Back button and an Open-in-browser escape", () => {
+  it("the view is a sandboxed iframe and ONE big circled close button — no top bar", () => {
     const v = read("src", "renderer", "src", "components", "GuideView.tsx");
     expect(v).toContain("<iframe");
     expect(v).toContain('sandbox="allow-scripts allow-same-origin"');
-    expect(v).toContain("onClick={onBack}");
-    expect(v).toContain("externalDocUrl(url)");
-    // Absence: the frame may not navigate the app or open windows.
+    expect(v).toContain("onClick={onClose}");
+    expect(v).toContain("size-11 rounded-full");
+    expect(v).toMatch(/absolute[^"]*\btop-\d+[^"]*\bright-\d+/);
+    // Absence: no bar of our own (the guide's header carries the HappyVibe brand), no escape button.
+    expect(v).not.toContain("border-b-2");
+    expect(v).not.toContain("externalDocUrl");
     expect(v).not.toMatch(/allow-top-navigation|allow-popups|allow-modals/);
   });
 
@@ -172,9 +171,9 @@ describe("the guide is a page inside the app (Docs in the app, 2026-09-29)", () 
     expect(app).not.toMatch(/activeView !== "guide" && \(\s*<Sidebar/);
   });
 
-  it("App renders the view with Back going to the main chat screen", () => {
+  it("App renders the view with Close going to the main chat screen", () => {
     expect(app).toMatch(/activeView === "guide" && \(\s*<GuideView/);
-    expect(app).toMatch(/onBack=\{\(\) => navigate\(\{ view: "chat" \}\)\}/);
+    expect(app).toMatch(/onClose=\{\(\) => navigate\(\{ view: "chat" \}\)\}/);
   });
 });
 

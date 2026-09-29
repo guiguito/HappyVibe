@@ -22,8 +22,8 @@ describe("help links (Docs round, 2026-09-28)", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
-  it("links open the embedded page on the canonical host", () => {
-    expect(docUrl("mcp")).toBe("https://happyvibe.dev/docs/mcp/?embed=1");
+  it("links open the guide page on the canonical host", () => {
+    expect(docUrl("mcp")).toBe("https://happyvibe.dev/docs/mcp/");
   });
 
   it("the link renders once, in the settings-page wrapper", () => {
