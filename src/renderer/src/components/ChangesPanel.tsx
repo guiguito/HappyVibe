@@ -403,7 +403,9 @@ export function ChangesPanel({
     const junk = await window.hv.gitDetectJunk(workspace);
     const commit = (): void => {
       void act(
-        `git ${opts.amend ? "commit --amend" : "add -A && git commit"} -m "${text}"`,
+        // docs-round #32: the line saveVersion (git.ts) actually runs — `add -A`
+        // unless only the staged files go in, whether or not it amends.
+        `${stagedOnly ? "" : "git add -A && "}git commit${opts.amend ? " --amend" : ""} -m "${text}"`,
         () => window.hv.gitCommit(workspace, text, { stagedOnly, amend: !!opts.amend }),
         () => {
           setMessage("");
@@ -429,6 +431,8 @@ export function ChangesPanel({
           setConfirm(null);
           commit();
         },
+        // docs-round #31: declining the .gitignore still saves (§29, prd.md:912).
+        secondary: { label: "Save anyway", onPick: () => { setConfirm(null); commit(); } },
       });
       return;
     }
@@ -942,10 +946,11 @@ export function ChangesPanel({
                             .catch(() => setCanDraft(false))
                             .finally(() => setDrafting(false));
                         }}
-                        // The tooltip carries the cost disclosure, which is the
-                        // load-bearing part: this call is a one-shot outside any
-                        // session, so it never reaches the cost ledger (§2b).
-                        title="Write it for me — drafts a message from your changes using a small, cheap model (about $0.001 per draft). Not counted in session costs."
+                        // The tooltip says which setting picks the model and that
+                        // the call is outside the ledger — a one-shot outside any
+                        // session never reaches it (§2b). No price: the model is
+                        // whichever one AI autofill picks (docs-round #21).
+                        title="Write it for me — drafts a message from your changes, using the model picked for Commit message in AI autofill (your default model unless you pick one there). Not counted in session costs."
                         aria-label="Write it for me"
                         className="flex items-center justify-center rounded-xl border-2 border-line bg-card py-1.5 cursor-pointer hover:border-tangerine disabled:opacity-50"
                       >
