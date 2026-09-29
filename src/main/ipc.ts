@@ -483,6 +483,19 @@ export const MEMORY_EVENT_TYPES = [
   "memory.imported",
 ] as const;
 
+/** §35 (docs-round #7): every schedule audit type, named once. The Audit page reads these,
+ *  `SCHEDULE_EVENT_LABELS` (AuditView.tsx) words them, and tests/audit-filters.test.ts keeps the
+ *  two lists equal. */
+export const SCHEDULE_EVENT_TYPES = [
+  "schedule.create",
+  "schedule.update",
+  "schedule.delete",
+  "schedule.fire",
+  "schedule.skip",
+  "schedule.done",
+  "schedule.missed",
+] as const;
+
 export function parseMemoryEnvelope(r: { method?: string; title?: string }): MemoryEnvelope | null {
   if (r.method !== "input") return null;
   let p: Record<string, unknown>;
@@ -4586,7 +4599,10 @@ export function registerIpc(
     // §37: a crash report is the fifth thing this page answers for, and the
     // only one that left WITHOUT a click — which is precisely why it is here.
     const crashes = await log.read({ type: "crash.sent", ...scoped });
-    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes]
+    // §35 (docs-round #7): what each schedule did. Written since §35 shipped and never read
+    // until now, so the page's Schedules choice was always empty. Per type, like memory.
+    const schedules = await Promise.all(SCHEDULE_EVENT_TYPES.map((t) => log.read({ type: t, ...scoped })));
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes, ...schedules.flat()]
       // A row with no workspace never matched a workspace filter before either.
       .filter((e) => !wsKeys || (e.workspaceId != null && wsKeys.has(normPath(e.workspaceId))))
       .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));

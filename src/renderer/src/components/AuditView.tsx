@@ -317,6 +317,64 @@ const DECISION_TONE: Record<string, string> = {
   "allow-session": "bg-leaf-soft text-leaf border-leaf/50",
 };
 
+/**
+ * docs-round #7: the source menu, as data (the renderer suite has no DOM). Each
+ * value is the STORED source, or a non-decision row's own name, never a label.
+ * Comparing against SOURCE_LABEL is what made Web tools and Read-only run match
+ * nothing.
+ */
+export const SOURCE_FILTERS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "rule", label: "Rule" },
+  { value: "user", label: "You" },
+  { value: "safe-default", label: "Safe default" },
+  { value: "bypass", label: "Bypass" },
+  { value: "plan", label: "Plan mode" },
+  { value: "readonly", label: "Read-only run" },
+  { value: "subagent", label: "Sub-agents" },
+  { value: "schedule", label: "Schedules" },
+  { value: "terminal", label: "Terminal" },
+  { value: "web", label: "Web tools" },
+  { value: "document", label: "Documents" },
+  { value: "assistant", label: "The app itself" },
+  { value: "model", label: "Model availability" },
+  { value: "memory", label: "Memory" },
+  { value: "feedback", label: "Feedback" },
+  { value: "crash", label: "Crash reports" },
+];
+
+/**
+ * One row against the two menus. Exported for tests.
+ *
+ * "bypass" also selects the old "dangerous" rows (one name, one filter, or the
+ * log silently hides everything recorded before the rename) and a sub-agent's call
+ * the bypass let through, which shows under BOTH Sub-agents and Bypass.
+ */
+export function matchesFilters(r: Row, decision: string, source: string): boolean {
+  // A one-shot has no decision and no rule source; it answers to the source
+  // filter under its own name so it can be isolated or excluded, and it is
+  // hidden whenever a DECISION filter is on, because it is not one.
+  if (r.row === "oneshot") return !decision && (!source || source === "assistant");
+  // Not a decision either: it answers to the source filter under its own name.
+  if (r.row === "excluded") return !decision && (!source || source === "model");
+  // §33: a memory event is not a permission decision either — the DECISION that let it
+  // happen is its own row, right beside this one. It answers to the source filter under its
+  // own name so it can be isolated or excluded.
+  if (r.row === "memory") return !decision && (!source || source === "memory");
+  // §34: not a decision either. Its own source name, so it can be isolated or
+  // excluded, and hidden whenever a DECISION filter is on.
+  if (r.row === "feedback") return !decision && (!source || source === "feedback");
+  // §37: not a decision either — nobody decided anything, which is the point.
+  if (r.row === "crash") return !decision && (!source || source === "crash");
+  // §35: a schedule event is not a permission decision — the run's own tool
+  // calls are those, under this same log. Its own source name so it can be
+  // isolated, which is how you answer "what has this thing been doing".
+  if (r.row === "schedule") return !decision && (!source || source === "schedule");
+  if (decision && r.decision !== decision) return false;
+  if (!source) return true;
+  if (source === "bypass") return r.source === "bypass" || r.source === "dangerous" || (r.source === "subagent" && r.bypass === true);
+  return r.source === source;
+}
+
 
 export function AuditView({
   sessions,
@@ -353,31 +411,7 @@ export function AuditView({
     };
   }, [workspaceId, sessionId]);
 
-  // "bypass" selects the old "dangerous" rows too — one name, one filter, or
-  // the log silently hides everything recorded before the rename.
-  const matches = (r: Row): boolean => {
-    // A one-shot has no decision and no rule source; it answers to the source
-    // filter under its own name so it can be isolated or excluded, and it is
-    // hidden whenever a DECISION filter is on, because it is not one.
-    if (r.row === "oneshot") return !decision && (!source || source === "assistant");
-    // Not a decision either: it answers to the source filter under its own name.
-    if (r.row === "excluded") return !decision && (!source || source === "model");
-    // §33: a memory event is not a permission decision either — the DECISION that let it
-    // happen is its own row, right beside this one. It answers to the source filter under its
-    // own name so it can be isolated or excluded.
-    if (r.row === "memory") return !decision && (!source || source === "memory");
-    // §34: not a decision either. Its own source name, so it can be isolated or
-    // excluded, and hidden whenever a DECISION filter is on.
-    if (r.row === "feedback") return !decision && (!source || source === "feedback");
-    // §37: not a decision either — nobody decided anything, which is the point.
-    if (r.row === "crash") return !decision && (!source || source === "crash");
-    // §35: a schedule event is not a permission decision — the run's own tool
-    // calls are those, under this same log. Its own source name so it can be
-    // isolated, which is how you answer "what has this thing been doing".
-    if (r.row === "schedule") return !decision && (!source || source === "schedule");
-    return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
-  };
-  const shown = rows?.filter(matches) ?? null;
+  const shown = rows?.filter((r) => matchesFilters(r, decision, source)) ?? null;
 
   const sessionTitle = (id?: string): string => sessions.find((s) => s.id === id)?.title ?? (id ? id.slice(0, 8) : "—");
   const wsSessions = workspaceId ? sessions.filter((s) => s.workspaceId === workspaceId) : sessions;
@@ -435,20 +469,11 @@ export function AuditView({
             className="rounded-lg border-2 border-line bg-card px-2.5 py-1.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
           >
             <option value="">Any source</option>
-            <option value="rule">Rule</option>
-            <option value="user">You</option>
-            <option value="safe-default">Safe default</option>
-            <option value="bypass">Bypass</option>
-            <option value="plan">Plan mode</option>
-            <option value="readonly">Read-only run</option>
-            <option value="schedule">Schedules</option>
-            <option value="terminal">Terminal</option>
-            <option value="web">Web tools</option>
-            <option value="assistant">The app itself</option>
-            <option value="model">Model availability</option>
-            <option value="memory">Memory</option>
-            <option value="feedback">Feedback</option>
-            <option value="crash">Crash reports</option>
+            {SOURCE_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
           </select>
         </div>
 

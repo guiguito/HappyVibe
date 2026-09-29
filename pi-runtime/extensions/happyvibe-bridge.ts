@@ -562,6 +562,8 @@ function audit(
     /** §12 (2026-09-26): a tintinweb child's call — which agent, which run (AuditView names both). */
     agent?: string;
     runId?: string;
+    /** docs-round #7: on a child's row, the bypass let it through (AuditView lists it under Bypass too). */
+    bypass?: boolean;
   },
 ): void {
   // §33: the audit row's summary is CAPPED here, at the one choke point every caller routes
@@ -671,6 +673,7 @@ export default function (pi: ExtensionAPI) {
         audit(busUi, {
           tool: row.tool, decision: row.decision, summary: row.summary, source: "subagent",
           wouldHave: row.wouldHave, ...(row.type ? { agent: row.type } : {}), ...(row.agentId ? { runId: row.agentId } : {}),
+          ...(row.bypass ? { bypass: true } : {}),
         });
       },
       // §10 (2026-09-26, Phase 4, decision 10): a child inherits the parent's session grants…

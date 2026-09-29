@@ -18,7 +18,7 @@ Four menus sit at the top. They all start on showing everything, and the newest 
 - **All workspaces**: narrow the log to one workspace. A session in a worktree (a second working copy of a git project, made with **New worktree…**) counts under its workspace.
 - **All sessions**: narrow it to one session. Once you've picked a workspace, this menu lists only that workspace's sessions.
 - **Any decision**: show only **Allowed**, **Allowed for session** or **Denied** rows. Rows that aren't decisions (the other kinds below) step aside while this filter is on.
-- **Any source**: show only the rows that came from one place, like **Rule**, **You**, **Bypass** or **Plan mode**. The last few choices pick out the other kinds of row: **The app itself**, **Model availability**, **Memory**, **Feedback** and **Crash reports**.
+- **Any source**: show only the rows that came from one place, like **Rule**, **You**, **Bypass**, **Plan mode** or **Sub-agents**. The last few choices pick out the other kinds of row: **The app itself**, **Model availability**, **Memory**, **Feedback** and **Crash reports**.
 
 If the filters leave nothing, the log says "No decisions match these filters." Before the agent has asked for anything at all, it says "No permission decisions yet — they appear here once the agent asks for something."
 
@@ -48,6 +48,7 @@ Some model calls happen outside any session: naming a session, writing a commit 
 
 - **model**: a model your subagents stopped using because it failed. They switched to another one, even though the session still shows the model you picked. The row reads "… not in use", with the app's notice underneath.
 - **memory**: what the agent remembered, recalled, forgot or was refused, plus memories you forgot, edited or imported yourself, with the memory's name. The memory itself is never copied into the log: only its name and its one-line description, or the reason it was refused. See [Memory](/docs/memory/).
+- **schedule**: what one of your [schedules](/docs/schedules/) did, such as "created schedule", "schedule fired" or "schedule missed its time", with the schedule's name.
 - **feedback**: feedback you sent, such as "Sent feedback" or "Rated the session". Your answers stay out of the log.
 - **crash**: a crash report the app sent, as "Sent a crash report" and its kind, with "new" when it's the first of its sort. The log records the report's ID and size, never its content. See [Privacy](/docs/privacy/).
 
@@ -63,7 +64,7 @@ Some model calls happen outside any session: naming a session, writing a commit 
 2. Read the note on each row. The ones that say "rules would have DENIED" mark calls your rules would have stopped.
 3. If you'd rather be asked next time, turn the bypass off in [Permissions](/docs/permissions/).
 
-Calls made by subagents are listed under "sub-agent", not **Bypass**, so this filter hides them. To see them too, leave **Any source** on **Any source**.
+Calls your subagents made under a bypass are here too. They read "sub-agent" followed by the agent's name and "bypass". **Sub-agents** lists every subagent call, whoever decided it.
 
 ## During a session
 

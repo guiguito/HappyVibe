@@ -30,6 +30,8 @@ export interface PolicyAuditRow {
   agentId?: string;
   type?: string;
   reason?: string;
+  /** docs-round #7: the bypass decided this call (an allow under HV_BYPASS). */
+  bypass?: boolean;
 }
 
 /** A child's `ask`, raised on the parent's channel (Phase 4). */

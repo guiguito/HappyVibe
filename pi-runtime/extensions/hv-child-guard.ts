@@ -209,7 +209,12 @@ function inProcessGuard(
   const runGrants = new Set<string>();
   const report = (tool: string, input: Record<string, unknown>, decision: "allow" | "deny", wouldHave: RuleAction, reason?: string): void => {
     try {
-      policy.audit({ tool, decision, wouldHave, summary: summarise(input), agentId: who?.agentId, type: who?.type, reason });
+      // docs-round #7: only an ALLOW under bypass is the bypass's decision. A boundary
+      // refusal still holds under bypass, and marking it would read "bypass" on a deny.
+      policy.audit({
+        tool, decision, wouldHave, summary: summarise(input), agentId: who?.agentId, type: who?.type, reason,
+        ...(bypass && decision === "allow" ? { bypass: true } : {}),
+      });
     } catch {
       // An audit failure must NEVER change a permission outcome.
     }
