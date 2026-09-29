@@ -18,7 +18,7 @@ base_ref() {
 runtime_line() {
   node -e "const d=require('./pi-runtime/package.json').dependencies;
     console.log('Runtime: Pi '+d['@earendil-works/pi-coding-agent']+
-      ' · sub-agents '+d['pi-subagents']+' · MCP adapter '+d['pi-mcp-adapter'])"
+      ' · sub-agents '+d['@tintinweb/pi-subagents']+' · MCP adapter '+d['pi-mcp-adapter'])"
 }
 
 case "${1:-digest}" in
