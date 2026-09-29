@@ -11,7 +11,7 @@
  */
 
 import { describeCommand } from "./describeCommand";
-import { unwrapMcpCall } from "../../../pi-runtime/extensions/hv-mcp";
+import { isMcpNamespaceTool, unwrapMcpCall, unwrapMcpNamespaceCall } from "../../../pi-runtime/extensions/hv-mcp";
 
 export type IconKind =
   | "terminal"
@@ -237,6 +237,12 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     const v = VIRTUAL_RULE[toolName.slice(0, colon)];
     const subject = toolName.slice(colon + 1);
     if (v && subject) return { icon: v.icon, label: `${v.kind}: ${subject}` };
+  }
+
+  // #35: the adapter's per-server `mcp__<ns>` tools read like the `mcp` proxy's calls.
+  if (isMcpNamespaceTool(toolName)) {
+    const info = unwrapMcpNamespaceCall(toolName, a);
+    if (info) return { icon: "wrench", label: intent ?? info.display, brand: brandIconFor(info.mcpTool ?? info.server) };
   }
 
   switch (toolName) {

@@ -34,6 +34,11 @@ handler), #25 and #34 (what the adapter does with the call).
     `manage`. Plan mode and read-only runs block the `manage` kind. A contract test pins the
     adapter's action list and dispatch order, so a pin bump that adds an action fails.
 
+35. **The adapter's per-server `mcp__<server>` tools bypassed `mcp:<tool>` rules** (found by the live batch): the bridge
+    unwrapped only the tool named `mcp`, so a deny rule on `mcp:<tool>` didn't cover them and the prompt showed raw JSON.
+    **Fixed:** they gate as `mcp:<tool>` (only when the registered description is the adapter's namespace-proxy text; only
+    `tool` is read, as the adapter does), with the "MCP → <tool>" label and the Agent tools per-MCP-tool pill.
+
 1. **A subagent's approval dialog title carries model-written text.** The bridge sends
    `runLabel: record?.description` (`happyvibe-bridge.ts:686-691`). That is the model's own `Agent`
    argument, and `PermissionModal.tsx:162` puts it in the title. This breaks §13's rule: the prompt
@@ -279,7 +284,6 @@ handler), #25 and #34 (what the adapter does with the call).
 ## Open after the fix round
 
 - **GUI pass not run yet.** Every task's GUI assertions (plan Task 21 step 4) still need the app. The Windows and Linux key-hint and copy checks need those machines.
-- **35 (new, pre-existing, found by the live batch): MCP namespace tools bypass `mcp:<tool>` rules.** pi-mcp-adapter 2.35.0 (pinned since `8247973`) registers one `mcp__<server>` tool per proxy-only server that takes `{tool, args}` and runs the MCP tool. The bridge unwraps only the tool named `mcp` (`happyvibe-bridge.ts:996`), so a `mcp__echo` call is gated under its raw name: it still asks by default, but a deny rule on `mcp:<tool>` doesn't cover it and the prompt shows raw JSON. `tests/mcp-bridge.test.ts` fails whenever the model picks the namespace tool. Fix: unwrap `mcp__<server>` calls with `unwrapMcpCall` (forcing `server`), and add them to the Agent tools per-call pills.
 - **36 (new, pre-existing): sub-agents ignore a live bypass Turn off.** The child guard reads `HV_BYPASS` once per child (`hv-child-guard.ts:205`), not the parent's live `dangerous && !plan.enabled && !readonly`. Fix: a `ChildPolicy.bypass()` getter from the bridge.
 - **Always allow persists a wildcard.** A persistent grant stores `pattern: tool` as a glob, so a model-chosen install URL such as `https://*/mcp` becomes a rule matching every such install. Needs a decision: escape `*`/`?` in grants, or don't offer Always allow on `mcp-manage:` prompts.
 

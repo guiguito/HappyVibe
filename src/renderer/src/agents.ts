@@ -5,6 +5,7 @@
  * fail" discipline as context.ts / permission.ts.
  */
 import { delegationRunId, displayableTask, isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
+import { isMcpNamespaceTool } from "../../../pi-runtime/extensions/hv-mcp";
 import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { AGENT_TOOL, WORKFLOW_TOOL } from "../../../pi-runtime/extensions/hv-tw-gate";
 import { WEB_URL_TOOLS } from "../../../pi-runtime/extensions/hv-web";
@@ -87,7 +88,7 @@ export interface CheckedAs {
 }
 
 export function checkedAs(tool: string): CheckedAs | null {
-  if (tool === "mcp") return { name: "mcp:<tool>", per: "per MCP tool" };
+  if (tool === "mcp" || isMcpNamespaceTool(tool)) return { name: "mcp:<tool>", per: "per MCP tool" };
   if (tool === AGENT_TOOL) return { name: "subagent:<agent>", per: "per agent" };
   if (tool === "browser_open" || tool === "browser_navigate" || WEB_URL_TOOLS.has(tool)) {
     return { name: "browser:<host>", per: "per site" };

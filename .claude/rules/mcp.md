@@ -26,6 +26,9 @@ paths:
   keys in the ADAPTER's dispatch order (action → tool → connect → describe → instructions →
   search), pinned with its action list by `tests/mcp-adapter-actions.test.ts`. It is the ONE
   source of the factual display (gate + renderer), enriched with a key arg (url/query).
+- The adapter's per-server `mcp__<ns>` namespace tools (`{tool, args}`) are gated as the proxy
+  (`mcp:<tool>`), only when the registered description matches (`MCP_NAMESPACE_DESCRIPTION`) and only
+  `tool` is read (the adapter runs nothing else): a raw-name gate let `mcp:<tool>` rules be sidestepped.
 - stdio servers configured with `node`/`npx` need a runtime in the packaged app.
 
 ## Intent

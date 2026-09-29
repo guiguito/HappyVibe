@@ -114,3 +114,32 @@ export function unwrapMcpCall(input: Record<string, unknown>): McpCallInfo {
   if (action) return { kind: "manage", ruleTool: `${MCP_MANAGE_PREFIX}${action}`, display: `MCP: ${action}` };
   return { kind: "discovery", ruleTool: "mcp", display: "MCP discovery" };
 }
+
+/**
+ * docs-round #35: pi-mcp-adapter also registers, per proxy-only server, ONE tool named
+ * `mcp__<namespace>` that takes `{tool, args}` and runs the same MCP call as the `mcp` proxy.
+ * Gated under its raw name, an `mcp:<tool>` rule could be sidestepped through it.
+ *
+ * The NAME alone can't prove a tool is one: a direct tool under toolPrefix "mcp" is
+ * `mcp__<server>_<tool>` and takes its own params. So the bridge also checks the registered
+ * description starts with MCP_NAMESPACE_DESCRIPTION (namespace-tools.ts). Prompt commands
+ * (`mcp__<server>__<prompt>`) are told apart by the `__`, which a namespace only carries in
+ * its `_mcpns_` encoded form (types.ts `formatServerNamespace`).
+ */
+export const MCP_NAMESPACE_DESCRIPTION = 'Namespace-proxy for MCP server "';
+export function isMcpNamespaceTool(name: string): boolean {
+  if (!name.startsWith("mcp__")) return false;
+  const ns = name.slice(5);
+  return ns.length > 0 && (!ns.includes("__") || ns.startsWith("_mcpns_"));
+}
+
+/**
+ * Classify a namespace-proxy call. The adapter's namespace `execute` reads `params.tool` and
+ * NOTHING else, so only `tool`/`args` are passed on: an `action` the `mcp` proxy would dispatch
+ * first (say `ui-messages`, safe-allowed) must not reclassify a call that actually runs `tool`.
+ * Null when there is no usable `tool` (the adapter errors and runs nothing).
+ */
+export function unwrapMcpNamespaceCall(name: string, input: Record<string, unknown>): McpCallInfo | null {
+  if (typeof input.tool !== "string" || !input.tool.trim()) return null;
+  return unwrapMcpCall({ tool: input.tool, args: input.args, server: name.slice(5) });
+}
