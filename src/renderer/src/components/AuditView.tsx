@@ -166,7 +166,50 @@ interface CrashEvent {
   channel?: string;
 }
 
+/**
+ * §29 (docs-round #31): a git action YOU took, written by `auditGit` (ipc.ts). Human-only by
+ * construction (there is no git tool the model can call), so there is no decision to show.
+ * The branch or the path only, never the commit message.
+ */
+interface GitEvent {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  action: string;
+  branch?: string;
+  path?: string;
+  ok?: boolean;
+}
+
+/** The app's own words for each `auditGit` action. A test asserts every action main writes has one. */
+export const GIT_ACTION_LABEL: Record<string, string> = {
+  commit: "committed",
+  amend: "amended the last commit",
+  switch: "switched branch",
+  "delete-branch": "deleted a branch",
+  "worktree-add": "made a worktree",
+  merge: "merged a worktree",
+  "worktree-remove": "removed a worktree",
+  "worktree-prune": "cleaned up missing worktrees",
+  sync: "synced with the remote",
+  publish: "published the branch",
+  "stash-save": "stashed changes",
+  "stash-pop": "restored a stash",
+  "stash-drop": "deleted a stash",
+  "undo-hunk": "undid a change",
+  "undo-file": "undid a file",
+  "discard-untracked": "discarded a new file",
+  init: "started tracking versions",
+};
+
+/** Exported for tests, like its neighbours: the renderer suite has no DOM. */
+export function gitText(r: { action: string; ok?: boolean }): string {
+  const label = GIT_ACTION_LABEL[r.action] ?? r.action;
+  return r.ok === false ? `${label} · failed` : label;
+}
+
 export type Row =
+  | ({ row: "git" } & GitEvent)
   | ({ row: "decision" } & Decision)
   | ({ row: "oneshot" } & OneShot)
   | ({ row: "excluded" } & ModelExcluded)
@@ -194,6 +237,9 @@ export function toAuditRow(e: HvAuditEvent): Row {
   // §37: the TYPE again — the crash payload carries its own `kind` ("exception",
   // "child-exit"…) and reading that is the same bug this function was extracted to fix.
   if (e.type === "crash.sent") return { row: "crash", ...(e.data as unknown as CrashEvent), ...base };
+  // §29 (docs-round #31): the TYPE again. Falling through would file a git action as a
+  // permission decision with no tool and no decision.
+  if (e.type === "git.action") return { row: "git", ...(e.data as unknown as GitEvent), ...base };
   // §35: same rule — discriminate on the TYPE main keyed the row by.
   if (e.type.startsWith("schedule.")) {
     return { row: "schedule", kind: e.type, ...(e.data as unknown as Omit<ScheduleEvent, "kind">), ...base };
@@ -335,6 +381,7 @@ export const SOURCE_FILTERS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "terminal", label: "Terminal" },
   { value: "web", label: "Web tools" },
   { value: "document", label: "Documents" },
+  { value: "git", label: "Git" },
   { value: "assistant", label: "The app itself" },
   { value: "model", label: "Model availability" },
   { value: "memory", label: "Memory" },
@@ -369,6 +416,8 @@ export function matchesFilters(r: Row, decision: string, source: string): boolea
   // calls are those, under this same log. Its own source name so it can be
   // isolated, which is how you answer "what has this thing been doing".
   if (r.row === "schedule") return !decision && (!source || source === "schedule");
+  // §29: a git action is yours, not a decision — its own name, like a schedule's.
+  if (r.row === "git") return !decision && (!source || source === "git");
   if (decision && r.decision !== decision) return false;
   if (!source) return true;
   if (source === "bypass") return r.source === "bypass" || r.source === "dangerous" || (r.source === "subagent" && r.bypass === true);
@@ -541,6 +590,25 @@ export function AuditView({
                         {[r.recurrence, r.outcome, r.reason, r.source === "agent" ? "asked for by the agent" : null].filter(Boolean).join(" · ")}
                       </div>
                     )}
+                  </>
+                ) : r.row === "git" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        git
+                      </span>
+                      <span className="font-bold shrink-0">{gitText(r)}</span>
+                      <span className="text-xs text-ink-soft truncate min-w-0">{r.branch ?? (r.path ? basename(r.path) : "")}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""}
+                      </span>
+                    </div>
                   </>
                 ) : r.row === "crash" ? (
                   <>

@@ -18,7 +18,7 @@ Four menus sit at the top. They all start on showing everything, and the newest 
 - **All workspaces**: narrow the log to one workspace. A session in a worktree (a second working copy of a git project, made with **New worktree…**) counts under its workspace.
 - **All sessions**: narrow it to one session. Once you've picked a workspace, this menu lists only that workspace's sessions.
 - **Any decision**: show only **Allowed**, **Allowed for session** or **Denied** rows. Rows that aren't decisions (the other kinds below) step aside while this filter is on.
-- **Any source**: show only the rows that came from one place, like **Rule**, **You**, **Bypass**, **Plan mode** or **Sub-agents**. The last few choices pick out the other kinds of row: **The app itself**, **Model availability**, **Memory**, **Feedback** and **Crash reports**.
+- **Any source**: show only the rows that came from one place, like **Rule**, **You**, **Bypass**, **Plan mode** or **Sub-agents**. The last few choices pick out the other kinds of row: **Git**, **The app itself**, **Model availability**, **Memory**, **Feedback** and **Crash reports**.
 
 If the filters leave nothing, the log says "No decisions match these filters." Before the agent has asked for anything at all, it says "No permission decisions yet — they appear here once the agent asks for something."
 
@@ -51,6 +51,7 @@ Some model calls happen outside any session: naming a session, writing a commit 
 - **schedule**: what one of your [schedules](/docs/schedules/) did, such as "created schedule", "schedule fired" or "schedule missed its time", with the schedule's name.
 - **feedback**: feedback you sent, such as "Sent feedback" or "Rated the session". Your answers stay out of the log.
 - **crash**: a crash report the app sent, as "Sent a crash report" and its kind, with "new" when it's the first of its sort. The log records the report's ID and size, never its content. See [Privacy](/docs/privacy/).
+- **git**: a git action you took in HappyVibe, such as "committed", "switched branch" or "merged a worktree", with the branch or file it touched. The commit message stays out of the log. Git commands the agent runs itself are ordinary decisions, under the tool that ran them.
 
 ## Find every call you denied
 

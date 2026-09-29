@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SCHEDULE_EVENT_LABELS, SOURCE_FILTERS, matchesFilters, sourceText, toAuditRow } from "../src/renderer/src/components/AuditView";
+import { GIT_ACTION_LABEL, SCHEDULE_EVENT_LABELS, SOURCE_FILTERS, gitText, matchesFilters, sourceText, toAuditRow } from "../src/renderer/src/components/AuditView";
 import { SCHEDULE_EVENT_TYPES } from "../src/main/ipc";
 import { setChildPolicy, type ChildPolicy, type PolicyAuditRow } from "../pi-runtime/extensions/hv-child-policy";
 import hvChildGuard from "../pi-runtime/extensions/hv-child-guard";
@@ -40,6 +40,7 @@ describe("the source menu filters on the stored value", () => {
       toAuditRow({ ts: "t", type: "memory.saved", data: { name: "n" } } as never),
       toAuditRow({ ts: "t", type: "feedback.sent", data: { database: "general", formVersion: 1, submissionId: "s", status: "accepted", attachments: 0, bytes: 0 } } as never),
       toAuditRow({ ts: "t", type: "crash.sent", data: { reportId: "r", groupId: "g", isNewGroup: true, kind: "exception", bytes: 1 } } as never),
+      toAuditRow({ ts: "t", type: "git.action", data: { action: "sync", who: "human" } } as never),
     ];
     for (const f of SOURCE_FILTERS) expect(rows.some((r) => shows(r, f.value)), f.label).toBe(true);
   });
@@ -149,5 +150,50 @@ describe("a sub-agent row records that the bypass decided it", () => {
   it("the bridge forwards it onto the hv.audit row", () => {
     const at = bridge.indexOf('source: "subagent",');
     expect(bridge.slice(at, at + 300)).toMatch(/\.\.\.\(row\.bypass \? \{ bypass: true \} : \{\}\)/);
+  });
+});
+
+describe("git actions are Audit log rows (docs-round #31)", () => {
+  const git = (data: Record<string, unknown>) =>
+    toAuditRow({ ts: "2026-09-29T10:00:00.000Z", type: "git.action", workspaceId: "/w", data: { who: "human", ...data } } as never);
+
+  it("a git.action is a Git row, never misfiled as a permission decision", () => {
+    expect(git({ action: "commit", sha: "abc1234", message: "feat: x" }).row).toBe("git");
+  });
+
+  it("answers to Git, and steps aside under a decision filter", () => {
+    const r = git({ action: "switch", branch: "main" });
+    expect(matchesFilters(r, "", "git")).toBe(true);
+    expect(matchesFilters(r, "", "rule")).toBe(false);
+    expect(matchesFilters(r, "allow", "")).toBe(false);
+    expect(SOURCE_FILTERS).toContainEqual({ value: "git", label: "Git" });
+  });
+
+  it("says what happened in the app's words, and a merge that stopped says so", () => {
+    expect(gitText({ action: "commit" })).toBe("committed");
+    expect(gitText({ action: "merge", ok: true })).toBe("merged a worktree");
+    expect(gitText({ action: "merge", ok: false })).toBe("merged a worktree · failed");
+  });
+
+  it("every action main audits has a label", () => {
+    const calls = (ipc.match(/\bauditGit\(/g) ?? []).length;
+    const literal = [...ipc.matchAll(/auditGit\([^,]+,\s*((?:"[a-z-]+"|[^",{]+\?\s*"[a-z-]+"\s*:\s*"[a-z-]+"))\s*,/g)];
+    const stash = /auditGit\(workspaceId, `stash-\$\{action\}`/.test(ipc);
+    expect(literal.length + (stash ? 1 : 0), "an auditGit call this scan cannot read").toBe(calls);
+    const actions = literal.flatMap((m) => [...m[1].matchAll(/"([a-z-]+)"/g)].map((q) => q[1]));
+    if (stash) actions.push("stash-save", "stash-pop", "stash-drop");
+    expect(actions.length).toBeGreaterThanOrEqual(17);
+    for (const a of actions) expect(Object.keys(GIT_ACTION_LABEL), a).toContain(a);
+  });
+
+  it("the row never shows the commit message", () => {
+    const at = view.indexOf('r.row === "git" ? (');
+    expect(at).toBeGreaterThan(-1);
+    expect(view.slice(at, at + 1500)).not.toMatch(/\.message/);
+  });
+
+  it("hv:read-audit reads git.action", () => {
+    expect(readAudit).toMatch(/log\.read\(\{ type: "git\.action", \.\.\.scoped \}\)/);
+    expect(readAudit).toMatch(/\.\.\.schedules\.flat\(\), \.\.\.git\]/);
   });
 });

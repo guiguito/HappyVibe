@@ -4602,7 +4602,10 @@ export function registerIpc(
     // §35 (docs-round #7): what each schedule did. Written since §35 shipped and never read
     // until now, so the page's Schedules choice was always empty. Per type, like memory.
     const schedules = await Promise.all(SCHEDULE_EVENT_TYPES.map((t) => log.read({ type: t, ...scoped })));
-    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes, ...schedules.flat()]
+    // §29 (docs-round #31): the git actions you took. `auditGit` writes them as human actions
+    // for exactly this page, which never read them back.
+    const git = await log.read({ type: "git.action", ...scoped });
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes, ...schedules.flat(), ...git]
       // A row with no workspace never matched a workspace filter before either.
       .filter((e) => !wsKeys || (e.workspaceId != null && wsKeys.has(normPath(e.workspaceId))))
       .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
