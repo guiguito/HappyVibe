@@ -54,8 +54,9 @@ permission UX and context-window visibility as the differentiators.
 - **A worktree has no `.env`** (gitignored), so the live batch skips everything and exits 0 in
   seconds. Symlink it first: `ln -s ~/Documents/Github/HappyVibe/.env .env`. The tell of a fake
   green is the wall time.
-- Before believing a live failure: (1) `pgrep -fl "npm run dev"` — a running app is a third
-  provider consumer and reproduces "failures" even in isolation; (2) check the account has
+- Before believing a live failure: (1) `pgrep -fl electron-vite` — a running app is a third
+  provider consumer and reproduces "failures" even in isolation (`"npm run dev"` misses the main
+  checkout's app, which runs as `electron-vite dev --remoteDebuggingPort=9333`); (2) check the account has
   balance (a `402` looks exactly like a regression); (3) rerun that file alone. A batch far slower
   than ~7–8 min is the contention tell.
 - Never fix a live failure by raising a timeout: a model that finished its turn without a tool
