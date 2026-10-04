@@ -42,8 +42,9 @@ describe("afterPack signing", () => {
     "finds the real pi-runtime binaries, anydoc included",
     () => {
       const files: string[] = machOFiles(path.join(__dirname, "..", "pi-runtime", "node_modules"));
-      // 9 since pi-subagents left (it brought esbuild's darwin binary with it).
-      expect(files.length).toBeGreaterThanOrEqual(9);
+      // 7 since Pi 1.0.1 dropped its npm-shrinkwrap: Pi now shares the top-level
+      // pi-tui instead of nesting its own copy (and that copy's two .node files).
+      expect(files.length).toBeGreaterThanOrEqual(7);
       expect(files.some((f) => f.endsWith("anydoc.darwin-arm64.node"))).toBe(true);
     },
   );

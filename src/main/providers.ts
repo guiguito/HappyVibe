@@ -31,11 +31,13 @@ export function isByokProvider(p: string): boolean {
  * actually drive — but the LABELS are ours: upstream calls them "Anthropic" and
  * "OpenAI Codex", and the app has always said "Claude" and "ChatGPT (Codex)"
  * because that is the name on the subscription the user is signing in with.
- * A provider with no override keeps upstream's name.
+ * A provider with no override keeps upstream's name. Pi 0.99 added `openai`'s
+ * "Sign in with ChatGPT" and renamed Codex "(legacy)", saying the new one supersedes it.
  */
 const OAUTH_LABELS: Record<string, string> = {
   anthropic: "Claude",
-  "openai-codex": "ChatGPT (Codex)",
+  openai: "ChatGPT",
+  "openai-codex": "ChatGPT (Codex, legacy)",
 };
 export const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string }[] = OAUTH_CATALOG.map((p) => ({
   id: p.id,

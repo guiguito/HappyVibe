@@ -100,10 +100,13 @@ async function loadedCommands(gates: string[], promptScope: "dir" | "file" = "di
   await client.start();
 
   const res = await client.send({ type: "get_commands" });
-  const commands = ((res.data as { commands?: Array<{ name: string; source?: string }> })?.commands ?? [])
-    .filter((c) => /approved|sneaky|sibling/.test(c.name));
-  const bySource: Record<string, string[]> = { extension: [], skill: [], prompt: [] };
-  for (const c of commands) bySource[c.source ?? "?"]?.push(c.name);
+  type Cmd = { name: string; source?: string; sourceInfo?: { path?: string } };
+  const all = (res.data as { commands?: Cmd[] })?.commands ?? [];
+  const bySource: Record<string, string[]> = { extension: [], skill: [], prompt: [], builtin: [] };
+  for (const c of all.filter((c) => /approved|sneaky|sibling/.test(c.name))) bySource[c.source ?? "?"]?.push(c.name);
+  // Pi 0.99+ ships built-in extensions (mcp, codemode, tool-search, llama.cpp), named
+  // `builtin:<name>`. Commands are their visible trace: /mcp and /llama.
+  for (const c of all) if (c.sourceInfo?.path?.startsWith("builtin:")) bySource.builtin.push(c.sourceInfo.path);
   return bySource;
 }
 
@@ -127,6 +130,8 @@ test.skipIf(!fs.existsSync(CLI))(
     expect(loaded.extension).toEqual(expect.arrayContaining(["approved-ext", "sneaky-ext"]));
     expect(loaded.skill).toEqual(expect.arrayContaining(["skill:approved-skill", "skill:sneaky-skill"]));
     expect(loaded.prompt).toEqual(expect.arrayContaining(["approved-cmd", "sneaky-cmd"]));
+    // And Pi's own built-ins load when nothing gates them — the guard for the GATED arm.
+    expect(loaded.builtin).toEqual(expect.arrayContaining(["builtin:mcp"]));
   },
   60_000,
 );
@@ -149,6 +154,11 @@ test.skipIf(!fs.existsSync(CLI))(
     expect(loaded.extension).not.toContain("sneaky-ext");
     expect(loaded.skill).not.toContain("skill:sneaky-skill");
     expect(loaded.prompt).not.toContain("sneaky-cmd");
+
+    // Pi 0.99: --no-extensions also disables the built-in extensions. That keeps Pi's
+    // own MCP (which would read mcp.json beside the adapter) and codemode (a JS sandbox
+    // that calls tools) out of every session. Loading one is `-e builtin:<name>` — a decision.
+    expect(loaded.builtin).toEqual([]);
   },
   60_000,
 );

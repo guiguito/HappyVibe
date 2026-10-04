@@ -90,14 +90,14 @@ export const PLAN_PROVIDERS: ReadonlySet<string> = new Set(["openai-codex", "git
  * codex offers no key at all, and Copilot's token is one HappyVibe never asks
  * for — both are unconditional above.
  */
-export const KEY_RESOLVED_PLAN_PROVIDERS: readonly string[] = ["anthropic", "xai", "kimi-coding", "meta"];
+export const KEY_RESOLVED_PLAN_PROVIDERS: readonly string[] = ["anthropic", "xai", "kimi-coding", "meta", "openai"];
 
 /**
  * The plan-provider set for a given key configuration. `anthropic` and (since
- * the 2026-08-29 providers round) `xai`, `kimi-coding` and — with Pi 0.86.1 —
- * `meta` (Muse) count as plan-billed
+ * the 2026-08-29 providers round) `xai`, `kimi-coding`, — with Pi 0.86.1 —
+ * `meta` (Muse) and — with Pi 0.99 — `openai` (Sign in with ChatGPT) count as plan-billed
  * exactly when no API key is configured for them — with no key Pi falls back to
- * the subscription OAuth in auth.json (Claude Pro/Max, Grok/X, Kimi Code, Meta Muse), so
+ * the subscription OAuth in auth.json (Claude Pro/Max, Grok/X, Kimi Code, Meta Muse, ChatGPT), so
  * those calls cost nothing per token. The set is exactly the providers upstream
  * marks `isSubscription` that ALSO accept a key; a sign-in that mints a metered
  * key (OpenRouter) is not one of them.

@@ -142,6 +142,28 @@ test("hv-login github-copilot starts with an hv.auth prompt input; cancel aborts
   expect(auth["github-copilot"]).toBeUndefined();
 }, 60_000);
 
+test("hv-login openai (Sign in with ChatGPT) reaches its auth_url with a stored device id; cancel aborts before any network", async () => {
+  // Pi 0.99's ChatGPT flow throws "requires a device ID (UUID)" unless login() gets
+  // getDeviceId. Pi's own /login passes settingsManager.getOrCreateDeviceId(); the bridge must too.
+  const flowDone = client.send({ type: "prompt", message: "/hv-login openai" });
+  const first = await nextRequest((r) => (isAuth(r, "auth_url") || isAuth(r, "error")) && authOf(r).provider === "openai");
+  expect(authOf(first), JSON.stringify(authOf(first))).toMatchObject({ stage: "auth_url" });
+  const hostId = new URL(authOf(first).url as string).searchParams.get("ext_agent_host_id");
+
+  const code = await nextRequest((r) => r.method === "input" && isAuth(r, "manual_code") && authOf(r).provider === "openai");
+  client.respondUi(code.id, { cancelled: true });
+  const err = await nextRequest((r) => isAuth(r, "error") && authOf(r).provider === "openai");
+  expect(authOf(err).message).toContain("cancelled");
+  await flowDone;
+
+  // The id is Pi's own, stored where Pi's /login keeps it, so it is stable across sign-ins.
+  const { deviceId } = JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf8"));
+  expect(deviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  expect(hostId).toBe(`urn:uuid:${deviceId.toLowerCase()}`);
+  const auth = JSON.parse(fs.readFileSync(path.join(agentDir, "auth.json"), "utf8"));
+  expect(auth.openai).toBeUndefined();
+}, 60_000);
+
 // ── round 11: "signed in" must recognise an OAuth credential, not just a key ──
 
 describe("isSignedIn", () => {
