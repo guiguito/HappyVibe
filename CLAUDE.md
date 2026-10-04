@@ -91,7 +91,8 @@ permission UX and context-window visibility as the differentiators.
   all four Pi auto-discovery tiers are deny-by-default — `bash` isn't path-confined and could plant
   an extension that loads on every future session. All four are ADDITIVE (`-e`, `--skill`,
   `--prompt-template` still load); `tests/resource-gate-contract.test.ts` pins that. `--no-context-files`
-  is deliberately NOT passed (AGENTS.md loading is wanted).
+  is deliberately NOT passed (AGENTS.md loading is wanted). `--no-extensions` also keeps Pi's BUILT-IN
+  extensions off (mcp, codemode, tool-search, llama.cpp); loading one is `-e builtin:<name>`, a decision.
 - Model resolution is session → workspace → global, in TWO places that change together: `ipc.ts`
   `spawnOpts` and renderer `composer.ts` `resolveModel`. When nothing resolves the app REFUSES (the
   SessionManager `spawn` callback throws, ChatView disables send) — it never invents a model. The
