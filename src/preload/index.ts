@@ -632,12 +632,14 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:mcp-set-server", scope, workspaceId, name, cfg),
   mcpStatus: () => ipcRenderer.invoke("hv:mcp-status"),
   /** Remote servers are swept here, not at boot — a credential read can raise a keychain prompt. */
-  mcpSweepRemote: (force?: boolean) => ipcRenderer.invoke("hv:mcp-sweep-remote", force),
+  mcpRefresh: () => ipcRenderer.invoke("hv:mcp-refresh"),
+  mcpSigninCancel: () => ipcRenderer.invoke("hv:mcp-signin-cancel"),
   mcpCheck: (scope: "global" | "workspace", workspaceId: string | null, name?: string) =>
     ipcRenderer.invoke("hv:mcp-check", scope, workspaceId, name),
   mcpAuthenticate: (scope: "global" | "workspace", workspaceId: string | null, name: string) =>
     ipcRenderer.invoke("hv:mcp-authenticate", scope, workspaceId, name),
-  mcpLogout: (name: string) => ipcRenderer.invoke("hv:mcp-logout", name),
+  mcpLogout: (name: string, scope?: "global" | "workspace", workspaceId?: string | null) =>
+    ipcRenderer.invoke("hv:mcp-logout", name, scope ?? "global", workspaceId ?? null),
   // §13 round 8: curated catalog — install by KEY (main owns the catalog and the
   // secrets, so a renderer bug cannot write an arbitrary server), plus the
   // node/npx preflight that badges stdio entries before the click.
@@ -656,6 +658,12 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:mcp-connect-flow", scope, workspaceId, name) as Promise<
       { ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }
     >,
+  /** §13 (2026-10-05): the sign-in URL, as soon as Pi prints it. */
+  onMcpSignin: (cb: (p: { name: string; scope: "global" | "workspace"; workspaceId: string | null; url: string }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { name: string; scope: "global" | "workspace"; workspaceId: string | null; url: string });
+    ipcRenderer.on("hv:mcp-signin", h);
+    return () => ipcRenderer.removeListener("hv:mcp-signin", h);
+  },
   onMcpStatusChanged: (cb: (s: unknown[]) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s as unknown[]);
     ipcRenderer.on("hv:mcp-status-changed", h);

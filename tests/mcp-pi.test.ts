@@ -63,3 +63,16 @@ test("real key-free run: pi mcp list --json on the echo fixture", async () => {
   const r = await piMcpList({ runtimeDir: runtime, agentDir, env: {}, execPath: process.execPath });
   expect(r.servers.find((s) => s.name === "echo")).toMatchObject({ state: "connected", tools: ["echo"] });
 }, 30_000);
+
+test("removing a server logs out BEFORE the entry leaves mcp.json (pi mcp logout looks it up by name)", async () => {
+  const { removeServerInOrder } = await import("../src/main/mcpPi");
+  const calls: string[] = [];
+  await removeServerInOrder({ stillUsed: false, logout: async () => { calls.push("logout"); }, write: () => calls.push("write") });
+  expect(calls).toEqual(["logout", "write"]);
+  calls.length = 0;
+  await removeServerInOrder({ stillUsed: true, logout: async () => { calls.push("logout"); }, write: () => calls.push("write") });
+  expect(calls).toEqual(["write"]);
+  calls.length = 0;
+  await removeServerInOrder({ stillUsed: false, logout: async () => { throw new Error("x"); }, write: () => calls.push("write") });
+  expect(calls).toEqual(["write"]);
+});

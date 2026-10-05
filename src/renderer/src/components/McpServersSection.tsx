@@ -223,7 +223,7 @@ export function McpServersSection({
     // raise an OS keychain prompt, and an app that opens behind a password
     // dialog is worse than a badge that resolves a moment after you open this
     // page. Latched in main, so switching tabs does not re-prompt.
-    void window.hv.mcpSweepRemote().then(apply).catch(() => { /* non-fatal */ });
+    void window.hv.mcpRefresh().then(apply).catch(() => { /* non-fatal */ });
     unsubRef.current = window.hv.onMcpStatusChanged((list) => {
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });
@@ -378,7 +378,7 @@ export function McpServersSection({
                 {!off && status?.state === "connected" && isHttp && (
                   <button
                     type="button"
-                    onClick={() => void window.hv.mcpLogout(s.name).catch((e) => setError(String(e)))}
+                    onClick={() => void window.hv.mcpLogout(s.name, s.scope, s.scope === "workspace" ? workspaceId : null).catch((e) => setError(String(e)))}
                     className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 text-ink-soft hover:bg-paper-deep/40 cursor-pointer shrink-0"
                   >
                     Log out

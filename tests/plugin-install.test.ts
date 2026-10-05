@@ -214,10 +214,14 @@ describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
     expect(install).toMatch(/pluginServerEntry\(cfg, scan\.name, marketplaceId\), \{ failIfExists: true \}/); // Review Focus 2: a reinstall never rewrites (so never re-disables) a server you already connected
     expect(install).not.toMatch(/scheduleMcpReload\(/);
     const flow = between(ipc, '"hv:mcp-connect-flow"', 'ipcMain.handle("hv:mcp-status"');
-    expect(flow).toMatch(/if \(result\.state === "connected"\) \{/);
-    expect(flow).toMatch(/if \(now && isMcpServerOff\(now\)\) \{\s*writeMcpServer\(file, name, withoutOffFlag\(now\)\);\s*scheduleMcpReload\(scope, workspaceId\);/);
-    expect(between(ipc, "const checkServer = async", "// Startup connectivity sweep")).toMatch(/if \(!cfg \|\| isMcpServerOff\(cfg\)\) \{/);
-    expect(between(ipc, "const httpByName", "const wanted").match(/isMcpServerOff\(cfg\)/g)).toHaveLength(2);
+    // §13 (2026-10-05): Pi neither lists nor probes an off server, so Connect switches it on
+    // first and puts it back off when the connect fails.
+    expect(flow).toMatch(/const wasOff = isMcpServerOff\(cfg\);\s*if \(wasOff\) writeMcpServer\(file, name, withoutOffFlag\(cfg\)\);/);
+    expect(flow).toMatch(/if \(status\?\.state === "connected"\) \{\s*if \(wasOff \|\| signedIn\) scheduleMcpReload\(scope, workspaceId\);/);
+    expect(flow).toMatch(/writeMcpServer\(file, name, \{ \.\.\.now, enabled: false \}\)/);
+    // Every status refresh skips an off server (Pi's own list would show it "disabled").
+    expect(between(ipc, "const refreshGlobal = async", "const refreshWorkspace").match(/isMcpServerOff\(c\)/g)).toHaveLength(2);
+    expect(between(ipc, "const refreshWorkspace = async", "const refreshTier").match(/isMcpServerOff\(c\)/g)).toHaveLength(1);
   });
 
   it("cleanup C5: a failed Connect on an off server leaves no status, Log out hides on off, saving an off server reloads nothing", () => {

@@ -111,3 +111,13 @@ export function parseMcpStatus(text: string): Array<{ name: string; state: McpSt
   }
   return rows;
 }
+
+/** Removing a server: Pi finds a server BY NAME in mcp.json, so a sign-in is revoked
+    before the entry goes, or the token is orphaned in mcp-auth.json. A failing logout
+    never blocks the removal. */
+export async function removeServerInOrder(o: { stillUsed: boolean; logout: () => Promise<unknown>; write: () => void }): Promise<void> {
+  if (!o.stillUsed) {
+    try { await o.logout(); } catch { /* the removal still happens */ }
+  }
+  o.write();
+}
