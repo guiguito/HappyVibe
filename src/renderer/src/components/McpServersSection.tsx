@@ -38,7 +38,8 @@ export type ConnectResultState =
   | { phase: "error"; serverName: string; error: string; retry: () => void };
 
 /**
- * A server's tools with their descriptions. Shared by the post-install confirm
+ * A server's tools — names, plus a description when one is known (Pi's list reports names
+ * only, §13 2026-10-05). Shared by the post-install confirm
  * modal and (round 11) the tool-count disclosure on each server row — the same
  * data, and it was already fetched for both.
  */
@@ -61,6 +62,13 @@ export function McpToolList({
   );
 }
 
+/** §13 (2026-10-05): Pi's own sign-in — copy as data (tests/mcp-page-copy.test.ts). */
+export const MCP_SIGNIN_COPY = {
+  waiting: "Waiting for sign-in in your browser…",
+  reopen: "Open the sign-in page again",
+  cancel: "Cancel",
+};
+
 export function McpConnectResult({
   state,
   onClose,
@@ -68,6 +76,14 @@ export function McpConnectResult({
   state: ConnectResultState;
   onClose: () => void;
 }): React.JSX.Element {
+  // The sign-in page Pi opened, so the user can get back to it if the tab got lost.
+  const [signinUrl, setSigninUrl] = useState<string | null>(null);
+  const connectingTo = state.phase === "connecting" ? state.serverName : null;
+  useEffect(() => {
+    setSigninUrl(null);
+    if (!connectingTo) return;
+    return window.hv.onMcpSignin((p) => { if (p.name === connectingTo) setSigninUrl(p.url); });
+  }, [connectingTo]);
   return (
     <div
       className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6"
@@ -93,21 +109,27 @@ export function McpConnectResult({
                 className="inline-block w-4 h-4 rounded-full border-2 border-tangerine border-t-transparent animate-spin shrink-0"
                 aria-hidden
               />
-              Waiting for authorisation…
+              {signinUrl ? MCP_SIGNIN_COPY.waiting : "Connecting…"}
               <span className="flex-1" />
-              {/* Abandoning the browser sign-in must not trap the user behind a
-                  spinner that only clears on the auth timeout. Dismissing is
-                  cosmetic — main's attempt runs to completion and its result is
-                  ignored — so the server is simply left unauthenticated, which
-                  the status badge already reports. */}
+              {/* Abandoning the browser sign-in must not trap the user behind a spinner. Cancel
+                  stops Pi's sign-in for real, which also frees its loopback callback port. */}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => { void window.hv.mcpSigninCancel(); onClose(); }}
                 className="text-xs font-bold text-ink-soft underline hover:text-ink cursor-pointer shrink-0"
               >
-                Cancel
+                {MCP_SIGNIN_COPY.cancel}
               </button>
             </div>
+            {signinUrl && (
+              <button
+                type="button"
+                onClick={() => void window.hv.openExternal(signinUrl)}
+                className="mt-3 text-xs font-bold text-tangerine-deep underline cursor-pointer"
+              >
+                {MCP_SIGNIN_COPY.reopen}
+              </button>
+            )}
           </>
         )}
 
@@ -169,7 +191,7 @@ export function McpConnectResult({
 
 /**
  * MCP servers CRUD (Agents & Tools page). Writes standard mcpServers JSON
- * vendored pi-mcp-adapter reads: global → app agent dir mcp.json,
+ * HappyVibe reads: global → app agent dir mcp.json (Pi reads it),
  * workspace → <workspace>/.mcp.json (shareable with other MCP hosts).
  * Config read at session start — a change respawns open sessions once they're
  * idle (ipc.ts scheduleMcpReload).
@@ -219,11 +241,9 @@ export function McpServersSection({
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     };
     void window.hv.mcpStatus().then(apply).catch(() => { /* non-fatal */ });
-    // Remote servers are NOT swept at boot: reading their OAuth credential can
-    // raise an OS keychain prompt, and an app that opens behind a password
-    // dialog is worse than a badge that resolves a moment after you open this
-    // page. Latched in main, so switching tabs does not re-prompt.
-    void window.hv.mcpSweepRemote().then(apply).catch(() => { /* non-fatal */ });
+    // §13 (2026-10-05): workspace servers are asked about here, not at boot — each probe
+    // is a Pi that starts every server.
+    void window.hv.mcpRefresh(scope === "workspace" ? workspaceId : null).then(apply).catch(() => { /* non-fatal */ });
     unsubRef.current = window.hv.onMcpStatusChanged((list) => {
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });
@@ -319,7 +339,7 @@ export function McpServersSection({
             const sKey = statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name);
             const status = statuses.get(sKey);
             const isHttp = typeof s.cfg.url === "string";
-            const off = s.cfg.disabled === true; // docs-round #25: a plugin's server, until Connect
+            const off = s.cfg.enabled === false; // docs-round #25: a plugin's server, until Connect
             const brand = brandIconFor(s.name);
             return (
               <div key={`${s.scope}:${s.name}`} className="border-b border-line last:border-b-0">
@@ -352,7 +372,7 @@ export function McpServersSection({
                           : undefined
                       }
                     />
-                    {s.cfg.directTools ? (
+                    {s.cfg.exposure === "direct" ? (
                       <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
                         direct
                       </span>
@@ -378,7 +398,7 @@ export function McpServersSection({
                 {!off && status?.state === "connected" && isHttp && (
                   <button
                     type="button"
-                    onClick={() => void window.hv.mcpLogout(s.name).catch((e) => setError(String(e)))}
+                    onClick={() => void window.hv.mcpLogout(s.name, s.scope, s.scope === "workspace" ? workspaceId : null).catch((e) => setError(String(e)))}
                     className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 text-ink-soft hover:bg-paper-deep/40 cursor-pointer shrink-0"
                   >
                     Log out
@@ -444,6 +464,12 @@ export function McpServersSection({
   );
 }
 
+/** §13 (2026-10-05): a workspace server shadowed by a global one of the same name (Pi's file wins). */
+export const MCP_OVERRIDDEN_PILL = {
+  label: "overridden",
+  title: "Overridden by your global server of the same name",
+};
+
 /** docs-round #25: the badge of a server that arrived off. Exported as data (no DOM in the suite). */
 export const MCP_OFF_PILL = {
   label: "off",
@@ -501,6 +527,13 @@ function McpStatusBadge({
       </button>
     );
   }
+  if (state === "overridden") {
+    return (
+      <span title={MCP_OVERRIDDEN_PILL.title} className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+        {MCP_OVERRIDDEN_PILL.label}
+      </span>
+    );
+  }
   if (state === "needs-auth") {
     return (
       <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-honey-soft text-tangerine-deep border border-honey/60 shrink-0">
@@ -546,7 +579,7 @@ function McpServerEditor({
   const [env, setEnv] = useState(
     Object.entries((cfg.env as Record<string, string>) ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"),
   );
-  const [direct, setDirect] = useState(Boolean(cfg.directTools));
+  const [direct, setDirect] = useState(cfg.exposure === "direct");
   const [error, setError] = useState<string | null>(null);
 
   const save = async (): Promise<void> => {
@@ -563,9 +596,11 @@ function McpServerEditor({
           ? { command: cmd, args: args.length ? args : undefined, url: undefined, headers: undefined }
           : { url, command: undefined, args: undefined, env: undefined }),
         ...(kind === "stdio" && Object.keys(envObj).length ? { env: envObj } : {}),
-        ...(direct ? { directTools: true } : { directTools: undefined }),
+        // §13 (2026-10-05): Pi's exposure. Unticking only undoes "direct" — a hand-set
+        // hidden/codemode survives an edit.
+        exposure: direct ? "direct" : cfg.exposure === "direct" || cfg.exposure === undefined ? "deferred" : cfg.exposure,
         // docs-round #25: Edit is not the switch. Connect is.
-        ...(cfg.disabled === true ? { disabled: true } : {}),
+        ...(cfg.enabled === false ? { enabled: false } : {}),
       };
       for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
       if (kind === "stdio" && !cmd) throw new Error("Command is required");
@@ -575,7 +610,7 @@ function McpServerEditor({
       if (server && (server.scope !== scope || server.name !== name)) {
         await window.hv.mcpSetServer(server.scope, server.scope === "workspace" ? workspaceId : null, server.name, null);
       }
-      onSaved(scope, name, kind === "http" && cfg.disabled !== true);
+      onSaved(scope, name, kind === "http" && cfg.enabled !== false);
     } catch (e) {
       setError(String(e));
     }

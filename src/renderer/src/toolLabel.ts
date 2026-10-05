@@ -11,7 +11,7 @@
  */
 
 import { describeCommand } from "./describeCommand";
-import { isMcpNamespaceTool, unwrapMcpCall, unwrapMcpNamespaceCall } from "../../../pi-runtime/extensions/hv-mcp";
+import { parsePiMcpToolName, READ_RESOURCE_TOOL } from "../../../pi-runtime/extensions/hv-mcp";
 
 export type IconKind =
   | "terminal"
@@ -239,11 +239,17 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     if (v && subject) return { icon: v.icon, label: `${v.kind}: ${subject}` };
   }
 
-  // #35: the adapter's per-server `mcp__<ns>` tools read like the `mcp` proxy's calls.
-  if (isMcpNamespaceTool(toolName)) {
-    const info = unwrapMcpNamespaceCall(toolName, a);
-    if (info) return { icon: "wrench", label: intent ?? info.display, brand: brandIconFor(info.mcpTool ?? info.server) };
+  // §13 (2026-10-05): Pi's MCP tools. Headline = the model's intent, else the factual call.
+  const piMcp = parsePiMcpToolName(toolName);
+  if (piMcp) {
+    const detail = str("url") ?? str("uri") ?? str("query") ?? str("q") ?? str("path") ?? str("name") ?? str("id") ?? str("title");
+    const fact = `MCP → ${piMcp.server}: ${piMcp.tool}${detail ? `: ${truncate(detail)}` : ""}`;
+    return { icon: "wrench", label: intent ?? fact, brand: brandIconFor(piMcp.server) };
   }
+  if (toolName === READ_RESOURCE_TOOL) {
+    return { icon: "wrench", label: intent ?? `MCP → ${str("server") ?? "?"}: read ${truncate(str("uri") ?? "?")}`, brand: brandIconFor(str("server") ?? undefined) };
+  }
+  if (toolName === "tool_search") return { icon: "search", label: `Searching tools: ${truncate(str("query") ?? "")}` };
 
   switch (toolName) {
     case "bash": {
@@ -390,13 +396,6 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       const p = str("path");
       return { icon: "folder", label: `Listing ${p ? basename(p) : "the current directory"}` };
     }
-    case "mcp": {
-      // Prefer the model-authored intent (injected on the proxy tool via
-      // requireIntent); fall back to the factual unwrapped display. #4: show the
-      // server's brand icon when recognized, else the generic MCP glyph.
-      const info = unwrapMcpCall(a);
-      return { icon: "wrench", label: intent ?? info.display, brand: brandIconFor(info.mcpTool ?? info.server) };
-    }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };
     // tintinweb (PRD §12, 2026-09-26): the model's own short `description` is the headline it wrote for the card.
@@ -425,8 +424,6 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     default:
       // Unknown/registered tool: the intent it carries, else a prettified name.
-      // #4: direct-mode MCP tools land here (not the `mcp` proxy) with names like
-      // "notion_create-pages" — surface their brand icon too.
       return { icon: "wrench", label: intent ?? prettify(toolName), brand: brandIconFor(toolName) };
   }
 }

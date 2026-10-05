@@ -110,6 +110,8 @@ interface ConfigFile {
       is what makes a DELETED one stay deleted — without it every launch would
       resurrect a rule the user removed on purpose. */
   gitRulesSeeded?: boolean;
+  /** §13 (2026-10-05): stored mcp: rules rewritten once for Pi's tool spelling. */
+  mcpRulesMigrated?: boolean;
   /** §29 (2b): model for "Write it for me". Absent = the same cheap-flash
       resolution the session-title generator uses. Global only — it is a cost
       preference about a one-shot call, not a property of any workspace. */
@@ -320,6 +322,17 @@ export function getGitRulesSeeded(): boolean {
 export function setGitRulesSeeded(seeded: boolean): void {
   const cfg = load();
   cfg.gitRulesSeeded = seeded;
+  save(cfg);
+}
+
+// §13 (2026-10-05): run-once flag for the MCP rule migration (mcpMigrate.ts).
+export function getMcpRulesMigrated(): boolean {
+  return load().mcpRulesMigrated ?? false;
+}
+
+export function setMcpRulesMigrated(done: boolean): void {
+  const cfg = load();
+  cfg.mcpRulesMigrated = done;
   save(cfg);
 }
 

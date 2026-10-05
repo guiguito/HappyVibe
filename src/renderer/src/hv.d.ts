@@ -767,7 +767,7 @@ interface McpServerStatusLike {
   name: string;
   scope: "global" | "workspace";
   workspaceId: string | null;
-  state: "connected" | "needs-auth" | "failed" | "checking";
+  state: "connected" | "needs-auth" | "failed" | "checking" | "overridden";
   toolCount: number;
   tools?: { name: string; description?: string }[];
   error?: string;
@@ -1358,15 +1358,18 @@ interface HvApi {
     cfg: Record<string, unknown> | null,
   ): Promise<McpFileLike>;
   mcpStatus(): Promise<McpServerStatusLike[]>;
-  /** Sweeps REMOTE servers (credential read + probe). Latched once per app run unless forced. */
-  mcpSweepRemote(force?: boolean): Promise<McpServerStatusLike[]>;
+  /** §13 (2026-10-05): asks Pi about the global servers, and the given workspace's if any. */
+  mcpRefresh(workspaceId?: string | null): Promise<McpServerStatusLike[]>;
+  /** Cancels the sign-in in progress (its pending mcpAuthenticate resolves not-ok). */
+  mcpSigninCancel(): Promise<void>;
+  onMcpSignin(cb: (p: { name: string; scope: "global" | "workspace"; workspaceId: string | null; url: string }) => void): () => void;
   mcpCheck(scope: "global" | "workspace", workspaceId: string | null, name?: string): Promise<void>;
   mcpAuthenticate(
     scope: "global" | "workspace",
     workspaceId: string | null,
     name: string,
   ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
-  mcpLogout(name: string): Promise<void>;
+  mcpLogout(name: string, scope?: "global" | "workspace", workspaceId?: string | null): Promise<{ ok: boolean; message: string }>;
   onMcpStatusChanged(cb: (s: McpServerStatusLike[]) => void): () => void;
   /** §15 round 21: main wrote an AGENTS.md draft (root and any nested). */
   onAgentsMdWritten(cb: (p: { workspaceId: string; files: string[] }) => void): () => void;

@@ -90,7 +90,7 @@ describe("the generated plugin catalog", () => {
 
   it("never lists a plugin whose MCP server we could never authenticate with", () => {
     // Both carry real skills, so they would pass every other check — they are
-    // excluded because mcpOAuth.ts does DCR only and these vendors issue
+    // excluded because HappyVibe signs in with DCR and these vendors issue
     // credentials solely to pre-registered clients.
     for (const banned of ["figma", "slack"]) {
       expect(PLUGIN_CATALOG.find((e) => e.name === banned), banned).toBeUndefined();

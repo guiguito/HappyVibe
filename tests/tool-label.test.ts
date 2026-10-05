@@ -93,52 +93,39 @@ test("missing/malformed args never throw — sensible fallbacks", () => {
   expect(toolLabel("grep", {}).label).toBe("Searching");
 });
 
-test("mcp proxy invoke → unwrapped label, never bare 'mcp'", () => {
-  const l = toolLabel("mcp", { tool: "github_create_issue", args: "{}" });
-  expect(l.label).toBe("MCP → github_create_issue");
-  expect(l.icon).toBe("wrench");
+// §13 (2026-10-05): Pi's built-in MCP — each server tool is mcp__<server>__<tool>.
+test("Pi MCP tool → factual label with one key argument, never bare 'mcp'", () => {
+  const l = toolLabel("mcp__notion__fetch", { url: "https://x.y/p" });
+  expect(l.label).toBe("MCP → notion: fetch: https://x.y/p");
+  expect(l.brand).toBe("si-notion");
 });
 
-test("mcp discovery → discovery label", () => {
-  expect(toolLabel("mcp", { search: "screenshot" }).label).toBe('MCP discovery: search "screenshot"');
+test("Pi MCP tool: the model's intent wins as the headline", () => {
+  expect(toolLabel("mcp__notion__fetch", { url: "u", intent: "Reading the page" }).label).toBe("Reading the page");
 });
 
-test("mcp: model-authored intent takes precedence over the derived label", () => {
-  const l = toolLabel("mcp", {
-    tool: "notion_fetch",
-    args: '{"url":"https://notion.so/p/1"}',
-    intent: "Fetching this page to check opinions",
-  });
-  expect(l.label).toBe("Fetching this page to check opinions");
-  expect(l.icon).toBe("wrench");
+test("Pi MCP tool with no key argument → server and tool only", () => {
+  expect(toolLabel("mcp__github__create_issue", { body: "x" }).label).toBe("MCP → github: create_issue");
+  expect(toolLabel("mcp__github__create_issue", {}).brand).toBe("si-github");
 });
 
-test("mcp: without intent, falls back to the enriched factual display", () => {
-  expect(toolLabel("mcp", { tool: "notion_fetch", args: '{"url":"https://notion.so/p/1"}' }).label).toBe(
-    "MCP → notion_fetch: https://notion.so/p/1",
-  );
+test("resource read and tool search read as what they do", () => {
+  expect(toolLabel("read_mcp_resource", { server: "docs", uri: "file:///a" }).label).toBe("MCP → docs: read file:///a");
+  expect(toolLabel("tool_search", { query: "linear issues" }).label).toBe("Searching tools: linear issues");
 });
 
-// #4 (round-4 follow-up): brand icon resolution from the tool identifier.
-test("mcp proxy call resolves a brand icon from the server prefix", () => {
-  expect(toolLabel("mcp", { tool: "notion_create-pages", args: "{}" }).brand).toBe("si-notion");
-  expect(toolLabel("mcp", { tool: "github_create_issue", args: "{}" }).brand).toBe("si-github");
+test("the adapter's `mcp` proxy has no special case any more", () => {
+  expect(toolLabel("mcp", { tool: "notion_fetch", args: "{}" }).label).not.toContain("MCP →");
 });
 
 test("brand resolution tolerates server-key variants and hyphens", () => {
-  // notionApi_… → prefix-match "notion"; notion-mcp_… → token "notion"
-  expect(toolLabel("mcp", { tool: "notionApi_create-pages", args: "{}" }).brand).toBe("si-notion");
-  expect(toolLabel("mcp", { tool: "notion-mcp_fetch", args: "{}" }).brand).toBe("si-notion");
-});
-
-test("direct-mode MCP tool (not the proxy) still resolves its brand", () => {
-  // In "expose tools directly" mode the tool name hits the default case.
-  expect(toolLabel("notion_create-pages", {}).brand).toBe("si-notion");
+  expect(toolLabel("mcp__notionApi__create_pages", {}).brand).toBe("si-notion");
+  expect(toolLabel("mcp__notion_mcp__fetch", {}).brand).toBe("si-notion");
 });
 
 test("non-brand tools carry no brand icon", () => {
   expect(toolLabel("ask_user", {}).brand).toBeUndefined();
-  expect(toolLabel("mcp", { tool: "customserver_dostuff", args: "{}" }).brand).toBeUndefined();
+  expect(toolLabel("mcp__customserver__dostuff", {}).brand).toBeUndefined();
 });
 
 // §13 round 8 — brand icons for the curated catalog's new entries. Only classes

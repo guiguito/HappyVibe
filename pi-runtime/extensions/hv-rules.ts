@@ -98,7 +98,10 @@ export const isShellTool = (tool: string): boolean => SHELL_TOOLS.has(tool);
 // `find` is Pi's own read-only search (its builtins are bash/edit/find/grep/ls/read/write);
 // `glob`/`list` are kept for older Pi names. Added 2026-09-27: without it every sub-agent
 // `find` prompted — and before child prompts existed, was silently refused.
-export const SAFE_TOOLS = new Set(["read", "grep", "find", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
+export const SAFE_TOOLS = new Set([
+  // §13 (2026-10-05): read-only MCP discovery (Pi's tool search and resource lists).
+  "tool_search", "list_mcp_resources", "list_mcp_resource_templates",
+  "read", "grep", "find", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
   // §35: schedule_list is a read. schedule_create and schedule_update are here
   // for the ask_user reason rather than that one — their ONLY effect is to open
   // the drawer for the human to fill in, and main refuses to write without it

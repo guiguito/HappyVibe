@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
-import { PI_CLI_RELPATH, resolvePiSpawn } from "../src/main/pi/spawn";
+import { PI_CLI_RELPATH, PI_MCP_EXTENSIONS, resolvePiSpawn } from "../src/main/pi/spawn";
 
 /**
  * CONTRACT TEST — part of the Pi pin-bump gate, sibling of skills-contract.test.ts
@@ -141,8 +141,8 @@ test.skipIf(!fs.existsSync(CLI))(
   async () => {
     const loaded = await loadedCommands(["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"]);
 
-    // Additive — this is the half that keeps the bridge, the MCP adapter and
-    // pi-subagents alive under --no-extensions.
+    // Additive — this is the half that keeps the bridge and pi-subagents alive
+    // under --no-extensions (and lets `-e builtin:<name>` load a chosen built-in).
     expect(loaded.extension).toContain("approved-ext");
     expect(loaded.skill).toContain("skill:approved-skill");
     expect(loaded.prompt).toContain("approved-cmd");
@@ -159,6 +159,19 @@ test.skipIf(!fs.existsSync(CLI))(
     // own MCP (which would read mcp.json beside the adapter) and codemode (a JS sandbox
     // that calls tools) out of every session. Loading one is `-e builtin:<name>` — a decision.
     expect(loaded.builtin).toEqual([]);
+  },
+  60_000,
+);
+
+// §13 (2026-10-05): chat sessions load exactly Pi's MCP and tool search — and nothing
+// else built in. codemode stays off (a JS sandbox that calls tools; its own round).
+test.skipIf(!fs.existsSync(CLI))(
+  "GATED + MCP: -e builtin:mcp -e builtin:tool-search loads Pi's MCP and no other built-in",
+  async () => {
+    const loaded = await loadedCommands(["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", ...PI_MCP_EXTENSIONS]);
+    // tool-search registers a tool, not a command, so /mcp is the one visible built-in.
+    expect(loaded.builtin).toEqual(["builtin:mcp"]);
+    expect(loaded.extension).not.toContain("sneaky-ext");
   },
   60_000,
 );

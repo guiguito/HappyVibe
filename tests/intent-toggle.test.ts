@@ -46,7 +46,7 @@ describe("the flag itself", () => {
 
 describe("requireIntent ON", () => {
   test("injects a REQUIRED intent into the registered tools", () => {
-    const mcp = tool("mcp");
+    const mcp = tool("use_skill");
     requireIntent(fakePi([mcp]) as never, true);
     expect(mcp.parameters.properties.intent).toBeDefined();
     expect(mcp.parameters.required).toContain("intent");
@@ -58,14 +58,14 @@ describe("requireIntent ON", () => {
     expect(sub.parameters.properties.intent).toBeUndefined();
   });
 
-  test("adapter-registered DIRECT tools get it too — that is where it scales", () => {
-    const direct = tool("github_create_issue", "/x/node_modules/pi-mcp-adapter/index.ts");
+  test("Pi's MCP tools get it too — that is where it scales", () => {
+    const direct = tool("github_create_issue", "builtin:mcp");
     requireIntent(fakePi([direct]) as never, true);
     expect(direct.parameters.required).toContain("intent");
   });
 
   test("a server tool with its OWN intent param is left alone", () => {
-    const own = tool("weird_tool", "/x/node_modules/pi-mcp-adapter/index.ts");
+    const own = tool("weird_tool", "builtin:mcp");
     own.parameters.properties.intent = { type: "string", description: "theirs" };
     requireIntent(fakePi([own]) as never, true);
     expect(own.parameters.properties.intent).toEqual({ type: "string", description: "theirs" });
@@ -75,9 +75,9 @@ describe("requireIntent ON", () => {
 
 describe("requireIntent OFF", () => {
   test("injects nothing anywhere", () => {
-    const mcp = tool("mcp");
+    const mcp = tool("use_skill");
     const sub = tool("Agent");
-    const direct = tool("github_create_issue", "/x/node_modules/pi-mcp-adapter/index.ts");
+    const direct = tool("github_create_issue", "builtin:mcp");
     requireIntent(fakePi([mcp, sub, direct]) as never, false);
     for (const t of [mcp, sub, direct]) {
       expect(t.parameters.properties.intent, `${t.name} should carry no intent`).toBeUndefined();
@@ -86,7 +86,7 @@ describe("requireIntent OFF", () => {
   });
 
   test("is idempotent — a second turn does not sneak it back in", () => {
-    const mcp = tool("mcp");
+    const mcp = tool("use_skill");
     requireIntent(fakePi([mcp]) as never, false);
     requireIntent(fakePi([mcp]) as never, false);
     expect(mcp.parameters.properties.intent).toBeUndefined();
@@ -130,7 +130,7 @@ describe("stripIntent", () => {
   test("never touches an MCP SERVER tool that declares its own intent", () => {
     // The direct-mode rule deliberately leaves those alone — stripping one
     // would change the arguments a third-party server receives.
-    const server = tool("weird_tool", "/x/node_modules/pi-mcp-adapter/index.ts");
+    const server = tool("weird_tool", "builtin:mcp");
     server.parameters.properties.intent = { type: "string", description: "theirs" };
     server.parameters.required = ["intent"];
     stripIntent(fakePi([server]) as never, false);

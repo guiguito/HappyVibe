@@ -81,7 +81,7 @@ describe("MCP catalog data", () => {
   });
 
   it("does not ship servers that reject dynamic client registration", () => {
-    // mcpOAuth.ts implements DCR only. A server that allowlists pre-registered
+    // HappyVibe signs in through Pi with DCR. A server that allowlists pre-registered
     // clients gives a tile that cannot succeed, so it must not ship:
     //   slack  — documents confidential OAuth, DCR explicitly unsupported.
     //   figma  — advertises a registration_endpoint but returns a bare 403
@@ -185,4 +185,14 @@ describe("catalogCategories", () => {
   it("is empty for an empty catalog", () => {
     expect(catalogCategories([])).toEqual([]);
   });
+});
+
+// §13 (2026-10-05): Pi lists a server for the model by its `description` and ranks
+// tool_search by it — every catalog install writes the card's one-liner.
+it("every catalog install carries the card's tagline as its description", async () => {
+  const { MCP_CATALOG: all, buildCatalogInstall: build } = await import("../src/main/mcpCatalog");
+  for (const entry of all) {
+    const values = Object.fromEntries(entry.inputs.map((i) => [i.id, "x"]));
+    expect(build(entry, values).cfg.description, entry.key).toBe(entry.tagline);
+  }
 });

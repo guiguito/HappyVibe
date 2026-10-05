@@ -3,7 +3,9 @@ import type { McpServerConfig } from "./mcp";
 /**
  * MCP servers HappyVibe can never authenticate with, because the vendor issues
  * credentials only to an allowlist of pre-registered clients while
- * `mcpOAuth.ts` implements **Dynamic Client Registration only**.
+ * a plugin cannot ship a client secret, and HappyVibe does not send another product's
+ * `oauth.clientName` to get past an allowlist (§13, 2026-10-05, decision 15). Pi signs in
+ * with Dynamic Client Registration by default.
  *
  * §25 uses this to keep such plugins out of the store entirely: a card that
  * installs a server which can never connect is worse than no card.

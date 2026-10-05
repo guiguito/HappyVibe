@@ -16,7 +16,8 @@ test("missing / invalid file reads as empty mcpServers", () => {
 test("write → read round-trip; null removes", () => {
   const f = tmpFile();
   writeMcpServer(f, "echo", { command: "node", args: ["server.mjs"] });
-  expect(readMcpFile(f).mcpServers.echo).toEqual({ command: "node", args: ["server.mjs"] });
+  // §13 (2026-10-05): every write lands in Pi's shape — deferred unless said otherwise.
+  expect(readMcpFile(f).mcpServers.echo).toEqual({ command: "node", args: ["server.mjs"], exposure: "deferred" });
   writeMcpServer(f, "echo", null);
   expect(readMcpFile(f).mcpServers).toEqual({});
 });
@@ -58,20 +59,20 @@ test("failIfExists refuses to overwrite and leaves the existing server untouched
   ).toThrow(/already exists/);
 
   // The user's hand-rolled config survives verbatim — that is the point.
-  expect(readMcpFile(f).mcpServers.github).toEqual({ url: "https://mine.example/mcp" });
+  expect(readMcpFile(f).mcpServers.github).toEqual({ url: "https://mine.example/mcp", exposure: "deferred" });
 });
 
 test("failIfExists writes normally when the name is free", () => {
   const f = tmpFile();
   writeMcpServer(f, "notion", { url: "https://notion.example/mcp" }, { failIfExists: true });
-  expect(readMcpFile(f).mcpServers.notion).toEqual({ url: "https://notion.example/mcp" });
+  expect(readMcpFile(f).mcpServers.notion).toEqual({ url: "https://notion.example/mcp", exposure: "deferred" });
 });
 
 test("write still overwrites by default — the editor's Edit flow depends on it", () => {
   const f = tmpFile();
   writeMcpServer(f, "notion", { url: "https://one.example/mcp" });
   writeMcpServer(f, "notion", { url: "https://two.example/mcp" });
-  expect(readMcpFile(f).mcpServers.notion).toEqual({ url: "https://two.example/mcp" });
+  expect(readMcpFile(f).mcpServers.notion).toEqual({ url: "https://two.example/mcp", exposure: "deferred" });
 });
 
 test("failIfExists collides case-insensitively and names the existing key", () => {
@@ -86,4 +87,11 @@ test("failIfExists collides case-insensitively and names the existing key", () =
   ).toThrow(/"Notion" already exists/);
 
   expect(Object.keys(readMcpFile(f).mcpServers)).toEqual(["Notion"]);
+});
+
+test("off is Pi's enabled:false; withoutOffFlag clears both spellings", async () => {
+  const { isMcpServerOff, withoutOffFlag } = await import("../src/main/mcp");
+  expect(isMcpServerOff({ enabled: false })).toBe(true);
+  expect(isMcpServerOff({ url: "u" })).toBe(false);
+  expect(withoutOffFlag({ url: "u", enabled: false, disabled: true })).toEqual({ url: "u" });
 });

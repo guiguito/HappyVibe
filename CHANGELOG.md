@@ -2,7 +2,18 @@
 
 ## [Unreleased]
 
+### Heads up
+
+- **Sign in to your MCP servers once more.** MCP sign-ins no longer live in your system's
+  keychain, so each server that needed a sign-in asks again, once. The old entries stay in the
+  keychain, unused: to remove them, search it for `pi-mcp-adapter.oauth` (**Keychain Access** on
+  macOS, **Credential Manager** on Windows).
+
 ### Added
+
+- **The approval dialog tells you what a server says about its tool**: "Server says: read-only"
+  or "Server says: may delete data". It's the server's own claim, not a check. In plan mode, a tool
+  its server calls read-only now follows your rules instead of always asking.
 
 - **A new way to sign in with your ChatGPT plan.** On **Models**, **ChatGPT** replaces the older
   ChatGPT (Codex) sign-in. It can use only the models your plan includes; pick one above your plan
@@ -13,8 +24,14 @@
 
 - **The bundled coding agent moved up to Pi 1.0**, and with it more models to choose from on most
   providers.
+- **MCP runs inside the agent itself now, with no keychain password prompts.** The agent searches
+  for a server's tools when it needs them, so servers you rarely use stop costing context on every
+  turn. On **MCP**, a server's tool list shows tool names only, and a workspace server that a
+  global one of the same name replaces is marked **overridden**.
+- **Each MCP tool has its own row on Agent tools**, with the rule name your permissions use for it.
+  The agent can no longer add an MCP server or sign in to one by itself; only you can, on **MCP**.
 
-Runtime: Pi 1.0.2 · sub-agents 0.19.0 · MCP adapter 2.35.0
+Runtime: Pi 1.0.2 · sub-agents 0.19.0
 
 ## [0.1.0] — 2026-09-30
 

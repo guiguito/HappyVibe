@@ -1,91 +1,81 @@
 ---
 paths:
   - "src/main/mcp*.ts"
-  - "pi-runtime/extensions/hv-mcp.ts"
-  - "pi-runtime/bin/mcp-oauth-bridge*.mjs"
-  - "scripts/build-mcp-oauth-bridge.mjs"
+  - "pi-runtime/extensions/hv-mcp*.ts"
   - "src/renderer/src/mcpChip.ts"
   - "src/renderer/src/components/Mcp*.tsx"
   - "tests/mcp*.test.ts"
+  - "tests/hv-mcp*.test.ts"
 ---
-# MCP — adapter is the runtime, main is the management
+# MCP — Pi runs the servers, the bridge gates them, main asks Pi
 
-- `pi-mcp-adapter` runs the servers inside Pi. Main (`src/main/mcp*.ts`, `@modelcontextprotocol/sdk`)
-  does connect / list tools / status / OAuth, because the adapter's OAuth only runs in TUI mode and
-  its structured actions are tool-only (Pi RPC has no tool-exec verb). A non-blocking startup sweep
-  probes configured servers. `docs/validation/m1.md`.
-- The proxy tool is `mcp`; the bridge unwraps it (`hv-mcp.ts`) to the virtual rule name
-  `mcp:<serverKey>_<toolName>` for rules/grants/prompts/audit. Discovery calls
-  (search/describe/connect/instructions, `action:"ui-messages"`) are safe-default-allowed.
-  `install`, `auth-start`/`auth-complete` and a lone unknown action are the `manage` kind
-  (`mcp-manage:install:<url>`, `mcp-manage:auth:<server>`, and `mcp-manage:<action>` for a lone
-  unknown action — outside `mcp:` so no MCP tool rule covers them): asked by default, blocked in
-  plan mode and read-only runs. The install URL is shown canonicalised (`new URL(…).toString()`,
-  as the adapter writes it), or "(not a valid URL)" — model text never reaches the headline. An
-  action added to `MCP_MANAGE_ACTIONS` is asked with no other edit. `unwrapMcpCall` reads
-  keys in the ADAPTER's dispatch order (action → tool → connect → describe → instructions →
-  search), pinned with its action list by `tests/mcp-adapter-actions.test.ts`. It is the ONE
-  source of the factual display (gate + renderer), enriched with a key arg (url/query).
-- The adapter's per-server `mcp__<ns>` namespace tools (`{tool, args}`) are gated as the proxy
-  (`mcp:<tool>`), only when the registered description matches (`MCP_NAMESPACE_DESCRIPTION`), its params are exactly `{tool, args}` (`isMcpNamespaceProxy`), and only
-  `tool` is read (the adapter runs nothing else): a raw-name gate let `mcp:<tool>` rules be sidestepped.
-- stdio servers configured with `node`/`npx` need a runtime in the packaged app.
+PRD §13 Decision (2026-10-05); evidence `docs/validation/mcp2.md`.
 
-## Intent
-- `mcp` is in `INTENT_TOOLS`: `requireIntent` injects a required `intent` into the proxy schema; the
-  proxy's `execute` ignores it. DIRECT mode forwards params verbatim, so `requireIntent` also injects
-  into every adapter-registered direct tool (`sourceInfo.path` contains `pi-mcp-adapter`) and the
-  `tool_call` handler STRIPS `input.intent` for those (`strippedIntentTools`) before anything reads
-  it. The UI still sees intent (`tool_execution_start` fires with the original args first). A server
-  tool with its own `intent` param gets no injection and no strip.
-- The card headline is the model's `intent`, falling back to the factual display (`toolLabel.ts`);
-  the permission prompt shows the FACTUAL display, never the model's intent (safety).
-- `requireIntent` also runs on `turn_start`: the adapter re-registers the proxy whenever its
-  description changes, with a fresh schema that drops the injected field. Regression symptom:
-  `args.intent === undefined` and `mcp-bridge.test.ts` failing fast (~4 s).
-  `tests/intent-direct-tools.test.ts`.
+- Pi's built-in MCP (`-e builtin:mcp -e builtin:tool-search`) loads in CHAT SESSIONS ONLY
+  (`resolvePiSpawn({ mcp: true })`, which also sets `HV_MCP=1`). Never the utility client or a
+  one-shot: Pi has NO lazy start, so any Pi with MCP starts every enabled server.
+- Config: global `<agentDir>/mcp.json` is read by Pi directly. Workspace `<ws>/.mcp.json` is
+  registered by the bridge (`pi.registerMcpServer()`, only when `HV_MCP=1`) — Pi itself reads
+  project servers only from a TRUSTED project's `.pi/mcp.json`, and we never trust one. A global
+  server of the same name wins (the workspace row shows "overridden").
+- Exposure defaults to `deferred` (the model finds tools with `tool_search`). Pi has no global
+  default (unset = `codemode`, which we don't load), so `hv-mcp-config.ts` `toPiEntry` writes it:
+  main on every launch (`mcpMigrate.ts`) and every write (`writeMcpServer`), the bridge at
+  registration. `toPiEntry` also translates adapter-era keys Pi ignores or REJECTS (`disabled`,
+  `directTools`, `excludeTools`, `bearerToken*`, non-object `auth`, `oauth:false`) — a rejected
+  entry is skipped whole, which is how plugin servers (`auth:"oauth"`) would have vanished.
+- Off = `enabled: false` (`isMcpServerOff` also reads the old `disabled: true`). An off server
+  spawns nothing; Connect (`hv:mcp-connect-flow`) switches it on, and back off if the connect fails.
 
-## Credentials live in the OS keychain — main goes through a sidecar
-- The adapter's store is the keychain (service `pi-mcp-adapter.oauth`, chunked payloads);
-  `<agentDir>/mcp-oauth/…/tokens.json` is a legacy file it imports and DELETES. Never mirror the
-  format — main runs the adapter's own code in a one-shot sidecar
-  (`pi-runtime/bin/mcp-oauth-bridge.mjs`, spawned via `nodeExecPath()`, ops batched so the startup
-  sweep is ONE spawn). A mirror silently breaks the badge, re-auth and Log out.
-- The sidecar is an esbuild bundle built at postinstall: Node refuses to type-strip `.ts` under
-  `node_modules`, and the adapter ships `.ts`.
-- Reads use `inspectAuthForUrl` (relative import), not the `pi-mcp-adapter/oauth` subpath's
-  `inspectMcpOAuthTokensForUrl`, which drops `clientInfo` (needed for refresh and the stale-DCR
-  client guard).
-- `src/main/mcpAuthStore.ts` keeps PKCE + CSRF state only, in `flow.json` — in `tokens.json` the
-  adapter would import and delete the code verifier mid-authorization.
-- `tests/mcp-adapter-authformat.test.ts` gates pin bumps and MUST set
-  `PI_MCP_ADAPTER_TEST_AUTH_STORE=memory` — the keychain is global to the OS user, so an unforced
-  test reads and writes the developer's real login keychain.
-- Keychain access PROMPTS, and "Always Allow" only sticks for a properly signed binary (the
-  ad-hoc-signed dev Electron helper re-prompts on every access). So nothing reads a credential at
-  boot: the startup sweep probes stdio servers only; remote servers sweep when the MCP page mounts
-  (`hv:mcp-sweep-remote`, once per app run). The agent also prompts on its first MCP call per grant.
+## Gate
+- Pi MCP tools are `mcp__<ns>__<tool>`, `sourceInfo.path === "builtin:mcp"`. The bridge maps a call
+  to `mcp:<server>_<tool>` (`hv-mcp.ts` `mcpCallInfo`) — the adapter-era spelling, so stored rules
+  keep matching: server = the CONFIGURED name recovered from `ToolInfo.namespace` (never a parse of
+  the tool name), no double prefix. Identified by SOURCE: another extension can name a tool `mcp__x`.
+- `tool_search`, `list_mcp_resources`, `list_mcp_resource_templates` are `SAFE_TOOLS` and plan-pass.
+  The bridge caps every `tool_search` at `TOOL_SEARCH_LIMIT` (4): Pi keeps loaded tools declared for
+  the rest of the branch, and one search at Pi's default 8 loaded ~17k tokens of Notion schemas
+  (GUI pass 2026-10-05). A later search only ranks tools not yet loaded, so the model can re-search.
+  `read_mcp_resource` gates as `mcp:<server>_read_mcp_resource` (unknown server → `(unknown server)`).
+- Server hints (`readOnlyHint` / `destructiveHint`) ride the prompt as `serverHint` ("Server says: …")
+  and a read-only hint turns Plan mode's (and read-only runs') floor-ask into `pass` — checked AFTER
+  every block, and it never allows on its own: the server can lie.
+- `intent`: Pi forwards params VERBATIM to the server, so `requireIntent` injects a required `intent`
+  into every `builtin:mcp` tool and the `tool_call` handler STRIPS it before anything reads input.
+  Pi 1.0 HARD-VALIDATES MCP args: a call without the required `intent` is refused before the gate.
+  Servers connect after `session_start`, so `requireIntent` re-runs on `turn_start`.
+- `/hv-tools` sends each Pi MCP tool's `checkedAs` rule name (All Tools shows one row per tool);
+  `/hv-mcp-tools` lists the workspace-registered servers' tool names for the MCP page.
 
-## OAuth (host-driven in `src/main/mcpOAuth.ts`)
-- `OAuthClientProvider` + loopback callback + `shell.openExternal` + `state` CSRF check +
-  `transport.finishAuth` + reconnect on a fresh transport. IPC `hv:mcp-authenticate` /
-  `hv:mcp-logout`; add-time confirm-with-tools modal.
+## Management (main never speaks MCP)
+- Global servers: `mcpPi.ts` runs `pi mcp list --json | login | logout` (stdin ignored, cwd home,
+  `PI_CODING_AGENT_DIR`, `providerEnv()`, `windowsHide`). `list` exits 1 when any server isn't
+  connected — parse stdout regardless. Tools are NAMES only (no descriptions upstream).
+- Workspace servers: `mcpWorkspaceProbe.ts` spawns a short-lived model-less Pi in the workspace:
+  `/mcp` (plain-text status), `/hv-mcp-tools`, `/mcp login|logout <server>`. Probes run on MCP-page
+  mount, never at boot (each probe starts every server).
+- Sign-in: `pi mcp login` prints `Sign in to MCP server "<n>" in your browser:\n<url>` and opens the
+  browser itself. Over RPC, `/mcp login` raises a paste-back `input` that must stay PENDING (an
+  empty answer fails the sign-in) and that Pi aborts locally WITHOUT telling us when the browser
+  wins — main forgets it on the `Signed in to MCP server` notify; Cancel answers it `{cancelled}`.
+  The wording is copy, not an API: `tests/mcp-pi.test.ts` source-scans the vendored Pi.
+- `hv:mcp-authenticate` checks status FIRST and signs in only on `needs-auth`: the page
+  auto-authenticates every new HTTP server, and `pi mcp login` refuses a key-header server.
+- Tokens live in `<agentDir>/mcp-auth.json` (0600), keyed `mcp__<ns>|<url>` — no keychain. A running
+  session picks up a new sign-in on its next call; the resumed respawn stays anyway (decision 12).
+- Removing a server: Pi finds servers BY NAME, so logout runs before the entry leaves the file
+  (`removeServerInOrder`), or the token is orphaned.
 
 ## Live reload
-- Pi and the adapter read MCP config only at spawn. `hv:mcp-set-server` / `-authenticate` /
-  `-logout` call `scheduleMcpReload` (debounced, coalesces add+auth) → affected live sessions respawn
-  RESUMED (`startClient(meta,true)`). Scope: global change → every live session; workspace change →
-  that workspace's (`affectedSessionIds`, `mcpReloadScope.ts`).
-- Only IDLE sessions (`activity.isIdle`) reload immediately; busy ones defer via `pendingMcpReload`,
-  drained on `agent_end` / permission-prompt close. The renderer gets `hv:session-reloading`
-  (grants reset); main then fires `/hv-tools`.
-- A plugin's servers are written `disabled: true` (`pluginServerEntry`, plugins/install.ts) — the
-  adapter's own flag: not listed to the model, never connected. Main's Connect
-  (`hv:mcp-connect-flow`) is the ONLY thing that clears it (then `scheduleMcpReload`); an off server
-  is never probed or credential-read (`isMcpServerOff`, mcp.ts). `tests/mcp-adapter-disabled.test.ts`.
+- Pi reads MCP config at spawn. `hv:mcp-set-server` / `-authenticate` / `-logout` / connect-flow
+  call `scheduleMcpReload` (debounced) → affected live sessions respawn RESUMED. Scope: global →
+  every live session; workspace → that workspace's (`mcpReloadScope.ts`). Busy sessions defer via
+  `pendingMcpReload`, drained on `agent_end` / prompt close; `/hv-tools` follows.
 
 ## Secrets can execute
-- The adapter resolves env/header values through `resolveCommandSecret`: a leading `!` runs a shell
-  command and uses its stdout (`!!` escapes). Per-server `requestHeadersCommand` spawns a command on
-  every outbound HTTP/SSE call. Both are reachable from a WORKSPACE `.mcp.json` — a cloned repo.
-  HappyVibe never authors either key (`tests/mcp-adapter-interpolation.test.ts`).
+- Pi resolves `${VAR}`/`$VAR` in `headers`, stdio `env` and `oauth.clientSecret`; a leading `!` runs
+  a shell command. A missing variable FAILS the connection. All of it is reachable from a workspace
+  `.mcp.json` (a cloned repo); HappyVibe never authors a `!` value. The bridge strips `auth`
+  (`{provider}` — a /login token) from workspace entries: Pi only refuses it in project FILES,
+  not in `registerMcpServer()`.
+- stdio servers configured with `node`/`npx` need the user's runtime in the packaged app.

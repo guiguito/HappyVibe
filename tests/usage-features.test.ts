@@ -27,4 +27,10 @@ describe("§39 tool → kind / feature", () => {
     expect(featureOfTool("use_skill")).toBe("skill");
     expect(featureOfTool("bash")).toBeNull();
   });
+  it("§13 (2026-10-05): Pi's MCP tool calls count as MCP; finding a tool is not a use", () => {
+    expect(featureOfTool("mcp__linear__get_issue")).toBe("mcp_tool");
+    expect(featureOfTool("read_mcp_resource")).toBe("mcp_tool");
+    expect(toolKind("mcp__x__y")).toBe("mcp");
+    expect(featureOfTool("tool_search")).toBeNull();
+  });
 });

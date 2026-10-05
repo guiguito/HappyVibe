@@ -2,16 +2,13 @@ import { expect, test } from "vitest";
 import bridge from "../pi-runtime/extensions/happyvibe-bridge";
 
 /**
- * Direct-mode MCP intent (companion to the proxy-mode wiring in
- * intent-bridge.test.ts / mcp-bridge.test.ts, but pure — no live Pi):
+ * MCP intent (§13, Pi's built-in MCP — companion to mcp-bridge.test.ts, but pure):
  *
- *  - requireIntent injects a required `intent` into every tool registered by
- *    pi-mcp-adapter EXCEPT the `mcp` proxy (handled by INTENT_TOOLS) and
- *    server tools that declare their own `intent` param.
- *  - The bridge's tool_call handler strips the injected intent from
- *    event.input BEFORE the permission gate reads it (the adapter forwards
- *    direct-tool params verbatim to the MCP server), and never strips it from
- *    the proxy or from tools whose intent is server-owned.
+ *  - requireIntent injects a required `intent` into every tool Pi's MCP registered
+ *    (sourceInfo.path "builtin:mcp") except server tools that declare their own.
+ *  - The bridge's tool_call handler strips the injected intent from event.input
+ *    BEFORE the permission gate reads it (Pi forwards params verbatim to the MCP
+ *    server), and never strips a server-owned intent.
  */
 
 type Handler = (event: Record<string, unknown>, ctx: unknown) => Promise<unknown>;
@@ -19,15 +16,15 @@ type Handler = (event: Record<string, unknown>, ctx: unknown) => Promise<unknown
 type FakeTool = {
   name: string;
   parameters: { type: string; properties: Record<string, unknown>; required: string[] };
+  namespace?: { name: string };
   sourceInfo: { path: string; source: string; scope: string; origin: string };
 };
 
-const adapterSource = { path: "/x/pi-mcp-adapter/index.ts", source: "pi-mcp-adapter", scope: "user", origin: "package" };
+const mcpSource = { path: "builtin:mcp", source: "builtin", scope: "temporary", origin: "top-level" };
 const tools: FakeTool[] = [
-  { name: "mcp", parameters: { type: "object", properties: { tool: {}, args: {} }, required: [] }, sourceInfo: adapterSource },
-  { name: "github_create_issue", parameters: { type: "object", properties: { title: {} }, required: ["title"] }, sourceInfo: adapterSource },
-  { name: "srv_own_intent", parameters: { type: "object", properties: { intent: { type: "string" } }, required: ["intent"] }, sourceInfo: adapterSource },
-  { name: "Agent", parameters: { type: "object", properties: { description: {} }, required: [] }, sourceInfo: { ...adapterSource, path: "/x/@tintinweb/pi-subagents/src/index.ts", source: "pi-subagents" } },
+  { name: "mcp__github__create_issue", namespace: { name: "mcp__github" }, parameters: { type: "object", properties: { title: {} }, required: ["title"] }, sourceInfo: mcpSource },
+  { name: "mcp__srv__own_intent", namespace: { name: "mcp__srv" }, parameters: { type: "object", properties: { intent: { type: "string" } }, required: ["intent"] }, sourceInfo: mcpSource },
+  { name: "Agent", parameters: { type: "object", properties: { description: {} }, required: [] }, sourceInfo: { ...mcpSource, path: "/x/@tintinweb/pi-subagents/src/index.ts", source: "pi-subagents" } },
 ];
 
 const handlers = new Map<string, Handler>();
@@ -55,38 +52,31 @@ const ctx = {
 
 await handlers.get("session_start")!({}, ctx);
 
-test("requireIntent injects a required intent into direct MCP tools only", () => {
+test("requireIntent injects a required intent into Pi's MCP tools", () => {
   const byName = (n: string) => tools.find((t) => t.name === n)!;
-  expect(byName("github_create_issue").parameters.properties.intent).toBeTruthy();
-  expect(byName("github_create_issue").parameters.required).toEqual(["title", "intent"]);
-  expect(byName("mcp").parameters.properties.intent).toBeTruthy(); // proxy, via INTENT_TOOLS
+  expect(byName("mcp__github__create_issue").parameters.properties.intent).toBeTruthy();
+  expect(byName("mcp__github__create_issue").parameters.required).toEqual(["title", "intent"]);
   // The delegation tool is left alone: its own `description` is the card's headline.
   expect(byName("Agent").parameters.properties.intent).toBeUndefined();
   // Server tool with its own intent param: untouched (no duplicate required).
-  expect(byName("srv_own_intent").parameters.required).toEqual(["intent"]);
+  expect(byName("mcp__srv__own_intent").parameters.required).toEqual(["intent"]);
 });
 
 test("session_start is idempotent (no duplicate required entries)", async () => {
   await handlers.get("session_start")!({}, ctx);
-  expect(tools.find((t) => t.name === "github_create_issue")!.parameters.required).toEqual(["title", "intent"]);
+  expect(tools.find((t) => t.name === "mcp__github__create_issue")!.parameters.required).toEqual(["title", "intent"]);
 });
 
-test("tool_call strips the injected intent from direct MCP tool input", async () => {
-  const event = { toolName: "github_create_issue", input: { title: "bug", intent: "Filing the bug you described" } };
+test("tool_call strips the injected intent from MCP tool input", async () => {
+  const event = { toolName: "mcp__github__create_issue", input: { title: "bug", intent: "Filing the bug you described" } };
   await handlers.get("tool_call")!(event, ctx);
   expect(event.input).toEqual({ title: "bug" });
   // Factual permission prompt: the model's intent never reaches it.
   expect(promptTitles.at(-1)).not.toContain("Filing the bug");
 });
 
-test("tool_call leaves the proxy tool's intent alone (adapter ignores it)", async () => {
-  const event = { toolName: "mcp", input: { tool: "notion_fetch", args: "{}", intent: "Fetching the page" } };
-  await handlers.get("tool_call")!(event, ctx);
-  expect(event.input.intent).toBe("Fetching the page");
-});
-
 test("tool_call leaves a server-owned intent param alone", async () => {
-  const event = { toolName: "srv_own_intent", input: { intent: "server semantics" } };
+  const event = { toolName: "mcp__srv__own_intent", input: { intent: "server semantics" } };
   await handlers.get("tool_call")!(event, ctx);
   expect(event.input.intent).toBe("server semantics");
 });
