@@ -4,8 +4,9 @@
 
 ### Added
 
-- **Sign in with your ChatGPT plan.** On **Models**, **ChatGPT** is now one of the plans you can sign
-  in with. The older ChatGPT sign-in is still there, renamed **ChatGPT (Codex, legacy)**.
+- **A new way to sign in with your ChatGPT plan.** On **Models**, **ChatGPT** replaces the older
+  ChatGPT (Codex) sign-in. If you already signed in the old way, it keeps working and stays listed
+  until you sign out.
 
 ### Changed
 

@@ -204,7 +204,7 @@ export function ProviderDoors({
         window.hv.detectOllama(),
         window.hv.detectLocalRunners(),
       ]);
-      setOauth(p.oauth);
+      setOauth(p.oauth.filter((o) => !o.superseded));
       setByok(p.byok);
       setKeyId((id) => id || (p.byok.find((b) => b.featured)?.id ?? p.byok[0]?.id ?? ""));
       // "Don't show what cannot work": a runner with no models gives Pi nothing

@@ -422,7 +422,7 @@ export function ModelsView({
           {adding && (
             <div>
               <GroupLabel>Sign in with your plan</GroupLabel>
-              <div className="flex flex-col gap-3">{oauthProviders.map(oauthCard)}</div>
+              <div className="flex flex-col gap-3">{oauthProviders.filter((p) => !p.superseded).map(oauthCard)}</div>
 
               <GroupLabel>Local</GroupLabel>
               <div className="rounded-xl border-2 border-line bg-paper px-4 py-3">

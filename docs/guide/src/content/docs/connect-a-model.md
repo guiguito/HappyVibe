@@ -20,8 +20,6 @@ In the setup window, the three choices are right there. On the Models page, they
 
 Use a subscription you already have, such as **Claude** or **ChatGPT**.
 
-Pay for ChatGPT? Pick **ChatGPT**. **ChatGPT (Codex, legacy)** is the older sign-in it replaces.
-
 :::caution
 The app says it plainly beside Claude: "Heads up: on Claude Pro/Max this uses your plan's extra usage."
 :::

@@ -39,13 +39,21 @@ const OAUTH_LABELS: Record<string, string> = {
   openai: "ChatGPT",
   "openai-codex": "ChatGPT (Codex, legacy)",
 };
-export const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string }[] = OAUTH_CATALOG.map((p) => ({
+/**
+ * Flows a newer upstream flow replaces: never offered as a sign-in, still listed while signed in so
+ * the user can sign out, and still a known provider so existing sessions keep spawning.
+ * `openai-codex` → `openai` (Sign in with ChatGPT): two ChatGPT buttons for one plan confused
+ * users (decided 2026-10-05).
+ */
+const SUPERSEDED_OAUTH = new Set(["openai-codex"]);
+export const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string; superseded?: true }[] = OAUTH_CATALOG.map((p) => ({
   id: p.id,
   label: OAUTH_LABELS[p.id] ?? p.label,
   // Honest billing caveat — locked product decision.
   ...(p.id === "anthropic"
     ? { caveat: "Heads up: on Claude Pro/Max this uses your plan's extra usage." }
     : {}),
+  ...(SUPERSEDED_OAUTH.has(p.id) ? { superseded: true as const } : {}),
 }));
 
 /**
