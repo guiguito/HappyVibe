@@ -15,8 +15,11 @@ afterEach(() => client?.stop());
 
 // The app's REAL spawn args (mcp: true), with the faux model inserted just before the
 // bridge so the bridge stays the last -e.
-function boot(tmp: string, steps: object[]): PiClient {
-  const spec = resolvePiSpawn(tmp, path.join(tmp, "sessions"), runtime, { mcp: true, agentDir: path.join(tmp, "agent") });
+function boot(tmp: string, steps: object[], intent = true): PiClient {
+  const spec = resolvePiSpawn(tmp, path.join(tmp, "sessions"), runtime, {
+    mcp: true, agentDir: path.join(tmp, "agent"),
+    ...(intent ? {} : { builtinTools: { plan: true, askUser: true, planAppend: "", terminal: true, intent: false, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true } }),
+  });
   const bridge = spec.args.findIndex((a) => a.endsWith("happyvibe-bridge.ts"));
   const args = [...spec.args.slice(0, bridge - 1), "-e", path.join(process.cwd(), "tests/fixtures/faux-model.ts"), ...spec.args.slice(bridge - 1),
     "--no-session", "--provider", "faux", "--model", "script"];
@@ -108,4 +111,18 @@ test("a workspace server's auth key is stripped before registration — a repo c
   // Pi rejects `auth` on a non-https URL — so a registration error naming auth means we did not strip it.
   expect(report.servers).toHaveProperty("evil");
   expect(JSON.stringify(report.errors)).not.toContain("auth");
+}, 60_000);
+
+// §13 round 12 switch × Pi 1.0's hard validation: with "Tool intent" OFF no intent is injected,
+// so a call WITHOUT one must still reach the gate (and not die in Pi's schema check).
+test("Tool intent off: an MCP call with no intent reaches the permission prompt", async () => {
+  const tmp = tmpWithGlobal();
+  client = boot(tmp, [
+    { tool: "tool_search", args: { query: "echo" } },
+    { tool: "mcp__echo__echo", args: { text: "hi" } },
+    { text: "done" },
+  ], false);
+  const prompts = await runTurn(client, () => "Allow");
+  expect(prompts.map((p) => p.tool)).toEqual(["mcp:echo_echo"]);
+  expect(fs.readFileSync(path.join(tmp, "calls.log"), "utf8")).toBe("hi\n");
 }, 60_000);
