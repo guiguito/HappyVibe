@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
-import { PI_CLI_RELPATH, PI_MCP_ADAPTER_RELPATH } from "../src/main/pi/spawn";
+import { PI_CLI_RELPATH, PI_MCP_EXTENSIONS } from "../src/main/pi/spawn";
 
 // Tiny .env loader — keeps tests dependency-free
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
@@ -29,7 +29,7 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
       // Bridge LAST, mirroring production (spawn.ts): the permission gate must
       // be the final tool_call handler so it sees mutated input. Pinned by
       // tests/mcp-spawn.test.ts.
-      "-e", path.join(runtime, PI_MCP_ADAPTER_RELPATH),
+      ...PI_MCP_EXTENSIONS,
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
@@ -118,7 +118,7 @@ test.skipIf(!KEY)("docs-round #34: an MCP install asks with the URL, and Deny wr
     args: [
       path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
-      "-e", path.join(runtime, PI_MCP_ADAPTER_RELPATH),
+      ...PI_MCP_EXTENSIONS,
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],

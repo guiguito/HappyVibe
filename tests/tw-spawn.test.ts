@@ -9,14 +9,14 @@ import path from "node:path";
 import { resolvePiSpawn, TW_RELPATH } from "../src/main/pi/spawn";
 
 const rt = "/rt";
-const spawn = () => resolvePiSpawn("/ws", "/sessions", rt, { agentDir: "/agent" });
+const spawn = () => resolvePiSpawn("/ws", "/sessions", rt, { agentDir: "/agent", mcp: true });
 const extensionsOf = (args: string[]) => args.flatMap((a, i) => (args[i - 1] === "-e" ? [a] : []));
 
 describe("the tintinweb spawn", () => {
-  it("loads tintinweb before the MCP adapter, and the bridge LAST", () => {
+  it("loads tintinweb before Pi's MCP, and the bridge LAST", () => {
     const e = extensionsOf(spawn().args);
     expect(e.indexOf(path.join(rt, TW_RELPATH))).toBe(0);
-    expect(e.indexOf(path.join(rt, TW_RELPATH))).toBeLessThan(e.indexOf(path.join(rt, "node_modules/pi-mcp-adapter/index.ts")));
+    expect(e.indexOf(path.join(rt, TW_RELPATH))).toBeLessThan(e.indexOf("builtin:mcp"));
     expect(e.at(-1)).toBe(path.join(rt, "extensions/happyvibe-bridge.ts"));
   });
 

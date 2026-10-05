@@ -34,8 +34,10 @@ export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist
     so there is no child binary, launcher or owner id to hand it. */
 export const TW_RELPATH = "node_modules/@tintinweb/pi-subagents/src/index.ts";
 
-/** pi-mcp-adapter extension entry (its package.json `pi.extensions`) — MCP support. */
-export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
+/** §13 (2026-10-05): Pi's built-in MCP + tool search. --no-extensions keeps every built-in
+    off; these load additively. Chat sessions only — the utility client and one-shots would
+    otherwise start every configured server (Pi has no lazy start). */
+export const PI_MCP_EXTENSIONS = ["-e", "builtin:mcp", "-e", "builtin:tool-search"] as const;
 
 export interface PiSpawnOptions {
   /** Global default model (config.ts); falls back to the spike default. */
@@ -128,6 +130,8 @@ export interface PiSpawnOptions {
    * it now has no effect, so a cloned repo cannot rewrite the system prompt.
    */
   appendFile?: string;
+  /** §13 (2026-10-05): load Pi's MCP (chat sessions and the workspace MCP probe only). */
+  mcp?: boolean;
 }
 
 /**
@@ -168,10 +172,11 @@ export function resolvePiSpawn(
       // §12: tintinweb's pi-subagents. The `Agent` tool it registers is a normal
       // tool_call, so the bridge's permission gate applies.
       "-e", path.join(runtimeDir, TW_RELPATH),
-      // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
-      // so the bridge's permission gate applies (docs/validation/m1.md).
-      // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
-      "-e", path.join(runtimeDir, PI_MCP_ADAPTER_RELPATH),
+      // MCP: Pi's built-in client. Every server tool is an ordinary tool_call, so
+      // the bridge's permission gate applies (docs/validation/mcp2.md "Gate").
+      // Config: PI_CODING_AGENT_DIR/mcp.json (Pi reads it) + <cwd>/.mcp.json
+      // (the bridge registers it — Pi only reads a TRUSTED project's .pi/mcp.json).
+      ...(opts.mcp ? PI_MCP_EXTENSIONS : []),
       // The HappyVibe bridge is the SOLE permission path in RPC mode.
       // @gotgenes/pi-permission-system was removed from the spawn after Gate V6
       // proved it is TUI-only (both its prompt paths gate on ctx.hasUI, which is
@@ -198,8 +203,9 @@ export function resolvePiSpawn(
       //  - getAllRegisteredTools is first-registration-per-name-wins
       //    (runner.js), so a tool-name collision would now resolve to the other
       //    extension. None exists today: the bridge registers ask_user,
-      //    use_skill and plan_*; the others Agent, get_subagent_result,
-      //    steer_subagent, SubagentWorkflow and mcp.
+      //    use_skill and plan_*; tintinweb Agent, get_subagent_result,
+      //    steer_subagent and SubagentWorkflow; Pi's MCP tool_search, the
+      //    resource tools and mcp__<server>__<tool>.
       "-e", path.join(runtimeDir, "extensions/happyvibe-bridge.ts"),
       // §14 Skills: disable Pi's own discovery (so no unapproved skill ever
       // loads) and add back exactly the approved+active ones. --skill is
@@ -259,6 +265,8 @@ export function resolvePiSpawn(
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       ...(opts.readonly ? { HV_READONLY: "1" } : {}),
+      // §13: tells the bridge Pi's MCP is loaded, so it may register workspace servers.
+      ...(opts.mcp ? { HV_MCP: "1" } : {}),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,

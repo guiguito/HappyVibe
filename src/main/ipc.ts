@@ -1118,7 +1118,8 @@ export function registerIpc(
         if (noModelOnce.first(sessionId ?? workspace ?? "")) track("session_start_failed", { reason: "no_model" });
         throw new Error("No model configured — add a provider in Settings → Models.");
       }
-      return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId)));
+      // §13 (2026-10-05): chat sessions — and only they — load Pi's MCP.
+      return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), { ...spawnOpts(workspace, resumeFile, sessionId), mcp: true }));
     },
     // W1.3: called at the cap — hibernate the oldest idle session (stats
     // captured best-effort like close-session, index marked, renderer told),
