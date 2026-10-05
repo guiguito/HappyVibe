@@ -7,7 +7,7 @@ import {
 /**
  * §25 — MCP servers HappyVibe can never authenticate with, because the vendor
  * only issues credentials to an allowlist of pre-registered clients and
- * mcpOAuth.ts implements Dynamic Client Registration only.
+ * HappyVibe signs in through Pi with Dynamic Client Registration.
  */
 
 describe("preregisteredVendor", () => {

@@ -81,7 +81,7 @@ describe("MCP catalog data", () => {
   });
 
   it("does not ship servers that reject dynamic client registration", () => {
-    // mcpOAuth.ts implements DCR only. A server that allowlists pre-registered
+    // HappyVibe signs in through Pi with DCR. A server that allowlists pre-registered
     // clients gives a tile that cannot succeed, so it must not ship:
     //   slack  — documents confidential OAuth, DCR explicitly unsupported.
     //   figma  — advertises a registration_endpoint but returns a bare 403

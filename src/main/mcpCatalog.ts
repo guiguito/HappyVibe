@@ -12,7 +12,7 @@
  * Deliberately NOT shipped:
  * - Slack. GA since Feb 2026 but uses *confidential* OAuth: the client must
  *   present a pre-registered client_id/client_secret and Dynamic Client
- *   Registration is explicitly unsupported. mcpOAuth.ts only implements DCR, so
+ *   Registration is explicitly unsupported. HappyVibe signs in through Pi with DCR only, so
  *   a Slack tile would be a button that cannot succeed. Revisit if HappyVibe
  *   ever registers its own Slack app.
  * - Figma. Its hosted server (https://mcp.figma.com/mcp) 401s correctly and

@@ -39,14 +39,14 @@ describe("main never kills a bare process", () => {
 });
 
 describe("no child flashes a console window", () => {
-  // The one-shot spawners: three model calls (§15/§19/§29) and the two sidecars,
+  // The one-shot spawners: three model calls (§15/§19/§29), the document sidecar, Pi's MCP CLI,
   // plus git itself, which is polled.
   const SPAWNERS = [
     "pi/PiClient.ts",
     "titles.ts",
     "gitMessage.ts",
     "documents.ts",
-    "mcpAdapterStore.ts",
+    "mcpPi.ts",
     "git.ts",
   ];
 

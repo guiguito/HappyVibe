@@ -68,7 +68,7 @@ describe("§37 the reporting seam is electron-free", () => {
   it("the vitest-imported modules reach the seam, never the Electron half", () => {
     // ipc.ts is the one CLAUDE.md names by hand; the two sidecars are the same
     // class and were red for the same reason the first time this was wired.
-    for (const f of ["src/main/documents.ts", "src/main/mcpAdapterStore.ts", "src/main/ipc.ts"]) {
+    for (const f of ["src/main/documents.ts", "src/main/ipc.ts"]) {
       const src = fs.readFileSync(f, "utf8");
       expect(src, f).toContain('from "./crash/client"');
       // A bare `./crash` here is the regression, and it typechecks and runs.

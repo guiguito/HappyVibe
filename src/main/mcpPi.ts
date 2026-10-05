@@ -24,6 +24,7 @@ function run(o: PiCliOpts, args: string[]) {
   return spawn(o.execPath ?? nodeExecPath(), [o.cliPath ?? path.join(o.runtimeDir, PI_CLI_RELPATH), "mcp", ...args], {
     cwd: os.homedir(),
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...o.env, PI_CODING_AGENT_DIR: o.agentDir },
   });
 }

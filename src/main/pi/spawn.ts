@@ -14,7 +14,7 @@ import { platform, type Platform } from "../platform";
  *
  * The logic moved to platform.ts in the Windows round (PRD §4) — one seam answers
  * every platform question. Kept as an export here because the sidecar callers
- * (documents.ts, mcpAdapterStore.ts, terminals) already import it from this module.
+ * (documents.ts, mcpPi.ts, terminals) already import it from this module.
  */
 export function nodeExecPath(): string {
   return platform.nodeExecPath();
