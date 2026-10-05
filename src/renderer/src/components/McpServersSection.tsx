@@ -243,7 +243,7 @@ export function McpServersSection({
     void window.hv.mcpStatus().then(apply).catch(() => { /* non-fatal */ });
     // §13 (2026-10-05): workspace servers are asked about here, not at boot — each probe
     // is a Pi that starts every server.
-    void window.hv.mcpRefresh().then(apply).catch(() => { /* non-fatal */ });
+    void window.hv.mcpRefresh(scope === "workspace" ? workspaceId : null).then(apply).catch(() => { /* non-fatal */ });
     unsubRef.current = window.hv.onMcpStatusChanged((list) => {
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });

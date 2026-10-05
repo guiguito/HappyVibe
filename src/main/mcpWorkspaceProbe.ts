@@ -47,14 +47,18 @@ export async function probeWorkspace(spec: SpawnSpec, names: string[], make: (s:
     await c.start();
     const status = (await command(c, "/mcp")).find((n) => /\((deferred|direct|codemode|hidden)\)/.test(n) || n.startsWith("overridden: ")) ?? "";
     const toolsNote = (await command(c, "/hv-mcp-tools")).find((n) => n.includes('"hv.mcp-tools"'));
-    const tools = (toolsNote ? (JSON.parse(toolsNote) as { servers?: Record<string, string[]> }).servers : undefined) ?? {};
+    const report = (toolsNote ? JSON.parse(toolsNote) : {}) as { servers?: Record<string, string[]>; errors?: string[] };
+    const tools = report.servers ?? {};
+    // A server Pi refused to register never reaches /mcp; the bridge kept Pi's reason.
+    const refused = (name: string): string | undefined =>
+      report.errors?.find((e) => e.startsWith(`${name}: `))?.slice(name.length + 2).replace(/^Invalid MCP server registered by extension "[^"]*": /, "");
     const rows = parseMcpStatus(status);
     return names.map((name) => {
       // A global server of the same name wins; its own line shares the name, so the
       // overridden line decides this (workspace) row.
       const row = rows.find((r) => r.name === name && r.state === "overridden") ?? rows.find((r) => r.name === name);
       const list = (tools[name] ?? []).map((t) => ({ name: t }));
-      if (!row) return { name, state: "failed", toolCount: 0, tools: [], error: "Not reported by Pi" };
+      if (!row) return { name, state: "failed", toolCount: 0, tools: [], error: refused(name) ?? "Not reported by Pi" };
       return {
         name,
         state: row.state,

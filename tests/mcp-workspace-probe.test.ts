@@ -67,3 +67,18 @@ test("sign-in cancel answers the pending input as cancelled, then stops Pi", asy
   expect(f.answered).toEqual([["in1", { cancelled: true }]]);
   expect(f.isStopped()).toBe(true);
 });
+
+// Final review Important #2: a registration Pi rejected keeps Pi's reason on the row.
+test("a workspace server Pi refused to register shows Pi's reason, not 'Not reported'", async () => {
+  const e = new EventEmitter() as EventEmitter & Record<string, unknown>;
+  e.start = async () => {};
+  e.stop = () => {};
+  e.respondUi = () => {};
+  e.send = async (cmd: { message: string }) => {
+    if (cmd.message === "/mcp") e.emit("ui-request", { method: "notify", message: "echo: connected, 1 tools (deferred)" });
+    if (cmd.message === "/hv-mcp-tools") e.emit("ui-request", { method: "notify", message: JSON.stringify({ kind: "hv.mcp-tools", servers: {}, errors: ['old: Invalid MCP server registered by extension "/x/happyvibe-bridge.ts": server "old": legacy SSE transport is not supported; use the streamable HTTP URL'] }) });
+    return { type: "response", success: true };
+  };
+  const rows = await probeWorkspace({} as never, ["old"], () => e as never);
+  expect(rows).toEqual([{ name: "old", state: "failed", toolCount: 0, tools: [], error: 'server "old": legacy SSE transport is not supported; use the streamable HTTP URL' }]);
+});

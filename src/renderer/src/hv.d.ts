@@ -1358,8 +1358,8 @@ interface HvApi {
     cfg: Record<string, unknown> | null,
   ): Promise<McpFileLike>;
   mcpStatus(): Promise<McpServerStatusLike[]>;
-  /** §13 (2026-10-05): asks Pi about every global server, then each workspace with servers. */
-  mcpRefresh(): Promise<McpServerStatusLike[]>;
+  /** §13 (2026-10-05): asks Pi about the global servers, and the given workspace's if any. */
+  mcpRefresh(workspaceId?: string | null): Promise<McpServerStatusLike[]>;
   /** Cancels the sign-in in progress (its pending mcpAuthenticate resolves not-ok). */
   mcpSigninCancel(): Promise<void>;
   onMcpSignin(cb: (p: { name: string; scope: "global" | "workspace"; workspaceId: string | null; url: string }) => void): () => void;

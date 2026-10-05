@@ -130,7 +130,7 @@ import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { isMcpServerOff, readMcpFile, withoutOffFlag, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
-import { configErrorFor, piMcpList, piMcpLogin, piMcpLogout, removeServerInOrder, statusFromList, type PiCliOpts } from "./mcpPi";
+import { coalescer, configErrorFor, piMcpList, piMcpLogin, piMcpLogout, removeServerInOrder, statusFromList, type PiCliOpts } from "./mcpPi";
 import { probeWorkspace as probeMcpWorkspace, signInWorkspace, signOutWorkspace } from "./mcpWorkspaceProbe";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
@@ -1491,13 +1491,17 @@ export function registerIpc(
     mcpStatusChanged();
   };
 
+  // Coalesced per tier: every refresh starts servers, so overlapping ones must not stack.
+  const refreshOnce = coalescer();
   const refreshTier = (scope: "global" | "workspace", workspaceId: string | null): Promise<void> =>
-    scope === "global" ? refreshGlobal() : refreshWorkspace(workspaceId ?? "");
+    scope === "global"
+      ? refreshOnce("global", refreshGlobal)
+      : refreshOnce(`ws:${workspaceId ?? ""}`, () => refreshWorkspace(workspaceId ?? ""));
 
   // Boot: global servers only. Every workspace probe is a Pi that starts ALL servers (Pi has
   // no lazy start), so workspace rows refresh when the MCP page opens — the precedent is the
   // §13 2026-08-14 remote sweep on page mount.
-  void refreshGlobal()
+  void refreshTier("global", null)
     .then(() => {
       const byState: Record<string, number> = {};
       for (const st of mcpStatusMap.values()) byState[st.state] = (byState[st.state] ?? 0) + 1;
@@ -1505,12 +1509,12 @@ export function registerIpc(
     })
     .catch((e) => console.warn("[hv] mcp startup check failed:", e));
 
-  // Called by the MCP page on mount, and by Reconnect-all.
-  ipcMain.handle("hv:mcp-refresh", async () => {
-    await refreshGlobal().catch((e) => console.warn("[hv] mcp refresh failed:", e));
-    for (const ws of workspaces.list()) {
-      if (Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).length === 0) continue;
-      await refreshWorkspace(ws).catch((e) => console.warn("[hv] mcp workspace refresh failed:", e));
+  // Called by the MCP page on mount: global servers, plus the ONE workspace on screen (each
+  // workspace probe is a Pi that starts every server — never all workspaces at once).
+  ipcMain.handle("hv:mcp-refresh", async (_e, workspaceId?: string | null) => {
+    await refreshTier("global", null).catch((e) => console.warn("[hv] mcp refresh failed:", e));
+    if (workspaceId && Object.keys(readMcpFile(path.join(knownWorkspace(workspaceId), ".mcp.json")).mcpServers).length > 0) {
+      await refreshTier("workspace", workspaceId).catch((e) => console.warn("[hv] mcp workspace refresh failed:", e));
     }
     return Array.from(mcpStatusMap.values());
   });

@@ -632,7 +632,7 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:mcp-set-server", scope, workspaceId, name, cfg),
   mcpStatus: () => ipcRenderer.invoke("hv:mcp-status"),
   /** Remote servers are swept here, not at boot — a credential read can raise a keychain prompt. */
-  mcpRefresh: () => ipcRenderer.invoke("hv:mcp-refresh"),
+  mcpRefresh: (workspaceId?: string | null) => ipcRenderer.invoke("hv:mcp-refresh", workspaceId ?? null),
   mcpSigninCancel: () => ipcRenderer.invoke("hv:mcp-signin-cancel"),
   mcpCheck: (scope: "global" | "workspace", workspaceId: string | null, name?: string) =>
     ipcRenderer.invoke("hv:mcp-check", scope, workspaceId, name),

@@ -122,3 +122,28 @@ export async function removeServerInOrder(o: { stillUsed: boolean; logout: () =>
   }
   o.write();
 }
+
+/**
+ * Every MCP status refresh starts servers (Pi has no lazy start), so overlapping refreshes of
+ * one tier must not stack: at most one runs and one waits per key. A caller that arrives while
+ * one runs gets the queued run, which starts AFTER the running one — so a refresh asked for after
+ * a sign-in or a config change always sees it.
+ */
+export function coalescer(): (key: string, fn: () => Promise<void>) => Promise<void> {
+  const running = new Map<string, Promise<void>>();
+  const queued = new Map<string, Promise<void>>();
+  const start = (key: string, fn: () => Promise<void>): Promise<void> => {
+    const p: Promise<void> = fn().finally(() => { if (running.get(key) === p) running.delete(key); });
+    running.set(key, p);
+    return p;
+  };
+  return (key, fn) => {
+    const q = queued.get(key);
+    if (q) return q;
+    const r = running.get(key);
+    if (!r) return start(key, fn);
+    const next = r.catch(() => {}).then(() => { queued.delete(key); return start(key, fn); });
+    queued.set(key, next);
+    return next;
+  };
+}

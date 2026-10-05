@@ -76,3 +76,25 @@ test("removing a server logs out BEFORE the entry leaves mcp.json (pi mcp logout
   await removeServerInOrder({ stillUsed: false, logout: async () => { throw new Error("x"); }, write: () => calls.push("write") });
   expect(calls).toEqual(["write"]);
 });
+
+// Final review Important #1: overlapping MCP refreshes must not each start every server.
+test("coalescer: one run at a time per key, at most one queued; a late caller still gets a run that starts after it", async () => {
+  const { coalescer } = await import("../src/main/mcpPi");
+  const run = coalescer();
+  let started = 0;
+  const gates: Array<() => void> = [];
+  const fn = () => { started++; return new Promise<void>((r) => gates.push(r)); };
+  const a = run("global", fn);
+  const b = run("global", fn);
+  const c = run("global", fn);
+  expect(started).toBe(1);          // b and c share ONE queued run
+  expect(b).toBe(c);
+  gates[0]();
+  await a;
+  await new Promise((r) => setTimeout(r, 0));
+  expect(started).toBe(2);          // the queued run starts after the first ends
+  gates[1]();
+  await b;
+  run("ws", fn);
+  expect(started).toBe(3);          // another key is independent
+});
