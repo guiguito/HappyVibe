@@ -53,6 +53,7 @@ export async function piMcpList(o: PiCliOpts): Promise<{ servers: PiMcpServer[];
 
 export function piMcpLogin(o: PiCliOpts, name: string): { url: Promise<string | null>; done: Promise<{ ok: boolean; message: string }>; cancel(): void } {
   const c = run(o, ["login", name, "--timeout", "300"]);
+  let cancelled = false;
   let out = "";
   let err = "";
   let gotUrl: (u: string | null) => void = () => {};
@@ -67,11 +68,14 @@ export function piMcpLogin(o: PiCliOpts, name: string): { url: Promise<string | 
     c.on("error", (e) => { gotUrl(null); resolve({ ok: false, message: e.message }); });
     c.on("close", (code) => {
       gotUrl(null);
+      if (cancelled) return resolve({ ok: false, message: "Sign-in cancelled." });
+      // Pi's verdict is the last stdout line on success; on failure the reason is on stderr —
+      // never fall back to stdout there, whose last line is the sign-in URL.
       const last = out.trim().split("\n").pop() ?? "";
-      resolve(code === 0 ? { ok: true, message: last } : { ok: false, message: err.trim() || last || `exit ${code}` });
+      resolve(code === 0 ? { ok: true, message: last } : { ok: false, message: err.trim() || `Pi's sign-in exited with ${code}` });
     });
   });
-  return { url, done, cancel: () => c.kill() };
+  return { url, done, cancel: () => { cancelled = true; c.kill(); } };
 }
 
 export async function piMcpLogout(o: PiCliOpts, name: string): Promise<{ ok: boolean; message: string }> {

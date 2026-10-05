@@ -98,3 +98,18 @@ test("coalescer: one run at a time per key, at most one queued; a late caller st
   run("ws", fn);
   expect(started).toBe(3);          // another key is independent
 });
+
+// GUI pass G3: a cancelled sign-in must say so — not leave Pi's sign-in URL as the row's error.
+test("piMcpLogin cancel: child killed, result says cancelled, no URL as the message", async () => {
+  const { piMcpLogin } = await import("../src/main/mcpPi");
+  const os2 = await import("node:os");
+  const fs2 = await import("node:fs");
+  const path2 = await import("node:path");
+  const dir = fs2.mkdtempSync(path2.join(os2.tmpdir(), "hv-fakelogin-"));
+  const fake = path2.join(dir, "fake-cli.mjs");
+  fs2.writeFileSync(fake, `console.log('Sign in to MCP server "x" in your browser:\\nhttps://auth/x'); setTimeout(() => {}, 60000);`);
+  const s = piMcpLogin({ runtimeDir: dir, agentDir: dir, env: {}, execPath: process.execPath, cliPath: fake }, "x");
+  expect(await s.url).toBe("https://auth/x");
+  s.cancel();
+  expect(await s.done).toEqual({ ok: false, message: "Sign-in cancelled." });
+});
