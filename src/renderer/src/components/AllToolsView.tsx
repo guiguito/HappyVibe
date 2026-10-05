@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkedAs, joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
+import { checkedAsOf, joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
 import { GoTo } from "./GoTo";
@@ -93,8 +93,8 @@ export function AllToolsView({
     let stale = false;
     void Promise.all(
       tools
-        .filter((t) => !checkedAs(t.name)?.per)
-        .map((t) => window.hv.evalRules(ws, checkedAs(t.name)?.name ?? t.name, {}).then((v) => [t.name, v.action] as const)),
+        .filter((t) => !checkedAsOf(t)?.per)
+        .map((t) => window.hv.evalRules(ws, checkedAsOf(t)?.name ?? t.name, {}).then((v) => [t.name, v.action] as const)),
     ).then((pairs) => {
       if (stale) return;
       const verdicts = Object.fromEntries(pairs) as Record<string, PermState>;

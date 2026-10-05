@@ -188,3 +188,9 @@ describe("§31 documents in the bubble", () => {
     expect(parseDocumentChips(fixture)).toEqual(parseDocumentHeaders(fixture));
   });
 });
+
+// §13 (2026-10-05, decision 13): Pi's /mcp is an extension command — the MCP page owns it.
+it("Pi's /mcp never reaches the composer menu", async () => {
+  const { composerCommands } = await import("../src/renderer/src/mentions");
+  expect(composerCommands([{ name: "mcp", source: "extension" }] as never)).toEqual([]);
+});

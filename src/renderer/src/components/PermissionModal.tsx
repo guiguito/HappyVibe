@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } from "../paneDialog";
-import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
+import { SERVER_HINT_COPY, type PermissionChoice, type PermissionInfo, type UiRequest } from "../permission";
 import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
-import { isMcpManageRule } from "../../../../pi-runtime/extensions/hv-mcp";
 import { ToolIcon } from "./ToolCard";
 import { SkillDiff } from "./SkillsSection";
 import { memoryFactFrom, memoryFactRows, memoryPromptTitle } from "../memoryFact";
@@ -110,9 +109,9 @@ export function PermissionModal({
   container?: HTMLElement | null;
 }): React.JSX.Element {
   const args = argsFromSummary(info.tool, info.summary);
-  // docs-round #34: an MCP install or sign-in is headed by the bridge's factual display (the
-  // URL and which config it lands in); toolLabel only knows the rule name.
-  const { icon, label } = isMcpManageRule(info.tool) ? { icon: "wrench" as const, label: info.summary } : toolLabel(info.tool, args);
+  // §13 (2026-10-05): an MCP call is headed by the bridge's FACTUAL display ("MCP → server:
+  // tool: key arg") — toolLabel only knows the rule name, and never the model's intent.
+  const { icon, label } = info.tool.startsWith("mcp:") ? { icon: "wrench" as const, label: info.summary } : toolLabel(info.tool, args);
   // §33: a memory is approved as the FACT it is — scope, kind, name, summary and the body —
   // never as raw JSON. The user is agreeing to change what every future session is told.
   const fact = memoryFactFrom(info.tool, args);
@@ -170,6 +169,7 @@ export function PermissionModal({
                 <ToolIcon kind={icon} className="size-4 shrink-0 text-ink-soft" />
                 <span className="font-bold break-words">{label}</span>
               </Dialog.Description>
+              {info.serverHint && <p className="text-xs text-ink-soft mt-0.5">{SERVER_HINT_COPY[info.serverHint]}</p>}
             </div>
           </div>
           {/* §33: the memory itself. Above `details`, never inside it — a user does not open a
