@@ -380,7 +380,7 @@ describe("plan mode and delegation", () => {
     // The decision lives in hv-plan.ts because happyvibe-bridge.ts is in NEITHER
     // tsconfig — an exhaustiveness check written there is decorative (verified by
     // deleting a branch and watching the typecheck stay green).
-    expect(src).toContain("resolvePlanVerdict(gatePlanCall(tool, input), boundary)");
+    expect(src).toContain('resolvePlanVerdict(gatePlanCall(tool, input, { mcpReadOnly: mcp?.hint === "read-only" }), boundary)');
   });
 });
 

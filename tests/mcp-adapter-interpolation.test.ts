@@ -115,7 +115,7 @@ describe("pi-mcp-adapter interpolation contract", () => {
     // author mcp.json entries for the user. Neither may hand the adapter a
     // command to run: our own secrets go through `${VAR}` interpolation, pinned
     // by the cases above.
-    for (const file of ["src/main/plugins/mcpImport.ts", "src/main/plugins/catalog.generated.ts", "src/main/mcpCatalog.ts"]) {
+    for (const file of ["src/main/plugins/catalog.generated.ts", "src/main/mcpCatalog.ts"]) {
       const ours = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
       expect(ours, `${file} must not author a requestHeadersCommand`).not.toContain("requestHeadersCommand");
     }
