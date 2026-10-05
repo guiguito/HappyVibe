@@ -3,7 +3,6 @@ import path from "node:path";
 import { readSkillDir, type DiscoveredSkill } from "../skills/discovery";
 import { countPluginRootRefs, substitutePluginRoot } from "./screen";
 import { readMcpFile, type McpServerConfig } from "../mcp";
-import { normalizePluginMcpServer } from "./mcpImport";
 import type { PluginScan } from "./scan";
 
 /**
@@ -32,7 +31,7 @@ export function pluginOrigin(plugin: string, marketplace: string): PluginOrigin 
  * install changes nothing the agent can do until the user clicks Connect.
  */
 export function pluginServerEntry(cfg: McpServerConfig, plugin: string, marketplace: string): McpServerConfig {
-  return { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(plugin, marketplace), disabled: true };
+  return { ...cfg, origin: pluginOrigin(plugin, marketplace), enabled: false };
 }
 
 /** Files whose text we rewrite for ${CLAUDE_PLUGIN_ROOT}. Binary is left alone. */

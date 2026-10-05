@@ -319,7 +319,7 @@ export function McpServersSection({
             const sKey = statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name);
             const status = statuses.get(sKey);
             const isHttp = typeof s.cfg.url === "string";
-            const off = s.cfg.disabled === true; // docs-round #25: a plugin's server, until Connect
+            const off = s.cfg.enabled === false; // docs-round #25: a plugin's server, until Connect
             const brand = brandIconFor(s.name);
             return (
               <div key={`${s.scope}:${s.name}`} className="border-b border-line last:border-b-0">
@@ -352,7 +352,7 @@ export function McpServersSection({
                           : undefined
                       }
                     />
-                    {s.cfg.directTools ? (
+                    {s.cfg.exposure === "direct" ? (
                       <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
                         direct
                       </span>
@@ -546,7 +546,7 @@ function McpServerEditor({
   const [env, setEnv] = useState(
     Object.entries((cfg.env as Record<string, string>) ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"),
   );
-  const [direct, setDirect] = useState(Boolean(cfg.directTools));
+  const [direct, setDirect] = useState(cfg.exposure === "direct");
   const [error, setError] = useState<string | null>(null);
 
   const save = async (): Promise<void> => {
@@ -563,9 +563,11 @@ function McpServerEditor({
           ? { command: cmd, args: args.length ? args : undefined, url: undefined, headers: undefined }
           : { url, command: undefined, args: undefined, env: undefined }),
         ...(kind === "stdio" && Object.keys(envObj).length ? { env: envObj } : {}),
-        ...(direct ? { directTools: true } : { directTools: undefined }),
+        // §13 (2026-10-05): Pi's exposure. Unticking only undoes "direct" — a hand-set
+        // hidden/codemode survives an edit.
+        exposure: direct ? "direct" : cfg.exposure === "direct" || cfg.exposure === undefined ? "deferred" : cfg.exposure,
         // docs-round #25: Edit is not the switch. Connect is.
-        ...(cfg.disabled === true ? { disabled: true } : {}),
+        ...(cfg.enabled === false ? { enabled: false } : {}),
       };
       for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
       if (kind === "stdio" && !cmd) throw new Error("Command is required");
@@ -575,7 +577,7 @@ function McpServerEditor({
       if (server && (server.scope !== scope || server.name !== name)) {
         await window.hv.mcpSetServer(server.scope, server.scope === "workspace" ? workspaceId : null, server.name, null);
       }
-      onSaved(scope, name, kind === "http" && cfg.disabled !== true);
+      onSaved(scope, name, kind === "http" && cfg.enabled !== false);
     } catch (e) {
       setError(String(e));
     }

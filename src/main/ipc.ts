@@ -26,7 +26,7 @@ import {
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
-  setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
+  setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts, getMcpRulesMigrated, setMcpRulesMigrated,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings,
   getVoiceSettings, setVoiceSettings,
@@ -70,7 +70,7 @@ import { marketplaceRepoArchive, type MarketplaceEntry } from "./plugins/marketp
 import { CATALOG_GENERATED_AT, PLUGIN_CATALOG } from "./plugins/catalog.generated";
 import { scanPluginDir, type PluginScan } from "./plugins/scan";
 import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
-import { normalizePluginMcpServer } from "./plugins/mcpImport";
+import { migrateGlobalMcpFile, migrateMcpRules } from "./mcpMigrate";
 import {
   findPluginServers, installPluginCommands, installPluginSkills, pluginServerEntry, rewriteSkillRoots,
 } from "./plugins/install";
@@ -592,6 +592,24 @@ export function registerIpc(
   // hv-scaffold → HappyVibe rename), else resume loads no history.
   index.rebaseSessionFiles(sessionDir());
   const workspaces = new WorkspaceRegistry(path.join(userData, "workspaces.json"));
+  // §13 (2026-10-05): Pi's built-in MCP reads <agentDir>/mcp.json directly, so the
+  // adapter-era keys are translated before the first spawn — every launch, idempotent.
+  // Stored mcp: rules are respelled once (Pi writes `-` as `_` in tool names).
+  try {
+    migrateGlobalMcpFile(path.join(agentDir(), "mcp.json"));
+    if (!getMcpRulesMigrated()) {
+      const servers = [path.join(agentDir(), "mcp.json"), ...workspaces.list().map((w) => path.join(w, ".mcp.json"))]
+        .flatMap((f) => Object.keys(readMcpFile(f).mcpServers));
+      const rf = rulesFile();
+      if (fs.existsSync(rf)) {
+        const { rules, changed } = migrateMcpRules(parseRulesFile(fs.readFileSync(rf, "utf8")), servers);
+        if (changed) fs.writeFileSync(rf, JSON.stringify(rules, null, 2));
+      }
+      setMcpRulesMigrated(true);
+    }
+  } catch (e) {
+    console.warn("[hv] MCP launch migration failed:", e);
+  }
   /**
    * §29 worktrees — discovered roots beside the registered ones.
    *
@@ -7036,7 +7054,7 @@ export function registerIpc(
           // docs-round #25: written OFF. The adapter neither lists nor connects it until
           // Connect (hv:mcp-connect-flow) removes the flag.
           writeMcpServer(globalMcpFile(), key, pluginServerEntry(cfg, scan.name, marketplaceId), { failIfExists: true });
-          track("mcp_server_added", mcpParams("plugin", normalizePluginMcpServer(cfg)));
+          track("mcp_server_added", mcpParams("plugin", cfg));
           servers.push(key);
         }
 
