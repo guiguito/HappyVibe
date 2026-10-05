@@ -4,7 +4,8 @@
  * A subscription sign-in ends on a page the Pi child serves on localhost, and Pi hardcodes its own
  * logo there with no setting to change it. Pi's bundle inlines that page into every sign-in chunk
  * (one name is hashed), so the chunks are FOUND by scanning, not listed. Each gets our icon
- * (derived from build/icon.svg) and a success line that points back to the app. Same applier as
+ * (derived from build/icon.svg) and a success line that points back to the app; the ChatGPT flow
+ * also names HappyVibe, not Pi, on OpenAI's consent screen. Same applier as
  * the tintinweb patch: an anchor that moves at a Pi bump fails the install.
  */
 import fs from "node:fs";
@@ -29,11 +30,15 @@ export function logoSvg(iconSvg) {
 export function hunks(chunksDir, iconSvg) {
   const files = fs.readdirSync(chunksDir).filter((f) => fs.readFileSync(path.join(chunksDir, f), "utf8").includes("var LOGO_SVG="));
   if (!files.length) throw new Error("[patch-pi-oauth-page] no chunk inlines Pi's sign-in page any more — re-derive the patch against this Pi version");
-  return files.flatMap((file) => [
-    { id: "oauth-logo", file, find: PI_LOGO, replace: `var LOGO_SVG=/*hv-patch:oauth-logo*/${JSON.stringify(logoSvg(iconSvg))}` },
-    // "…You can close this window." → "…You can close this window and return to HappyVibe."
-    { id: "oauth-return", file, find: PI_SUCCESS, replace: PI_SUCCESS.replace(",message})", String.raw`,message:message.replace(/\.$/," and return to HappyVibe.")})/*hv-patch:oauth-return*/`) },
-  ]);
+  return [
+    ...files.flatMap((file) => [
+      { id: "oauth-logo", file, find: PI_LOGO, replace: `var LOGO_SVG=/*hv-patch:oauth-logo*/${JSON.stringify(logoSvg(iconSvg))}` },
+      // "…You can close this window." → "…You can close this window and return to HappyVibe."
+      { id: "oauth-return", file, find: PI_SUCCESS, replace: PI_SUCCESS.replace(",message})", String.raw`,message:message.replace(/\.$/," and return to HappyVibe.")})/*hv-patch:oauth-return*/`) },
+    ]),
+    // OpenAI's consent screen reads "Use ChatGPT to sign in to <agent_name_hint>".
+    { id: "oauth-agent-name", file: "openai-chatgpt.js", find: 'AGENT_NAME_HINT="Pi"', replace: 'AGENT_NAME_HINT=/*hv-patch:oauth-agent-name*/"HappyVibe"' },
+  ];
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

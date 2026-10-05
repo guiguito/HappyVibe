@@ -43,6 +43,12 @@ describe("Pi's sign-in page is HappyVibe's", () => {
     expect(chunks.filter(([, s]) => s.includes(PI_SUCCESS)).map(([f]) => f), STALE).toEqual([]);
   });
 
+  it("OpenAI's consent screen names HappyVibe, not Pi", () => {
+    const s = fs.readFileSync(path.join(DIR, "openai-chatgpt.js"), "utf8");
+    expect(s, STALE).toContain('AGENT_NAME_HINT=/*hv-patch:oauth-agent-name*/"HappyVibe"');
+    expect(s).not.toContain('AGENT_NAME_HINT="Pi"');
+  });
+
   it("every patched chunk carries today's icon and the way back to the app", () => {
     for (const [f, s] of chunks.filter(([, s]) => s.includes("var LOGO_SVG="))) {
       expect(s, `${f}: ${STALE}`).toContain(JSON.stringify(logoSvg(ICON)));
