@@ -82,16 +82,16 @@ export type PermState = "allow" | "ask" | "deny";
  * tool's own (happyvibe-bridge.ts `permTool`, and the SubagentWorkflow gate). `per` is set
  * when that name changes with the call (which MCP tool, which agent, which site), so the
  * bare name has no verdict of its own: a deny rule on `Agent` would paint the pill red while
- * every delegation still prompts. A directly exposed MCP tool keeps its own name (null here).
+ * every delegation still prompts. A Pi MCP tool carries its own rule name from the bridge (checkedAsOf).
  */
 export interface CheckedAs {
   name: string;
-  per?: "per MCP tool" | "per agent" | "per site";
+  per?: "per server" | "per agent" | "per site";
 }
 
 export function checkedAs(tool: string): CheckedAs | null {
   // §13: the resource read gates under whichever server it names; server tools carry their own name.
-  if (tool === READ_RESOURCE_TOOL) return { name: "mcp:<server>_read_mcp_resource", per: "per MCP tool" };
+  if (tool === READ_RESOURCE_TOOL) return { name: "mcp:<server>_read_mcp_resource", per: "per server" };
   if (tool === AGENT_TOOL) return { name: "subagent:<agent>", per: "per agent" };
   if (tool === "browser_open" || tool === "browser_navigate" || WEB_URL_TOOLS.has(tool)) {
     return { name: "browser:<host>", per: "per site" };

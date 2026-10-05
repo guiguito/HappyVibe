@@ -1027,7 +1027,7 @@ describe("cleanup C8: the test box never says allow for a workflow", () => {
 
 describe("per-call pills (docs round #3)", () => {
   test("the tools the gate checks under another name say which, and the per-call ones have no verdict", () => {
-    expect(checkedAs("read_mcp_resource")).toEqual({ name: "mcp:<server>_read_mcp_resource", per: "per MCP tool" });
+    expect(checkedAs("read_mcp_resource")).toEqual({ name: "mcp:<server>_read_mcp_resource", per: "per server" });
     expect(checkedAs("Agent")).toEqual({ name: "subagent:<agent>", per: "per agent" });
     for (const t of ["browser_open", "browser_navigate", "web_fetch", "web_map", "web_crawl"]) {
       expect(checkedAs(t)).toEqual({ name: "browser:<host>", per: "per site" });
@@ -1050,7 +1050,7 @@ describe("per-call pills (docs round #3)", () => {
 
   test("§13: a Pi MCP tool row carries its own rule name and gets a real verdict", () => {
     expect(checkedAs("mcp")).toBeNull();
-    expect(checkedAs("read_mcp_resource")).toEqual({ name: "mcp:<server>_read_mcp_resource", per: "per MCP tool" });
+    expect(checkedAs("read_mcp_resource")).toEqual({ name: "mcp:<server>_read_mcp_resource", per: "per server" });
     const rows = joinToolPermissions(
       [{ name: "mcp__linear__get_issue", description: "", source: "builtin", checkedAs: "mcp:linear_get_issue" }],
       { "mcp__linear__get_issue": "allow" },

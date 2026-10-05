@@ -79,3 +79,14 @@ Throwaway `PI_CODING_AGENT_DIR` with `{"notion":{"url":"https://mcp.notion.com/m
 
 **GO** (2026-10-05). Memory +658 MB < ~1 GB, start faster, ~1–1.5k tokens/request saved with 3
 servers, permission gate holds, Pi's sign-in works headless with no keychain. Guilhem ran the sign-in.
+
+## Upstream asks (drafts — Guilhem files them)
+
+1. **`pi mcp list --json`: include tool descriptions.** Today `tools` is a list of names
+   (`extensions/mcp/cli.js` maps `tool.name`). A GUI that lists a server's tools has to show bare
+   names; the description is already on the connection's tool objects.
+2. **`pi mcp list <server>`**: list (and so connect to) one server. A per-server "Reconnect" in a GUI
+   currently re-probes every configured server.
+3. **Lazy start** (an `exposure`-independent `lifecycle: "lazy"` or a global setting): connect a server
+   on first use. Every session currently starts every enabled stdio server; with several sessions open
+   that multiplies processes (measured above: ~3 processes per session for one `npx` server).

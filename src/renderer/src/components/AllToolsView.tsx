@@ -9,7 +9,7 @@ const PERM_TONE: Record<ToolRow["permission"], string> = {
   ask: "bg-honey-soft text-tangerine-deep border-honey/60",
   allow: "bg-leaf-soft text-leaf border-leaf/50",
   // docs round #3: not verdicts. Which rule decides depends on the call.
-  "per MCP tool": "bg-card text-ink-soft border-line",
+  "per server": "bg-card text-ink-soft border-line",
   "per agent": "bg-card text-ink-soft border-line",
   "per site": "bg-card text-ink-soft border-line",
 };
