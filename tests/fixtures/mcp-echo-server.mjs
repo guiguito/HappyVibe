@@ -1,6 +1,7 @@
 // Minimal MCP stdio server: one tool `echo`. Zero deps — the MCP stdio
 // transport is newline-delimited JSON-RPC, so a hand-rolled server keeps the
 // contract test hermetic and pins the wire shape.
+import fs from "node:fs";
 import readline from "node:readline";
 
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
@@ -23,6 +24,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     send({ jsonrpc: "2.0", id: m.id, result: { tools: [TOOL] } });
   } else if (m.method === "tools/call") {
     const text = m.params?.arguments?.text ?? "";
+    if (process.env.ECHO_CALL_LOG) fs.appendFileSync(process.env.ECHO_CALL_LOG, `${text}\n`);
     send({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: `echo: ${text}` }] } });
   } else if (m.method === "ping") {
     send({ jsonrpc: "2.0", id: m.id, result: {} });
