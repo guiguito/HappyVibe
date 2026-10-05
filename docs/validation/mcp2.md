@@ -57,3 +57,25 @@ Static cost only — the search round trips per task are not measured (needs int
 ## Elicitation
 
 `grep -rln elicitation src/ pi-runtime/extensions/` → nothing. No shipped flow depends on it.
+
+## Sign-in
+
+Throwaway `PI_CODING_AGENT_DIR` with `{"notion":{"url":"https://mcp.notion.com/mcp","exposure":"direct"}}`.
+
+- `pi mcp login notion --timeout 300 < /dev/null` printed, on stdout,
+  `Sign in to MCP server "notion" in your browser:` then the authorize URL (redirect
+  `http://127.0.0.1:<free port>/callback`), opened the browser itself, and after approval printed
+  `Signed in to MCP server "notion" (44 tools).` — exit 0.
+- `<agentDir>/mcp-auth.json`: mode **600**, one key `mcp__notion|https://mcp.notion.com/mcp`
+  (namespace + URL), fields `serverUrl, discovery, clientInformation, oauthState, codeVerifier, tokens,
+  tokensExpireAt`. No keychain access at any point.
+- **A running session picks up a shell sign-in without a respawn** (`scripts/spike/mcp-signin-live.mjs`):
+  same RPC Pi, turn 1 signed out → `Tool mcp__notion__notion_search not found` (a needs-auth server
+  registers no tools); `pi mcp login` from the shell; turn 2 → the call succeeded with real results.
+  Decision 12's simplification (skip the respawn after sign-in) is therefore open — kept out of this
+  round as decided; the respawn stays.
+
+## Verdict
+
+**GO** (2026-10-05). Memory +658 MB < ~1 GB, start faster, ~1–1.5k tokens/request saved with 3
+servers, permission gate holds, Pi's sign-in works headless with no keychain. Guilhem ran the sign-in.
