@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { isSignedIn, parseAuth, type AuthEvent, type AuthProviderStatus } from "../auth";
+import { isSignedIn, parseAuth, withAuthEvent, type AuthProviderStatus, type LoginState } from "../auth";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { BrandLogo } from "./BrandLogo";
 import { ModelSelect } from "./ModelSelect";
@@ -124,7 +124,7 @@ export function ModelsView({
    * that will actually be on screen exists.
    */
   const [justSaved, setJustSaved] = useState<string | null>(null);
-  const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
+  const [login, setLogin] = useState<LoginState | null>(null);
   // "Add provider" area — expanded during first-run (it IS the onboarding).
   const [adding, setAdding] = useState(firstRun);
   // §16 (2026-07-30): custom OpenAI-compatible endpoints + the add-form draft.
@@ -187,7 +187,7 @@ export function ModelsView({
         void window.hv.listModels().then(setModels);
         return;
       }
-      setLogin((cur) => (cur && cur.provider === e.provider ? { ...cur, event: e } : cur));
+      setLogin((cur) => (cur && cur.provider === e.provider ? withAuthEvent(cur, e) : cur));
       if (e.stage === "success") {
         // Login is live immediately in the running Pi (s0.2 §3) — refresh lists.
         void window.hv.authStatus();
@@ -749,7 +749,7 @@ export function ModelsView({
       </div>
 
       {login && (
-        <AuthFlowModal providerLabel={login.label} event={login.event} onCancel={cancelLogin} onClose={closeLogin} />
+        <AuthFlowModal providerLabel={login.label} event={login.event} authUrl={login.authUrl ?? null} onCancel={cancelLogin} onClose={closeLogin} />
       )}
     </div>
   );
