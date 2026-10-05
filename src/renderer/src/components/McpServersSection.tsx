@@ -38,7 +38,8 @@ export type ConnectResultState =
   | { phase: "error"; serverName: string; error: string; retry: () => void };
 
 /**
- * A server's tools with their descriptions. Shared by the post-install confirm
+ * A server's tools — names, plus a description when one is known (Pi's list reports names
+ * only, §13 2026-10-05). Shared by the post-install confirm
  * modal and (round 11) the tool-count disclosure on each server row — the same
  * data, and it was already fetched for both.
  */
@@ -61,6 +62,13 @@ export function McpToolList({
   );
 }
 
+/** §13 (2026-10-05): Pi's own sign-in — copy as data (tests/mcp-page-copy.test.ts). */
+export const MCP_SIGNIN_COPY = {
+  waiting: "Waiting for sign-in in your browser…",
+  reopen: "Open the sign-in page again",
+  cancel: "Cancel",
+};
+
 export function McpConnectResult({
   state,
   onClose,
@@ -68,6 +76,14 @@ export function McpConnectResult({
   state: ConnectResultState;
   onClose: () => void;
 }): React.JSX.Element {
+  // The sign-in page Pi opened, so the user can get back to it if the tab got lost.
+  const [signinUrl, setSigninUrl] = useState<string | null>(null);
+  const connectingTo = state.phase === "connecting" ? state.serverName : null;
+  useEffect(() => {
+    setSigninUrl(null);
+    if (!connectingTo) return;
+    return window.hv.onMcpSignin((p) => { if (p.name === connectingTo) setSigninUrl(p.url); });
+  }, [connectingTo]);
   return (
     <div
       className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6"
@@ -93,21 +109,27 @@ export function McpConnectResult({
                 className="inline-block w-4 h-4 rounded-full border-2 border-tangerine border-t-transparent animate-spin shrink-0"
                 aria-hidden
               />
-              Waiting for authorisation…
+              {signinUrl ? MCP_SIGNIN_COPY.waiting : "Connecting…"}
               <span className="flex-1" />
-              {/* Abandoning the browser sign-in must not trap the user behind a
-                  spinner that only clears on the auth timeout. Dismissing is
-                  cosmetic — main's attempt runs to completion and its result is
-                  ignored — so the server is simply left unauthenticated, which
-                  the status badge already reports. */}
+              {/* Abandoning the browser sign-in must not trap the user behind a spinner. Cancel
+                  stops Pi's sign-in for real, which also frees its loopback callback port. */}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => { void window.hv.mcpSigninCancel(); onClose(); }}
                 className="text-xs font-bold text-ink-soft underline hover:text-ink cursor-pointer shrink-0"
               >
-                Cancel
+                {MCP_SIGNIN_COPY.cancel}
               </button>
             </div>
+            {signinUrl && (
+              <button
+                type="button"
+                onClick={() => void window.hv.openExternal(signinUrl)}
+                className="mt-3 text-xs font-bold text-tangerine-deep underline cursor-pointer"
+              >
+                {MCP_SIGNIN_COPY.reopen}
+              </button>
+            )}
           </>
         )}
 
@@ -219,10 +241,8 @@ export function McpServersSection({
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     };
     void window.hv.mcpStatus().then(apply).catch(() => { /* non-fatal */ });
-    // Remote servers are NOT swept at boot: reading their OAuth credential can
-    // raise an OS keychain prompt, and an app that opens behind a password
-    // dialog is worse than a badge that resolves a moment after you open this
-    // page. Latched in main, so switching tabs does not re-prompt.
+    // §13 (2026-10-05): workspace servers are asked about here, not at boot — each probe
+    // is a Pi that starts every server.
     void window.hv.mcpRefresh().then(apply).catch(() => { /* non-fatal */ });
     unsubRef.current = window.hv.onMcpStatusChanged((list) => {
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
@@ -444,6 +464,12 @@ export function McpServersSection({
   );
 }
 
+/** §13 (2026-10-05): a workspace server shadowed by a global one of the same name (Pi's file wins). */
+export const MCP_OVERRIDDEN_PILL = {
+  label: "overridden",
+  title: "Overridden by your global server of the same name",
+};
+
 /** docs-round #25: the badge of a server that arrived off. Exported as data (no DOM in the suite). */
 export const MCP_OFF_PILL = {
   label: "off",
@@ -499,6 +525,13 @@ function McpStatusBadge({
         </span>
         {label}
       </button>
+    );
+  }
+  if (state === "overridden") {
+    return (
+      <span title={MCP_OVERRIDDEN_PILL.title} className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+        {MCP_OVERRIDDEN_PILL.label}
+      </span>
     );
   }
   if (state === "needs-auth") {
