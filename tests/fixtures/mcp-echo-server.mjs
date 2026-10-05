@@ -21,7 +21,9 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       serverInfo: { name: "echo-fixture", version: "1.0.0" },
     }});
   } else if (m.method === "tools/list") {
-    send({ jsonrpc: "2.0", id: m.id, result: { tools: [TOOL] } });
+    // ECHO_TOOLS=N publishes N extra echo tools (echo_0…), for tool_search limit tests.
+    const extra = Array.from({ length: Number(process.env.ECHO_TOOLS ?? 0) }, (_, i) => ({ ...TOOL, name: `echo_${i}` }));
+    send({ jsonrpc: "2.0", id: m.id, result: { tools: [TOOL, ...extra] } });
   } else if (m.method === "tools/call") {
     const text = m.params?.arguments?.text ?? "";
     if (process.env.ECHO_CALL_LOG) fs.appendFileSync(process.env.ECHO_CALL_LOG, `${text}\n`);

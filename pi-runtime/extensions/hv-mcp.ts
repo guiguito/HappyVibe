@@ -11,6 +11,13 @@
 export const PI_MCP_SOURCE = "builtin:mcp";
 export const READ_RESOURCE_TOOL = "read_mcp_resource";
 /** Read-only discovery: safe-default allowed and passed through plan mode (hv-rules, hv-plan). */
+/** Most tools one tool_search may load. Pi keeps loaded tools declared for the rest of the
+    branch, and an MCP tool schema can weigh ~2k tokens (Notion's do), so Pi's default of 8 per
+    search filled the context fast (GUI pass, 2026-10-05). The model can always search again —
+    a search only ranks tools that are not loaded yet. */
+export const TOOL_SEARCH_LIMIT = 4;
+export const TOOL_SEARCH_SOURCE = "builtin:tool-search";
+
 export const MCP_SAFE_TOOLS = ["tool_search", "list_mcp_resources", "list_mcp_resource_templates"] as const;
 
 export interface PiMcpToolInfo {

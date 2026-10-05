@@ -90,3 +90,7 @@ servers, permission gate holds, Pi's sign-in works headless with no keychain. Gu
 3. **Lazy start** (an `exposure`-independent `lifecycle: "lazy"` or a global setting): connect a server
    on first use. Every session currently starts every enabled stdio server; with several sessions open
    that multiplies processes (measured above: ~3 processes per session for one `npx` server).
+4. **Unload or cap loaded tools.** A `tool_search` result stays declared for the rest of the branch.
+   Measured in the GUI pass (2026-10-05): Notion searches loaded 26 tools ≈ 17,165 tokens that then
+   rode every request (tool definitions 32.5k vs ≈15k before). HappyVibe now caps each search at 4;
+   a per-session ceiling or an "unload after the turn" option belongs upstream.

@@ -12,7 +12,7 @@ import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOO
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
-import { isPiMcpTool, mcpCallInfo, mcpNamespace, PI_MCP_SOURCE, READ_RESOURCE_TOOL } from "./hv-mcp";
+import { isPiMcpTool, mcpCallInfo, mcpNamespace, PI_MCP_SOURCE, READ_RESOURCE_TOOL, TOOL_SEARCH_LIMIT, TOOL_SEARCH_SOURCE } from "./hv-mcp";
 import { workspaceRegistrations } from "./hv-mcp-config";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -1019,6 +1019,12 @@ export default function (pi: ExtensionAPI) {
     // forward it verbatim to the MCP server otherwise. The UI already has it:
     // tool_execution_start fired with the original args.
     if (strippedIntentTools.has(tool)) delete input.intent;
+    // §13 (2026-10-05): cap every tool_search (TOOL_SEARCH_LIMIT) — event.input is Pi's documented
+    // mutable pre-execution hook and the bridge is the last handler, so this is what runs.
+    if (tool === "tool_search" && pi.getAllTools().find((t) => t.name === tool)?.sourceInfo?.path === TOOL_SEARCH_SOURCE) {
+      const asked = typeof input.limit === "number" && input.limit > 0 ? input.limit : TOOL_SEARCH_LIMIT;
+      input.limit = Math.min(asked, TOOL_SEARCH_LIMIT);
+    }
     // §13 (2026-10-05): Pi's MCP tools gate as mcp:<server>_<tool> — the adapter-era name, so
     // stored rules keep matching. Identified by SOURCE, never by name (hv-mcp.ts).
     const mcp = mcpCallInfo(pi.getAllTools().find((t) => t.name === tool) as never, input, mcpServerNames());

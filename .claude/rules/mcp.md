@@ -33,6 +33,9 @@ PRD §13 Decision (2026-10-05); evidence `docs/validation/mcp2.md`.
   keep matching: server = the CONFIGURED name recovered from `ToolInfo.namespace` (never a parse of
   the tool name), no double prefix. Identified by SOURCE: another extension can name a tool `mcp__x`.
 - `tool_search`, `list_mcp_resources`, `list_mcp_resource_templates` are `SAFE_TOOLS` and plan-pass.
+  The bridge caps every `tool_search` at `TOOL_SEARCH_LIMIT` (4): Pi keeps loaded tools declared for
+  the rest of the branch, and one search at Pi's default 8 loaded ~17k tokens of Notion schemas
+  (GUI pass 2026-10-05). A later search only ranks tools not yet loaded, so the model can re-search.
   `read_mcp_resource` gates as `mcp:<server>_read_mcp_resource` (unknown server → `(unknown server)`).
 - Server hints (`readOnlyHint` / `destructiveHint`) ride the prompt as `serverHint` ("Server says: …")
   and a read-only hint turns Plan mode's (and read-only runs') floor-ask into `pass` — checked AFTER

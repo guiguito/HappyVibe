@@ -28,7 +28,7 @@ function boot(tmp: string, steps: object[], intent = true): PiClient {
     execPath: process.execPath,
     args,
     env: { ...spec.env, HOME: tmp, HV_TEST_RUNTIME: runtime, HV_FAUX_STEPS: JSON.stringify(steps),
-      ECHO_CALL_LOG: path.join(tmp, "calls.log") } as Record<string, string>,
+      ECHO_CALL_LOG: path.join(tmp, "calls.log"), ECHO_TOOLS: "9" } as Record<string, string>,
   });
 }
 
@@ -125,4 +125,17 @@ test("Tool intent off: an MCP call with no intent reaches the permission prompt"
   const prompts = await runTurn(client, () => "Allow");
   expect(prompts.map((p) => p.tool)).toEqual(["mcp:echo_echo"]);
   expect(fs.readFileSync(path.join(tmp, "calls.log"), "utf8")).toBe("hi\n");
+}, 60_000);
+
+// GUI pass G13 (2026-10-05): one search loaded up to 8 fat Notion tools that then stay declared
+// for the rest of the session. The bridge caps every tool_search at TOOL_SEARCH_LIMIT.
+test("tool_search loads at most 4 tools, whatever limit the model asks for", async () => {
+  const tmp = tmpWithGlobal();
+  const results: string[] = [];
+  client = boot(tmp, [{ tool: "tool_search", args: { query: "echo", limit: 20 } }, { text: "done" }]);
+  client.on("event", (e: { type: string; toolName?: string; result?: { content?: Array<{ text?: string }> } }) => {
+    if (e.type === "tool_execution_end" && e.toolName === "tool_search") results.push(e.result?.content?.[0]?.text ?? "");
+  });
+  await runTurn(client, () => "Allow");
+  expect(results[0]).toMatch(/^Loaded 4 tools/);
 }, 60_000);
