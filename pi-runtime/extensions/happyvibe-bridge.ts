@@ -1402,6 +1402,11 @@ export default function (pi: ExtensionAPI) {
       const ac = new AbortController();
       loginAborts.set(provider, ac);
       try {
+        // Pi 0.99's "Sign in with ChatGPT" refuses to start without a stable per-install UUID.
+        // Pi's own /login takes it from global settings.json (`deviceId`); use that same one.
+        // Imported lazily: tests import this module and must not load Pi to do it.
+        const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
+        const settings = SettingsManager.create(ctx.cwd, undefined, { projectTrusted: false });
         // ModelRuntime.login persists the credential AND updates the in-memory
         // store — no respawn needed afterwards (s0.2 §2).
         await runtime.login(provider, "oauth", {
@@ -1421,25 +1426,32 @@ export default function (pi: ExtensionAPI) {
             }
           },
           prompt: async (p: Record<string, any>) => {
+            // The flow's own signal fires when it no longer needs the answer (the browser callback won
+            // the race with the paste-back box); ours fires on /hv-login-cancel. Either one must close
+            // the request — otherwise only an answer from the renderer can, and a renderer that lost the
+            // dialog leaves the flow holding its callback port until restart.
+            const opts = { signal: p.signal ?? ac.signal };
             if (p.type === "select") {
               const label = await ctx.ui.select(
                 authPayload({ stage: "select", provider, message: p.message }),
                 p.options.map((o: { label: string }) => o.label),
+                opts,
               );
               const id = p.options.find((o: { label: string }) => o.label === label)?.id;
               if (id === undefined) throw new Error("Login cancelled");
               return id;
             }
             const v = p.type === "manual_code"
-              ? await ctx.ui.input(authPayload({ stage: "manual_code", provider, message: p.message ?? "Paste the authorization code" }))
+              ? await ctx.ui.input(authPayload({ stage: "manual_code", provider, message: p.message ?? "Paste the authorization code" }), undefined, opts)
               : await ctx.ui.input(
                   authPayload({ stage: "prompt", provider, message: p.message, placeholder: p.placeholder }),
                   p.placeholder,
+                  opts,
                 );
             if (v === undefined) throw new Error("Login cancelled");
             return v;
           },
-        });
+        }, { getDeviceId: () => settings.getOrCreateDeviceId() });
         ctx.ui.notify(authPayload({ stage: "success", provider }), "info");
       } catch (e) {
         ctx.ui.notify(authPayload({ stage: "error", provider, message: e instanceof Error ? e.message : String(e) }), "error");

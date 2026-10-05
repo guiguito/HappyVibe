@@ -52,6 +52,22 @@ describe("not transient — no retry button, actionable hint instead", () => {
     expect(d.hint).toMatch(/compatib|preset/i);
   });
 
+  test("a ChatGPT plan that doesn't cover the model says so, not 'fix your preset'", () => {
+    // Verbatim from Pi 1.0.2 (2026-10-05), a ChatGPT sign-in asking for a model above the plan.
+    const d = describeProviderError(`OpenAI API error (400): 400 {"detail":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}`);
+    expect(d.kind).toBe("model_not_found");
+    expect(d.headline).toMatch(/ChatGPT plan/);
+    expect(d.hint).toMatch(/another model/i);
+    expect(d.hint).not.toMatch(/preset|endpoint/i);
+    expect(d.retriable).toBe(false);
+  });
+
+  test("no hint names 'LLM Setup' — the page is Models since round 8", () => {
+    for (const raw of ["401 status code (no body)", "400 status code (no body)", "404 model not found", "insufficient_quota", "fetch failed"]) {
+      expect(describeProviderError(raw).hint ?? "").not.toMatch(/LLM Setup/);
+    }
+  });
+
   test("404 points at the model id", () => {
     expect(describeProviderError("404 model not found").hint).toMatch(/model/i);
   });

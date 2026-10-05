@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **A new way to sign in with your ChatGPT plan.** On **Models**, **ChatGPT** replaces the older
+  ChatGPT (Codex) sign-in. It can use only the models your plan includes; pick one above your plan
+  and the session tells you so. If you already signed in the old way, it keeps working and stays
+  listed until you sign out.
+
+### Changed
+
+- **The bundled coding agent moved up to Pi 1.0**, and with it more models to choose from on most
+  providers.
+
+Runtime: Pi 1.0.2 · sub-agents 0.19.0 · MCP adapter 2.35.0
+
 ## [0.1.0] — 2026-09-30
 
 The first release of HappyVibe: vibe coding you can actually watch.
