@@ -10,6 +10,6 @@
     "typebox": "1.3.27"
   },
   "scripts": {
-    "postinstall": "node ../scripts/build-mcp-oauth-bridge.mjs && node ../scripts/patch-tintinweb.mjs"
+    "postinstall": "node ../scripts/build-mcp-oauth-bridge.mjs && node ../scripts/patch-tintinweb.mjs && node ../scripts/patch-pi-oauth-page.mjs"
   }
 }

@@ -31,7 +31,7 @@ The app says it plainly beside Claude: "Heads up: on Claude Pro/Max this uses yo
    - a code to type on their site: "Enter this code at the provider:", with **Copy** beside it and a button that opens their site;
    - a code to paste back from their site, into the box, then **OK**;
    - a choice between options, as buttons.
-5. When it works, the dialog says "You're signed in." Click **Done**.
+5. When it works, the dialog says "You're signed in." Click **Done**. If your browser shows the HappyVibe icon and "Authentication successful", you can close that tab.
 
 You can click **Cancel** at any point before the end. If something goes wrong, the dialog says "Sign-in didn't finish." and shows the reason. Click **Done** and try again.
 
