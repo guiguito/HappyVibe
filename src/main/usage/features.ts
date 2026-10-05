@@ -16,7 +16,8 @@ const MEMORY = new Set<string>(MEMORY_TOOLS);
 const SELF = new Set(["bash", "edit", "write", "read"]);
 
 export function toolKind(tool: string): string {
-  if (tool === "mcp" || tool.startsWith("mcp:")) return "mcp";
+  // §13 (2026-10-05): Pi's mcp__<server>__<tool>; "mcp"/"mcp:" stay for adapter-era event logs.
+  if (tool === "mcp" || tool.startsWith("mcp:") || tool.startsWith("mcp__") || tool === "read_mcp_resource") return "mcp";
   if (tool.startsWith("browser:") || BROWSER.has(tool)) return "browser";
   if (tool.startsWith("subagent:") || isDelegationTool(tool)) return "subagent";
   if (SELF.has(tool)) return tool;
@@ -39,6 +40,6 @@ export function featureOfTool(tool: string): string | null {
   if (tool === "ask_user") return "ask_user";
   if (tool === "use_skill") return "skill";
   if (tool === "document_read") return "document";
-  if (tool === "mcp" || tool.startsWith("mcp:")) return "mcp_tool";
+  if (tool === "mcp" || tool.startsWith("mcp:") || tool.startsWith("mcp__") || tool === "read_mcp_resource") return "mcp_tool";
   return null;
 }
