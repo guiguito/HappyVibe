@@ -191,7 +191,7 @@ export function McpConnectResult({
 
 /**
  * MCP servers CRUD (Agents & Tools page). Writes standard mcpServers JSON
- * vendored pi-mcp-adapter reads: global → app agent dir mcp.json,
+ * HappyVibe reads: global → app agent dir mcp.json (Pi reads it),
  * workspace → <workspace>/.mcp.json (shareable with other MCP hosts).
  * Config read at session start — a change respawns open sessions once they're
  * idle (ipc.ts scheduleMcpReload).

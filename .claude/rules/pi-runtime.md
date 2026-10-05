@@ -12,7 +12,7 @@ paths:
   real per method: `input`/`select`/`setTitle`/`setEditorText` emit `extension_ui_request` (the
   bridge's channel), but `custom()` returns `undefined` (`dist/modes/rpc/rpc-mode.js`), so an
   awaited `ctx.ui.custom()` panel never settles. Upstream code gated on `ctx.hasUI` runs for us;
-  the correct discriminator is `ctx.hasUI && ctx.mode === "tui"` (what pi-mcp-adapter uses).
+  the correct discriminator is `ctx.hasUI && ctx.mode === "tui"` (what the old pi-mcp-adapter used).
   tintinweb's widgets are dormant only because `widgetMode`/`fleetView` are off.
 - **`--append-system-prompt` REPLACES Pi's discovery of `APPEND_SYSTEM.md`**, and a non-existent path
   is used VERBATIM as prompt text. So spawn.ts passes the flag twice: HappyVibe's identity first,

@@ -42,9 +42,9 @@ describe("afterPack signing", () => {
     "finds the real pi-runtime binaries, anydoc included",
     () => {
       const files: string[] = machOFiles(path.join(__dirname, "..", "pi-runtime", "node_modules"));
-      // 7 since Pi 1.0.1 dropped its npm-shrinkwrap: Pi now shares the top-level
-      // pi-tui instead of nesting its own copy (and that copy's two .node files).
-      expect(files.length).toBeGreaterThanOrEqual(7);
+      // 5 since §13 (2026-10-05) dropped pi-mcp-adapter and its @napi-rs/keyring binaries
+      // (7 before; Pi 1.0.1 had already stopped nesting its own pi-tui copy).
+      expect(files.length).toBeGreaterThanOrEqual(5);
       expect(files.some((f) => f.endsWith("anydoc.darwin-arm64.node"))).toBe(true);
     },
   );

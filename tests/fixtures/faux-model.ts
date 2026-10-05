@@ -1,7 +1,7 @@
 // A scripted model so a turn runs with NO key. Loaded with -e BEFORE the bridge.
-// pi-ai is nested under pi-coding-agent while pi-mcp-adapter pinned a stale top-level
-// copy (.claude/rules/providers.md); once that copy is gone the nested one is hoisted —
-// so try both. HV_FAUX_STEPS: JSON Array<{tool?, args?, text?}>, one per model call.
+// pi-ai 1.0.x is nested under pi-coding-agent while tintinweb's open peer range keeps a
+// stale top-level copy (.claude/rules/providers.md) — use the nested one, else the top.
+// HV_FAUX_STEPS: JSON Array<{tool?, args?, text?}>, one per model call.
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
