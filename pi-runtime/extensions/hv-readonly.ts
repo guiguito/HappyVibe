@@ -47,11 +47,11 @@ export function readonlyFromEnv(env: NodeJS.ProcessEnv): boolean {
  * through the same `resolvePlanVerdict` and the renderer draws the same quiet
  * "Skipped" card — one mechanism, two entrances.
  */
-export function gateReadonlyCall(toolName: string, input: unknown): PlanGate {
+export function gateReadonlyCall(toolName: string, input: unknown, opts?: { mcpReadOnly?: boolean }): PlanGate {
   if (READONLY_BLOCKED.has(toolName)) {
     return { kind: "block", reason: `This is a read-only run — '${toolName}' is not available. Report your findings in chat.` };
   }
-  const g = gatePlanCall(toolName, input);
+  const g = gatePlanCall(toolName, input, opts);
   // Re-voice the reason: the user reading this card never chose plan mode, they
   // chose a read-only schedule, and a message naming a mode they did not pick
   // reads as a bug.
