@@ -378,6 +378,8 @@ interface HvOAuthProvider {
   label: string;
   /** Honest billing note, e.g. Claude Pro/Max extra usage. */
   caveat?: string;
+  /** Replaced by a newer flow: never offered as a sign-in, still shown while signed in. */
+  superseded?: true;
 }
 
 /** §16 (2026-07-30): a user-defined OpenAI-compatible endpoint. Mirrors

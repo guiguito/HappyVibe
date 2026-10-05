@@ -31,11 +31,14 @@ const ghostBtn =
 export function AuthFlowModal({
   providerLabel,
   event,
+  authUrl,
   onCancel,
   onClose,
 }: {
   providerLabel: string;
   event: AuthEvent | null;
+  /** The newest `auth_url` seen, latched per event by `withAuthEvent` (auth.ts). */
+  authUrl: string | null;
   onCancel: () => void;
   onClose: () => void;
 }): React.JSX.Element {
@@ -44,12 +47,12 @@ export function AuthFlowModal({
   const terminal = stage === "success" || stage === "error";
 
   /**
-   * The sign-in URL, LATCHED — and opened for you.
+   * The sign-in URL arrives LATCHED by the parent (`withAuthEvent`, auth.ts) — and is opened for you.
    *
    * `event` is only ever the newest notify, and several providers send
    * `auth_url` immediately followed by `manual_code` ("paste the authorization
-   * code"). Measured: Claude and OpenRouter both do. So the Open button and the
-   * URL appeared for a moment and were then replaced by a bare input, leaving
+   * code"): Claude and OpenRouter a moment apart, ChatGPT in the same tick. So
+   * the Open button and the URL used to vanish under a bare input, leaving
    * the user told to finish in a browser that had never opened and holding no
    * address to go to. Keeping the last URL means the way out survives the next
    * stage.
@@ -58,16 +61,13 @@ export function AuthFlowModal({
    * to go there. The button stays for the cases the OS refuses, or when the
    * user closes the tab and wants it back.
    */
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
   const opened = useRef<string | null>(null);
   useEffect(() => {
-    if (event?.stage !== "auth_url" || !event.url) return;
-    setAuthUrl(event.url);
-    // Once per URL: this effect re-runs on every re-render of the same event.
-    if (opened.current === event.url) return;
-    opened.current = event.url;
-    void window.hv.openExternal(event.url);
-  }, [event?.stage, event?.url]);
+    // Once per URL: this effect re-runs on every re-render.
+    if (!authUrl || opened.current === authUrl) return;
+    opened.current = authUrl;
+    void window.hv.openExternal(authUrl);
+  }, [authUrl]);
 
   return (
     <Dialog.Root open>

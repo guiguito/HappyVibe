@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { GOTO_LABELS } from "./GoTo";
-import { parseAuth, type AuthEvent } from "../auth";
+import { parseAuth, withAuthEvent, type LoginState } from "../auth";
 import { ONBOARDING_COPY as C, keyRejectedNote, noteAfterEdit, rankProviders } from "../onboarding";
 import { THIS_COMPUTER } from "../platformCopy";
 
@@ -192,7 +192,7 @@ export function ProviderDoors({
   const [oauth, setOauth] = useState<HvOAuthProvider[]>([]);
   const [byok, setByok] = useState<HvByokProvider[]>([]);
   const [local, setLocal] = useState<LocalDoor[]>([]);
-  const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
+  const [login, setLogin] = useState<LoginState | null>(null);
   const [keyId, setKeyId] = useState<string>("");
   const [keyText, setKeyText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -204,7 +204,7 @@ export function ProviderDoors({
         window.hv.detectOllama(),
         window.hv.detectLocalRunners(),
       ]);
-      setOauth(p.oauth);
+      setOauth(p.oauth.filter((o) => !o.superseded));
       setByok(p.byok);
       setKeyId((id) => id || (p.byok.find((b) => b.featured)?.id ?? p.byok[0]?.id ?? ""));
       // "Don't show what cannot work": a runner with no models gives Pi nothing
@@ -223,7 +223,7 @@ export function ProviderDoors({
       const e = parseAuth(r);
       if (!e) return;
       if (e.stage === "status" || e.stage === "logged_out") return;
-      setLogin((cur) => (cur ? { ...cur, event: e } : cur));
+      setLogin((cur) => (cur ? withAuthEvent(cur, e) : cur));
     });
   }, []);
 
@@ -341,7 +341,7 @@ export function ProviderDoors({
           (Spelling the tailwind class here would trip modal-layer's scan, which
           reads comments too — say it in words.) */}
       {login && (
-        <AuthFlowModal providerLabel={login.label} event={login.event} onCancel={cancelLogin} onClose={closeLogin} />
+        <AuthFlowModal providerLabel={login.label} event={login.event} authUrl={login.authUrl ?? null} onCancel={cancelLogin} onClose={closeLogin} />
       )}
     </div>
   );

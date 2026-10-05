@@ -14,7 +14,14 @@ paths:
   it. `tests/provider-catalog.test.ts` RE-DERIVES it from the vendored tree, so a bump that adds a
   provider fails there instead of drifting.
 - pi-ai is a NESTED scoped dep:
-  `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/`.
+  `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/` —
+  since Pi 1.0.1 dropped its shrinkwrap, only because pi-mcp-adapter's optional peer range keeps a
+  stale top-level pi-ai (extensions never see that copy; Pi serves its embedded one). When the
+  adapter goes, pi-ai dedupes to the top level and the generator plus `provider-catalog` /
+  `cache-retention` tests fail loudly at the nested path — repoint them then.
+- A new OAuth flow can need the options Pi's own `/login` passes as `login()`'s 4th argument
+  (`interactive-mode.js` `loginProvider`); "Sign in with ChatGPT" throws without `getDeviceId`. The
+  bridge's `/hv-login` passes the same one — diff the two on a bump. `tests/auth-bridge.test.ts`.
 - The env-var map is a local const in a non-exported function — never re-parse it. A RECORDING ctx
   passed to `auth.apiKey.resolve()` reads the candidate list off the real implementation.
 - Providers sharing an env var (`moonshotai`/`moonshotai-cn`, `opencode`/`opencode-go`,
@@ -24,6 +31,9 @@ paths:
   hand-listed id is `github-copilot` (OAuth-only here); the only pinned env var is `anthropic`'s. A
   derived exclusion can expire on a bump — offering the newly eligible provider is then a product
   decision, not a pin side effect.
+- A flow upstream REPLACES goes in `SUPERSEDED_OAUTH` (providers.ts), not `OAUTH_NOT_ENABLED`: it stays in
+  `OAUTH_PROVIDERS` (so `knownProviders` still spawns existing sessions and the signed-in row can sign
+  out), and both sign-in surfaces filter `superseded`. Today: `openai-codex`, replaced by `openai`.
 - `OAUTH_NOT_ENABLED` is empty by design: adding an id withholds a flow WITH its reason; the test fails
   on any flow neither offered nor listed.
 - A provider that is BOTH `isSubscription` and `auth.apiKey` must be in `KEY_RESOLVED_PLAN_PROVIDERS`

@@ -38,6 +38,8 @@ const ENDPOINT = { slug: "models", anchor: "add-a-custom-endpoint" };
 const DOCS: Array<[string, string, { slug: string; anchor: string } | undefined]> = [
   ["401 Unauthorized", "auth", { slug: "connect-a-model", anchor: "if-the-provider-rejects-the-key" }],
   ["404 model not found", "model_not_found", ENDPOINT],
+  // Picking another model is the whole fix — no page to send them to.
+  ["The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.", "model_not_found", undefined],
   ["maximum context length exceeded", "context_overflow", ENDPOINT],
   ["insufficient_quota", "balance", undefined],
   ["429 Too Many Requests", "rate_limit", undefined],

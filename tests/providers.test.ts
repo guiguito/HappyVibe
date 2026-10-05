@@ -119,17 +119,21 @@ describe("mergeOllamaModelsJson", () => {
 });
 
 describe("OAuth sign-in list (2026-08-29 round)", () => {
-  test("one source of truth, eight providers, our labels", () => {
-    // `meta` and `radius` arrived with Pi 0.86.1 and are offered (decided 2026-09-21);
+  test("one source of truth, nine providers, our labels", () => {
+    // `meta` and `radius` arrived with Pi 0.86.1 and are offered (decided 2026-09-21),
+    // `openai` (Sign in with ChatGPT) with Pi 0.99;
     // tests/provider-catalog.test.ts is what derives this list from upstream.
     expect(OAUTH_PROVIDERS.map((p) => p.id)).toEqual(
-      ["anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai"],
+      ["anthropic", "github-copilot", "kimi-coding", "meta", "openai", "openai-codex", "openrouter", "radius", "xai"],
     );
     const by = new Map(OAUTH_PROVIDERS.map((p) => [p.id, p]));
     // The app names the SUBSCRIPTION, not the vendor — upstream says
-    // "Anthropic" / "OpenAI Codex" and these overrides are deliberate.
+    // "Anthropic" / "OpenAI" / "OpenAI Codex (legacy)" and these overrides are deliberate.
     expect(by.get("anthropic")!.label).toBe("Claude");
-    expect(by.get("openai-codex")!.label).toBe("ChatGPT (Codex)");
+    expect(by.get("openai")!.label).toBe("ChatGPT");
+    expect(by.get("openai-codex")!.label).toBe("ChatGPT (Codex, legacy)");
+    // One ChatGPT sign-in, not two (decided 2026-10-05): codex is superseded by openai.
+    expect(OAUTH_PROVIDERS.filter((p) => p.superseded).map((p) => p.id)).toEqual(["openai-codex"]);
     // A provider with no override keeps upstream's own name.
     expect(by.get("openrouter")!.label).toBe("OpenRouter");
     expect(by.get("xai")!.label).toBe("xAI");
@@ -156,6 +160,15 @@ describe("OAuth sign-in list (2026-08-29 round)", () => {
     expect(src).not.toMatch(/"openai-codex"/);
     // It renders what getProviders() sent.
     expect(src).toMatch(/setOauthProviders\(p\.oauth\)/);
+  });
+
+  test("a superseded flow is never a sign-in choice, but stays listed while signed in", () => {
+    const models = readFileSync("src/renderer/src/components/ModelsView.tsx", "utf8");
+    expect(models).toMatch(/oauthProviders\.filter\(\(p\) => !p\.superseded\)\.map\(oauthCard\)/);
+    // The signed-in summary is NOT filtered — that row is the only way to sign out of it.
+    expect(models).toMatch(/oauthProviders\.filter\(\(p\) => signedIn\(p\.id\)\)/);
+    const setup = readFileSync("src/renderer/src/components/OnboardingDoors.tsx", "utf8");
+    expect(setup).toMatch(/setOauth\(p\.oauth\.filter\(\(o\) => !o\.superseded\)\)/);
   });
 });
 

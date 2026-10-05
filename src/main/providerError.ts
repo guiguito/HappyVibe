@@ -114,7 +114,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
     return { kind: "auth",
       doc: DOC_KEY,
       headline: "The provider rejected the API key.",
-      hint: "Re-enter the key in Settings → LLM Setup. A custom endpoint with no key needs one only if its server requires it.",
+      hint: "Re-enter the key on Models. A custom endpoint with no key needs one only if its server requires it.",
       retriable: false,
       raw,
     };
@@ -143,13 +143,26 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
     };
   }
 
+  // A ChatGPT sign-in serves only the models the user's plan includes; the rest come back as a 400.
+  // Measured 2026-10-05 on Pi 1.0.2: "The 'gpt-6.1-sol' model is not supported when using Codex with
+  // a ChatGPT account." (both `openai` and `openai-codex`). Ahead of the generic 400, whose hint
+  // would blame a custom endpoint's preset.
+  if (has(t, /not supported when using Codex with a ChatGPT account/i)) {
+    return { kind: "model_not_found",
+      headline: "Your ChatGPT plan doesn't include this model.",
+      hint: "Pick another model — a ChatGPT sign-in can use only the models your plan covers.",
+      retriable: false,
+      raw,
+    };
+  }
+
   // Generic 400: the request shape was refused. For a custom endpoint this is
   // almost always the compat preset (an unknown host gets OpenAI-only fields —
   // see PRESET_COMPAT in src/main/modelsJson.ts).
   if (has(t, /\b400\b|bad request|invalid.?request/i)) {
     return { kind: "other",
       headline: "The provider rejected the request.",
-      hint: "For a custom endpoint this usually means the wrong compatibility preset — try \"Other\" in Settings → LLM Setup.",
+      hint: "For a custom endpoint this usually means the wrong compatibility preset — try \"Other\" on Models.",
       retriable: false,
       raw,
     };

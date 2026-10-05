@@ -161,9 +161,10 @@ describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", 
         "enabling one is a product decision, not a pin side effect",
     ).toEqual(shipped);
     // Pi 0.86.1 added `meta` (Muse) and `radius`; both offered — decided 2026-09-21,
-    // consistent with OAUTH_NOT_ENABLED being empty by design.
+    // consistent with OAUTH_NOT_ENABLED being empty by design. Pi 0.99 added `openai`
+    // (Sign in with ChatGPT; openai-codex became "(legacy)"); offered on the same rule.
     expect(offered).toEqual([
-      "anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai",
+      "anthropic", "github-copilot", "kimi-coding", "meta", "openai", "openai-codex", "openrouter", "radius", "xai",
     ]);
   });
 

@@ -78,6 +78,24 @@ export interface AuthEvent {
   providers?: Record<string, AuthProviderStatus>;
 }
 
+/** A sign-in in progress, as the sign-in dialog's parent holds it. */
+export interface LoginState {
+  provider: string;
+  label: string;
+  event: AuthEvent | null;
+  authUrl?: string;
+}
+
+/**
+ * Fold one incoming event into a sign-in in progress. The sign-in URL is LATCHED here, per event,
+ * not in a render: ChatGPT sends `auth_url` and its `manual_code` prompt in the same tick (measured
+ * 0 ms apart), React renders once with the second, and a latch in an effect never saw the URL — no
+ * Open browser, no address, and the browser never opened.
+ */
+export function withAuthEvent(cur: LoginState, e: AuthEvent): LoginState {
+  return { ...cur, event: e, authUrl: e.stage === "auth_url" && e.url ? e.url : cur.authUrl };
+}
+
 export function parseAuth(r: AuthUiRequest): AuthEvent | null {
   const raw = r.method === "notify" ? r.message : r.title;
   try {
