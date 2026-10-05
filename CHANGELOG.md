@@ -5,8 +5,9 @@
 ### Added
 
 - **A new way to sign in with your ChatGPT plan.** On **Models**, **ChatGPT** replaces the older
-  ChatGPT (Codex) sign-in. If you already signed in the old way, it keeps working and stays listed
-  until you sign out.
+  ChatGPT (Codex) sign-in. It can use only the models your plan includes; pick one above your plan
+  and the session tells you so. If you already signed in the old way, it keeps working and stays
+  listed until you sign out.
 
 ### Changed
 
