@@ -164,6 +164,29 @@ test("hv-login openai (Sign in with ChatGPT) reaches its auth_url with a stored 
   expect(auth.openai).toBeUndefined();
 }, 60_000);
 
+test("hv-login-cancel ends a sign-in parked on its paste-back box, with nobody answering the box", async () => {
+  // The renderer can lose its dialog (a reload) while the flow waits in `manual_code`. Cancel must
+  // still end the flow and free its callback port, not wait for an answer that never comes.
+  const after = (n: number) => (r: UiReq) => requests.indexOf(r) >= n;
+  const fresh = after(requests.length);
+  const flowDone = client.send({ type: "prompt", message: "/hv-login openai" });
+  await nextRequest((r) => fresh(r) && r.method === "input" && isAuth(r, "manual_code"));
+  await client.send({ type: "prompt", message: "/hv-login-cancel openai" });
+  // Pi's login() rejects at once on abort ("This operation was aborted") whatever the inner flow is
+  // doing, so the error notify proves nothing on its own — the free port below is the evidence.
+  await nextRequest((r) => fresh(r) && isAuth(r, "error") && authOf(r).provider === "openai");
+  await flowDone;
+
+  // The port is free again: a second sign-in reaches its URL instead of "Port 1455 is in use".
+  const fresh2 = after(requests.length);
+  const again = client.send({ type: "prompt", message: "/hv-login openai" });
+  const first = await nextRequest((r) => fresh2(r) && (isAuth(r, "auth_url") || isAuth(r, "error")) && authOf(r).provider === "openai");
+  expect(authOf(first), JSON.stringify(authOf(first))).toMatchObject({ stage: "auth_url" });
+  const box = await nextRequest((r) => fresh2(r) && r.method === "input" && isAuth(r, "manual_code"));
+  client.respondUi(box.id, { cancelled: true });
+  await again;
+}, 60_000);
+
 // ── round 11: "signed in" must recognise an OAuth credential, not just a key ──
 
 describe("isSignedIn", () => {
