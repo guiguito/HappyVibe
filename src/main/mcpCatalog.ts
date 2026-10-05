@@ -64,8 +64,9 @@ export interface McpCatalogEntry {
    * placeholder for a secret input — the caller never passes the real value
    * into the file. Non-secret values (an instance URL) are inlined literally.
    *
-   * A placeholder may only appear in `env` or `headers`: the adapter does not
-   * interpolate url/command/args (tests/mcp-adapter-interpolation.test.ts).
+   * A placeholder may only appear in `headers` or stdio `env`: Pi resolves `${VAR}` there
+   * (and in `oauth.clientSecret`) but never in url/command/args — and a missing variable
+   * fails the connection.
    */
   build(values: Record<string, string>, secretRef: (inputId: string) => string): McpServerConfig;
 }
@@ -354,7 +355,9 @@ export function buildCatalogInstall(
     if (input.optional) continue;
     if (!values[input.id]?.trim()) throw new Error(`${input.label} is required`);
   }
-  const cfg = entry.build(values, (id) => mcpSecretPlaceholder(entry.key, id));
+  // §13 (2026-10-05): Pi lists the server for the model by `description` and ranks
+  // tool_search results by it, so every install carries the card's one-liner.
+  const cfg = { ...entry.build(values, (id) => mcpSecretPlaceholder(entry.key, id)), description: entry.tagline };
   const secrets = entry.inputs
     .filter((i) => i.secret)
     .map((i) => ({ inputId: i.id, value: values[i.id] }));

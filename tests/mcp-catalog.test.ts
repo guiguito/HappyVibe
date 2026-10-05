@@ -186,3 +186,13 @@ describe("catalogCategories", () => {
     expect(catalogCategories([])).toEqual([]);
   });
 });
+
+// §13 (2026-10-05): Pi lists a server for the model by its `description` and ranks
+// tool_search by it — every catalog install writes the card's one-liner.
+it("every catalog install carries the card's tagline as its description", async () => {
+  const { MCP_CATALOG: all, buildCatalogInstall: build } = await import("../src/main/mcpCatalog");
+  for (const entry of all) {
+    const values = Object.fromEntries(entry.inputs.map((i) => [i.id, "x"]));
+    expect(build(entry, values).cfg.description, entry.key).toBe(entry.tagline);
+  }
+});
