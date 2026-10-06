@@ -9,7 +9,7 @@ permission UX and context-window visibility as the differentiators.
 
 ## Commands
 - Install: `npm install && (cd pi-runtime && npm ci)` — BOTH. `pi-runtime/` is a separate vendored
-  tree; its postinstall patches tintinweb. A fresh worktree
+  tree; its postinstall applies the two owned patches (tintinweb, Pi's OAuth page). A fresh worktree
   without it fails the live tests.
 - `npm run dev` · `npm test` (non-live suite, ~50 s) · `npm run build`
 - **Gate = `npm run gate`** (build → non-live suite). `build` runs all three typechecks first and
@@ -119,8 +119,9 @@ permission UX and context-window visibility as the differentiators.
 - The Pi CLI entry is `dist/bundle/cli.js` (Pi's own `bin.pi`), in `PI_CLI_RELPATH` (spawn.ts), the
   one copy. `tests/pi-cli-entry.test.ts` boots it and asserts nothing under `dist/` imports a
   package Pi doesn't declare.
-- tintinweb carries an owned patch — the one exception to "never patch vendored code"
-  (`.claude/rules/subagents.md`).
+- Two owned patches, the only exceptions to "never patch vendored code", both applied by
+  `pi-runtime`'s postinstall and failing the install when an anchor moves: tintinweb
+  (`.claude/rules/subagents.md`) and Pi's OAuth sign-in page (`.claude/rules/providers.md`).
 - A bump: `/pi-bump`, contract tests green, `npm run catalog:providers`, and re-derive any guidance
   copy the tests flag.
 
