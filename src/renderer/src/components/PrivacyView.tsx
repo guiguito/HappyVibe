@@ -204,7 +204,7 @@ function ResetDialog({ blockers: initial, onClose }: { blockers: Array<{ path: s
             <h2 className="font-black text-lg tracking-tight">Clear all data?</h2>
             <p className="text-sm text-ink-soft mt-1">
               This removes every chat, workspace, setting, sign-in and API key, and the app&apos;s worktrees (their
-              branches stay in your repositories). HappyVibe then restarts on its first-run screen.
+              branches stay in your repositories). HappyVibe then closes and reopens on its first-run screen.
             </p>
             <p className="text-sm text-ink-soft mt-2">
               Folders inside your projects are not touched — if you want them gone, delete{" "}

@@ -1212,6 +1212,22 @@ export function registerIpc(
   // docs round #2: the latest ON `hv.dangerous` notify per session, replayed to a window that opens later.
   const bypassNotices = new BypassNotices();
   /**
+   * The app's ONE Notification constructor (§35's schedule messages, §10 round 25's
+   * permission ask). The app can be running with every window closed on macOS —
+   * which is the whole point of a scheduled run — so a click may have to open one.
+   */
+  const postNotification = (body: string, silent: boolean, onClick: () => void): void => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title: "HappyVibe", body, silent });
+    n.on("click", () => {
+      const w = windows.primary() ?? openWindow();
+      w.show();
+      w.focus();
+      onClick();
+    });
+    n.show();
+  };
+  /**
    * §10 round 25 — the Dock badge, the bounce, the taskbar flash and dot all come
    * from HERE: pendingUi already knows every blocking prompt across sessions and
    * windows, even with no window open (a §35 run at 3 a.m.). The renderer used to
@@ -1242,15 +1258,10 @@ export function registerIpc(
     if (plan.bounce) app.dock?.bounce("informational");
     if (plan.notify && Notification.isSupported()) {
       setAttentionNotified(true);
-      const n = new Notification({ title: "HappyVibe", body: ATTENTION_BODY });
-      n.on("click", () => {
-        const w = windows.primary() ?? openWindow();
-        w.show();
-        w.focus();
+      postNotification(ATTENTION_BODY, false, () => {
         const meta = sessionId ? index.get(sessionId) : undefined;
         if (meta) send("hv:show-session", { sessionId: meta.id, workspaceId: meta.workspaceId });
       });
-      n.show();
     }
   };
   app.on("browser-window-focus", (_e, w) => w.flashFrame(false));
@@ -3315,17 +3326,10 @@ export function registerIpc(
       kind === "needs_you" ? `${s.title} needs your permission`
       : kind === "missed" ? `${x.count} schedule${x.count === 1 ? "" : "s"} missed ${x.count === 1 ? "its" : "their"} time`
       : `${s.title} finished${mins}${cost}`;
-    const n = new Notification({ title: "HappyVibe", body, silent: kind === "done" });
-    n.on("click", () => {
-      // The app can be running with every window closed on macOS — which is the
-      // whole point of a scheduled run — so a click may have to open one.
-      const w = windows.primary() ?? openWindow();
-      w.show();
-      w.focus();
+    postNotification(body, kind === "done", () => {
       if (kind === "missed") send("hv:schedules-missed", scheduleStore.list().filter((x2) => x2.missed).map((x2) => x2.id));
       else if (x.sessionId) send("hv:show-session", { sessionId: x.sessionId, workspaceId: s.workspaceId });
     });
-    n.show();
   };
 
   const scheduler = new Scheduler(scheduleStore, {

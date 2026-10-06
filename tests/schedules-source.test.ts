@@ -214,9 +214,15 @@ describe("clicking a notification lands somewhere (§5.4)", () => {
   });
 
   it("routes by kind: the missed nudge opens the dialog, a finished run opens its session", () => {
-    expect(handler()).toContain("hv:schedules-missed");
-    expect(handler()).toContain("hv:show-session");
-    expect(handler()).toMatch(/workspaceId: s\.workspaceId/);
+    // Round 25: the click's routing lives in showScheduleNotification; the shared
+    // postNotification (the one constructor) opens the window first.
+    const s = ipc();
+    const i = s.indexOf("const showScheduleNotification");
+    const fn = s.slice(i, s.indexOf("\n  };", i));
+    expect(fn).toContain("postNotification(");
+    expect(fn).toContain("hv:schedules-missed");
+    expect(fn).toContain("hv:show-session");
+    expect(fn).toMatch(/workspaceId: s\.workspaceId/);
   });
 });
 
