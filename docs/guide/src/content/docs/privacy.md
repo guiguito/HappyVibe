@@ -1,9 +1,9 @@
 ---
 title: Privacy
-description: See what a crash report contains, read the last one sent, and turn crash reports off in one click.
+description: See what a crash report contains, turn crash reports off in one click, or clear all of HappyVibe's data and start fresh.
 ---
 
-Short version: this screen controls one thing, crash reports. They're short technical notes about the app, never about your work. You can read the last one sent, see every send in the Audit log, and one click stops them.
+Short version: this screen controls crash reports, and it's where you start over from scratch. Crash reports are short technical notes about the app, never about your work. You can read the last one sent, see every send in the Audit log, and one click stops them.
 
 In the app's own words: "What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your stats — stays here."
 
@@ -37,6 +37,10 @@ Open **What a crash report contains** for the full answer. A report holds:
 - **Show the last report** displays the most recent report sent from this computer, in full. A copy stays on your computer, so it's still there after HappyVibe restarts. Click **Hide the last report** to fold it away. If none has been sent yet, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
 - **Reveal in Finder** (**Show in File Explorer** on Windows, **Show in file manager** on Linux) shows the folder where crash snapshots are kept on your computer.
 
+### Clear all data
+
+"Start over as if HappyVibe were just installed." The **Clear all data…** button is at the bottom of the screen. See [Clear all data and start over](#clear-all-data-and-start-over).
+
 ## Turn crash reports off
 
 1. Open **Privacy**.
@@ -50,17 +54,23 @@ From that moment, nothing is sent. Click it again whenever you want to turn repo
 2. Click **Show the last report** to read the most recent one.
 3. Open the [Audit log](/docs/audit-log/) to see every report that was sent, and when.
 
+## Clear all data and start over
+
+Uninstalling HappyVibe keeps your data, so reinstalling doesn't start fresh. To start over:
+
+1. Open **Privacy** and click **Clear all data…**.
+2. Read what goes, then click **Clear all data**, or **Cancel**.
+3. HappyVibe closes and reopens on its first-run screen.
+
+Nothing is deleted until you click **Clear all data** in the dialog. After that, it can't be undone.
+
+- **What goes:** every chat, workspace, setting, permission rule, sign-in and API key, your memory, schedules and Audit log, downloaded voice models, and the worktrees HappyVibe made.
+- **What stays:** the branches of those worktrees, in your repositories, and everything inside your project folders. HappyVibe writes two folders there, `.pi-subagents/` and `.agents/plans/`. Delete them yourself if you want them gone.
+- **When it refuses:** if a worktree has changes you haven't committed, the dialog says "Some worktrees have unsaved work", lists them, and deletes nothing. Commit or discard those changes, then try again.
+
 ## During a session
 
 If HappyVibe breaks mid-session, the report describes where in the app's own code it failed, never what you and the agent were saying. Each report that's sent is recorded in the [Audit log](/docs/audit-log/).
-
-## Clear all data
-
-Uninstalling HappyVibe keeps your data, so reinstalling doesn't start fresh. To start over, click **Clear all data…** at the bottom of the Privacy page.
-
-- **What goes:** every chat, workspace, setting, sign-in and API key, your memory and schedules, and the worktrees HappyVibe made. HappyVibe then closes and reopens on its first-run screen.
-- **What stays:** the branches of those worktrees, in your repositories, and everything inside your project folders. HappyVibe writes two folders there, `.pi-subagents/` and `.agents/plans/`. Delete them yourself if you want them gone.
-- **When it refuses:** if a worktree has changes you haven't committed, the dialog lists it and deletes nothing. Commit or discard those changes, then try again.
 
 ## Related
 

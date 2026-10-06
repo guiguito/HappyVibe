@@ -57,11 +57,11 @@ If you're on another screen when the question comes, the dialog appears there, o
 
 If you're in another app when a question or an approval arrives, HappyVibe lets you know:
 
-- **macOS:** the Dock icon bounces once and shows how many are waiting. The first time, macOS asks whether HappyVibe may send notifications. The Dock count needs that permission, and you can keep banners turned off in System Settings.
-- **Windows:** the taskbar button flashes and shows a dot.
-- **Linux:** the taskbar button flashes, and docks that support it show the count.
+- **macOS:** the Dock icon bounces once and shows how many are waiting. The first time, a notification says "A session is waiting for your answer" (click it to jump to that session), and macOS asks whether HappyVibe may send notifications. HappyVibe sends that notification only once. The Dock count needs the permission, and you can keep banners turned off in System Settings.
+- **Windows:** the taskbar button flashes and shows a dot. The flashing stops as soon as you switch back.
+- **Linux:** the taskbar button flashes, and docks that support it show the count. The flashing stops as soon as you switch back.
 
-Nothing happens when HappyVibe is already the app in front.
+The bounce and the flash only happen when HappyVibe isn't the app in front. The count and the dot stay while something is waiting, and go once you've answered.
 
 Every answer you give is recorded in the [Audit log](/docs/audit-log/). And if you said yes and wish you hadn't, you can [rewind](/docs/first-session/#changed-your-mind-rewind) the conversation, and often your files, to before that message.
 
