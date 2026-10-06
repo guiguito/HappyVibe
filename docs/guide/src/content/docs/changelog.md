@@ -13,7 +13,7 @@ Which version are you on, and what's new in it? It's all here, along with how up
 
 ### Your version
 
-The heading is "HappyVibe" and the number of the version you're running. The line under it lists the versions of the agent engine and the parts bundled with it: Pi, sub-agents and anydoc. Anydoc is the document converter.
+The heading is "HappyVibe" and the number of the version you're running. The line under it lists the versions of the agent engine, Pi, and of the parts bundled with it: sub-agents and anydoc. Sub-agents lets the agent hand work to [helper agents](/docs/agents/). Anydoc is the document converter.
 
 ### Update controls
 
