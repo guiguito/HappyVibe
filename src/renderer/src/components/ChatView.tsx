@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Activity, ToolDraft } from "../busyStatus";
 import { basename } from "../basename";
 import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
 import { usePresence } from "../usePresence";
@@ -123,6 +124,9 @@ export function ChatView({
   thinking,
   streaming,
   busy,
+  toolDraft,
+  activity,
+  promptWaiting,
   waking = false,
   crashed,
   turns,
@@ -187,6 +191,10 @@ export function ChatView({
   thinking?: string;
   streaming?: string;
   busy: boolean;
+  /** §7 round 25: the busy status line's inputs, passed straight to Transcript. */
+  toolDraft?: ToolDraft;
+  activity?: Activity;
+  promptWaiting?: boolean;
   /** Round 3 #2: session is resuming from hibernation — show a loader. */
   waking?: boolean;
   crashed: number | null;
@@ -1446,6 +1454,9 @@ export function ChatView({
           streaming={streaming}
           thinking={thinking}
           busy={busy}
+          toolDraft={toolDraft}
+          activity={activity}
+          promptWaiting={promptWaiting}
           scrollNonce={scrollNonce}
           collapseNonce={collapseNonce}
           header={

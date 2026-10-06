@@ -11,6 +11,8 @@ import { ZoomableImage } from "./ZoomableImage";
 import { BrandLogo } from "./BrandLogo";
 import { formatDuration, timeagoLong } from "../timeago";
 import { thinkingLabel } from "../thinkingLabel";
+import { busyStatus, type Activity, type ToolDraft } from "../busyStatus";
+import { toolLabel } from "../toolLabel";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -570,6 +572,9 @@ export function Transcript({
   scrollNonce,
   collapseNonce,
   thinking,
+  toolDraft,
+  activity,
+  promptWaiting,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -609,6 +614,10 @@ export function Transcript({
       the streaming answer is — see App's thinkRef. Rendered expanded above the
       answer bubble; App commits it into `items` at the next action. */
   thinking?: string;
+  /** §7 round 25: the busy status line's inputs (App's toolDraftRef / activityRef / pending count). */
+  toolDraft?: ToolDraft;
+  activity?: Activity;
+  promptWaiting?: boolean;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -830,6 +839,7 @@ export function Transcript({
               <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:0ms]" />
               <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:120ms]" />
               <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:240ms]" />
+              <BusyStatusLine items={items} toolDraft={toolDraft} activity={activity} promptWaiting={promptWaiting} />
             </div>
           )}
           <div ref={bottom} />
@@ -852,4 +862,33 @@ export function Transcript({
       )}
     </div>
   );
+}
+
+/** §7 round 25 — the dots say what is happening; ticks once a second for the wait counter. */
+function BusyStatusLine({
+  items,
+  toolDraft,
+  activity,
+  promptWaiting,
+}: {
+  items: TranscriptItem[];
+  toolDraft?: ToolDraft;
+  activity?: Activity;
+  promptWaiting?: boolean;
+}): React.JSX.Element | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(t);
+  }, []);
+  let runningLabel: string | null = null;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "tool" && it.card.status === "running") {
+      runningLabel = toolLabel(it.card.toolName, it.card.args).label;
+      break;
+    }
+  }
+  const text = busyStatus({ promptWaiting: !!promptWaiting, draft: toolDraft ?? null, runningLabel, activity: activity ?? null, now });
+  return text ? <span className="ml-1 min-w-0 truncate">{text}</span> : null;
 }
