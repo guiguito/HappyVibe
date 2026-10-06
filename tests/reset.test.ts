@@ -67,3 +67,27 @@ describe("boot wipe", () => {
     expect(fs.readdirSync(ud)).toEqual([]);
   });
 });
+
+const src = (f: string): string => fs.readFileSync(path.join(process.cwd(), f), "utf8");
+
+describe("wiring", () => {
+  test("the boot wipe runs before anything reads userData (crash queue, config)", () => {
+    const idx = src("src/main/index.ts");
+    expect(idx.indexOf("wipeIfMarked(")).toBeGreaterThan(-1);
+    expect(idx.indexOf("wipeIfMarked(")).toBeLessThan(idx.indexOf("installCrash("));
+  });
+  test("HV_USER_DATA isolates a test run (a reset must never be GUI-tested on real data)", () => {
+    expect(src("src/main/index.ts")).toContain("process.env.HV_USER_DATA");
+  });
+  test("resetAll re-checks blockers itself — never trusts the dialog's earlier answer", () => {
+    const ipc = src("src/main/ipc.ts");
+    const h = ipc.slice(ipc.indexOf('"hv:reset-all"'), ipc.indexOf('"hv:reset-all"') + 900);
+    expect(h).toContain("resetBlockers(");
+    expect(h).toContain("app.relaunch()");
+  });
+  test("the dialog names the project folders it leaves alone", () => {
+    const pv = src("src/renderer/src/components/PrivacyView.tsx");
+    expect(pv).toContain(".pi-subagents/");
+    expect(pv).toContain(".agents/plans/");
+  });
+});

@@ -54,6 +54,14 @@ From that moment, nothing is sent. Click it again whenever you want to turn repo
 
 If HappyVibe breaks mid-session, the report describes where in the app's own code it failed, never what you and the agent were saying. Each report that's sent is recorded in the [Audit log](/docs/audit-log/).
 
+## Clear all data
+
+Uninstalling HappyVibe keeps your data, so reinstalling doesn't start fresh. To start over, click **Clear all data…** at the bottom of the Privacy page.
+
+- **What goes:** every chat, workspace, setting, sign-in and API key, your memory and schedules, and the worktrees HappyVibe made. HappyVibe then restarts on its first-run screen.
+- **What stays:** the branches of those worktrees, in your repositories, and everything inside your project folders. HappyVibe writes two folders there, `.pi-subagents/` and `.agents/plans/`. Delete them yourself if you want them gone.
+- **When it refuses:** if a worktree has changes you haven't committed, the dialog lists it and deletes nothing. Commit or discard those changes, then try again.
+
 ## Related
 
 - [Audit log](/docs/audit-log/): a record of every crash report that left your computer.

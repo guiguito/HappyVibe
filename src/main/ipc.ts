@@ -36,6 +36,7 @@ import {
   getAttentionNotified,
   setAttentionNotified,
 } from "./config";
+import { markForReset, removeAppWorktrees, resetBlockers } from "./reset";
 import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
 // `./crash` itself is NOT imported here: it reaches @electron-toolkit/utils,
 // which under vitest takes three unrelated test files down (CLAUDE.md). The
@@ -5505,6 +5506,21 @@ export function registerIpc(
     // gated push would drop the one refresh the user is waiting for.
     pushGitChanged(parent, { force: true });
     return r;
+  });
+
+  // §17 round 25 — Clear all data. Check is read-only; the act re-checks, removes
+  // the app's worktrees through git, marks, and relaunches. will-quit stops every Pi.
+  ipcMain.handle("hv:reset-check", () => resetBlockers(agentDir()));
+  ipcMain.handle("hv:reset-all", async () => {
+    const blockers = await resetBlockers(agentDir());
+    if (blockers.length) return { ok: false, blockers };
+    for (const s of index.list()) if (manager.get(s.id)) await endSession(s.id); // nothing may hold a worktree's cwd
+    const refused = await removeAppWorktrees(agentDir());
+    if (refused.length) return { ok: false, blockers: refused };
+    markForReset(app.getPath("userData"));
+    app.relaunch();
+    app.quit();
+    return { ok: true };
   });
 
   ipcMain.handle("hv:worktree-remove", async (_e, worktreePath: string, force = false) => {
