@@ -39,6 +39,18 @@ test("emits exit on crash", async () => {
   expect(await exited).toBe(7);
 });
 
+test("writing to a Pi that already exited neither crashes main nor hangs", async () => {
+  client = new PiClient(fakeSpec);
+  await client.start();
+  const exited = new Promise((r) => client.on("exit", r));
+  client.send({ type: "crash_now" } as never).catch(() => {});
+  await exited;
+  // The user answers a prompt after the session died: an unheard EPIPE is an uncaughtException in main.
+  client.respondUi("ui-1", { value: "Allow" });
+  await expect(client.send({ type: "get_session_stats" })).rejects.toThrow(/pi exited/);
+  await new Promise((r) => setTimeout(r, 100)); // let a stray EPIPE surface
+}, 10_000);
+
 import fs from "node:fs";
 import os from "node:os";
 import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
