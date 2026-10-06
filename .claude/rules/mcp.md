@@ -59,6 +59,10 @@ PRD §13 Decision (2026-10-05); evidence `docs/validation/mcp2.md`.
   empty answer fails the sign-in) and that Pi aborts locally WITHOUT telling us when the browser
   wins — main forgets it on the `Signed in to MCP server` notify; Cancel answers it `{cancelled}`.
   The wording is copy, not an API: `tests/mcp-pi.test.ts` source-scans the vendored Pi.
+- The name a server's consent screen shows is the `client_name` Pi registers with: `pi` upstream,
+  "HappyVibe" here via the owned OAuth-page patch (`.claude/rules/providers.md`), which also brands
+  the landing page. An entry's own `oauth.clientName` still wins; never set another product's name
+  (decision 15). A server signed in before the patch keeps its old registration until signed out.
 - `hv:mcp-authenticate` checks status FIRST and signs in only on `needs-auth`: the page
   auto-authenticates every new HTTP server, and `pi mcp login` refuses a key-header server.
 - Tokens live in `<agentDir>/mcp-auth.json` (0600), keyed `mcp__<ns>|<url>` — no keychain. A running

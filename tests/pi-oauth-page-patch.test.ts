@@ -49,6 +49,15 @@ describe("Pi's sign-in page is HappyVibe's", () => {
     expect(s).not.toContain('AGENT_NAME_HINT="Pi"');
   });
 
+  it("an MCP server's consent screen names HappyVibe, unless the server sets its own oauth.clientName", () => {
+    const hits = chunks.filter(([, s]) => s.includes("client_name:settings.clientName??"));
+    expect(hits.map(([f]) => f), STALE).not.toEqual([]);
+    for (const [f, s] of hits) {
+      expect(s, `${f}: ${STALE}`).toContain('client_name:settings.clientName??/*hv-patch:oauth-mcp-name*/"HappyVibe"');
+      expect(s, f).not.toContain("client_name:settings.clientName??APP_NAME");
+    }
+  });
+
   it("every patched chunk carries today's icon and the way back to the app", () => {
     for (const [f, s] of chunks.filter(([, s]) => s.includes("var LOGO_SVG="))) {
       expect(s, `${f}: ${STALE}`).toContain(JSON.stringify(logoSvg(ICON)));

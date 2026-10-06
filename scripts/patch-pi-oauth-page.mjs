@@ -5,7 +5,7 @@
  * logo there with no setting to change it. Pi's bundle inlines that page into every sign-in chunk
  * (one name is hashed), so the chunks are FOUND by scanning, not listed. Each gets our icon
  * (derived from build/icon.svg) and a success line that points back to the app; the ChatGPT flow
- * also names HappyVibe, not Pi, on OpenAI's consent screen. Same applier as
+ * and every MCP server's consent screen also name HappyVibe, not Pi. Same applier as
  * the tintinweb patch: an anchor that moves at a Pi bump fails the install.
  */
 import fs from "node:fs";
@@ -28,8 +28,11 @@ export function logoSvg(iconSvg) {
 }
 
 export function hunks(chunksDir, iconSvg) {
-  const files = fs.readdirSync(chunksDir).filter((f) => fs.readFileSync(path.join(chunksDir, f), "utf8").includes("var LOGO_SVG="));
-  if (!files.length) throw new Error("[patch-pi-oauth-page] no chunk inlines Pi's sign-in page any more — re-derive the patch against this Pi version");
+  // Each needle survives its own replacement, so a re-run finds the same files.
+  const scan = (needle) => fs.readdirSync(chunksDir).filter((f) => fs.readFileSync(path.join(chunksDir, f), "utf8").includes(needle));
+  const files = scan("var LOGO_SVG=");
+  const mcp = scan("client_name:settings.clientName??");
+  if (!files.length || !mcp.length) throw new Error("[patch-pi-oauth-page] no chunk inlines Pi's sign-in page or MCP client name any more — re-derive the patch against this Pi version");
   return [
     ...files.flatMap((file) => [
       { id: "oauth-logo", file, find: PI_LOGO, replace: `var LOGO_SVG=/*hv-patch:oauth-logo*/${JSON.stringify(logoSvg(iconSvg))}` },
@@ -38,6 +41,9 @@ export function hunks(chunksDir, iconSvg) {
     ]),
     // OpenAI's consent screen reads "Use ChatGPT to sign in to <agent_name_hint>".
     { id: "oauth-agent-name", file: "openai-chatgpt.js", find: 'AGENT_NAME_HINT="Pi"', replace: 'AGENT_NAME_HINT=/*hv-patch:oauth-agent-name*/"HappyVibe"' },
+    // An MCP server's consent screen shows the name Pi registers with (default "pi"); a server's own
+    // oauth.clientName still wins. Our own name only — never another product's (§13, decision 15).
+    ...mcp.map((file) => ({ id: "oauth-mcp-name", file, find: "client_name:settings.clientName??APP_NAME", replace: 'client_name:settings.clientName??/*hv-patch:oauth-mcp-name*/"HappyVibe"' })),
   ];
 }
 
