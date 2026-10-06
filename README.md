@@ -94,15 +94,13 @@ Pi subprocess (vendored, pinned)           pi-runtime/
    extensions/happyvibe-bridge.ts          the permission gate + 30 registered tools
 ```
 
-The five runtime pins move deliberately, together with their contract tests:
+The runtime pins move deliberately, together with their contract tests. Their versions live in
+[`pi-runtime/package.json`](pi-runtime/package.json), and every release lists them:
 
-| | |
-|---|---|
-| `@earendil-works/pi-coding-agent` | `0.85.0` |
-| `@tintinweb/pi-subagents` | `0.19.0` (patched at install) |
-| `pi-mcp-adapter` | `2.32.1` |
-| `@firecrawl/anydoc` | `0.2.4` |
-| `@earendil-works/pi-server` | `0.85.0` |
+- `@earendil-works/pi-coding-agent`: the agent engine, MCP included (its sign-in page patched at install)
+- `@tintinweb/pi-subagents`: sub-agents (patched at install)
+- `@firecrawl/anydoc`: the document converter
+- `@earendil-works/pi-tui` and `typebox`: moved with Pi, to exactly what it declares
 
 **The bridge owns all permission UI.** Pi's own permission package is TUI-only — every prompt path
 gates on `ctx.hasUI`, which is false in RPC mode — so the gate, the audit log and every approval

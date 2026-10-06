@@ -1,10 +1,12 @@
 ---
-description: Bump the vendored Pi runtime pins (pi-coding-agent / pi-subagents / pi-mcp-adapter) and find what the bump silently broke
+description: Bump the vendored Pi runtime pins (pi-coding-agent / tintinweb pi-subagents / anydoc) and find what the bump silently broke
 ---
 
 Bump one or more vendored Pi pins: **$ARGUMENTS** (empty = audit what's available and ask).
 
-The pins live in `pi-runtime/package.json`. A bump is never just a version number — the
+The pins live in `pi-runtime/package.json`. `npm ci` re-applies both owned patches and FAILS on a
+moved anchor — re-derive that hunk (tintinweb: `.claude/rules/subagents.md`; the sign-in page:
+`.claude/rules/providers.md`), never skip it. A bump is never just a version number — the
 2026-08-02 `pi-subagents` 0.34→0.40 bump changed four behaviours and **not one test failed**.
 The whole point of this command is finding those before a user does.
 
