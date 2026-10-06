@@ -45,3 +45,27 @@ test("the overlay dot is a filled circle: opaque centre, transparent corner", ()
   expect(px(8, 8)[3]).toBe(255);
   expect(px(0, 0)[3]).toBe(0);
 });
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+const read = (f: string): string => readFileSync(path.join(process.cwd(), f), "utf8");
+
+describe("one source for the count: main's pendingUi", () => {
+  test("the renderer no longer reports a badge count", () => {
+    expect(read("src/renderer/src/App.tsx")).not.toContain("setBadgeCount");
+    expect(read("src/preload/index.ts")).not.toContain("hv:set-badge-count");
+    expect(read("src/main/ipc.ts")).not.toContain('"hv:set-badge-count"');
+  });
+  test("main applies the plan when the pending set changes", () => {
+    const ipc = read("src/main/ipc.ts");
+    expect(ipc).toContain("attentionPlan(");
+    expect(ipc).toContain('dock?.bounce("informational")');
+    expect(ipc).not.toContain('bounce("critical")');
+    // ipc.ts has older process.platform reads; the NEW code must branch on the seam.
+    const at = ipc.indexOf("const applyAttention");
+    expect(at).toBeGreaterThan(-1);
+    const fn = ipc.slice(at, at + 2_000);
+    expect(fn).toContain("platform.name");
+    expect(fn).not.toMatch(/process\.platform/);
+  });
+});

@@ -55,6 +55,14 @@ The approval dialog has no timer, and it never says yes on your behalf. **Esc** 
 
 If you're on another screen when the question comes, the dialog appears there, over the whole window, so it's never hidden. A question from a session you're not looking at waits in that session, with a badge in the sidebar.
 
+If you're in another app when a question or an approval arrives, HappyVibe lets you know:
+
+- **macOS:** the Dock icon bounces once and shows how many are waiting. The first time, macOS asks whether HappyVibe may send notifications. The Dock count needs that permission, and you can keep banners turned off in System Settings.
+- **Windows:** the taskbar button flashes and shows a dot.
+- **Linux:** the taskbar button flashes, and docks that support it show the count.
+
+Nothing happens when HappyVibe is already the app in front.
+
 Every answer you give is recorded in the [Audit log](/docs/audit-log/). And if you said yes and wish you hadn't, you can [rewind](/docs/first-session/#changed-your-mind-rewind) the conversation, and often your files, to before that message.
 
 ## Next

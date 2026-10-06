@@ -1037,7 +1037,6 @@ interface HvApi {
   terminalShells(): Promise<{ default: string; found: Array<{ label: string; path: string }> }>;
   evalRules(workspaceId: string, tool: string, input: Record<string, unknown>): Promise<HvVerdict>;
   readAudit(filter?: { sessionId?: string; workspaceId?: string }): Promise<HvAuditEvent[]>;
-  setBadgeCount(n: number): void;
   // B5: context visibility
   contextSnapshot(sessionId: string): Promise<void>;
   contextRemove(sessionId: string, keys: string[]): Promise<void>;

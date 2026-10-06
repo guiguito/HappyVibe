@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
 import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
 import { featureOfTool } from "./usage/features";
@@ -32,6 +33,8 @@ import {
   getVoiceSettings, setVoiceSettings,
   getWebService, setWebService, resolveWebServiceForCall,
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
+  getAttentionNotified,
+  setAttentionNotified,
 } from "./config";
 import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
 // `./crash` itself is NOT imported here: it reaches @electron-toolkit/utils,
@@ -1207,9 +1210,58 @@ export function registerIpc(
   const pendingUi = new PendingPrompts(BLOCKING_UI_METHODS);
   // docs round #2: the latest ON `hv.dangerous` notify per session, replayed to a window that opens later.
   const bypassNotices = new BypassNotices();
-  const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
+  /**
+   * §10 round 25 — the Dock badge, the bounce, the taskbar flash and dot all come
+   * from HERE: pendingUi already knows every blocking prompt across sessions and
+   * windows, even with no window open (a §35 run at 3 a.m.). The renderer used to
+   * report a per-window count that main summed — two sources for one number.
+   */
+  const applyAttention = (arrived: boolean, sessionId?: string): void => {
+    const total = Object.values(pendingUi.counts(UTILITY)).reduce((a, b) => a + b, 0);
+    const plan = attentionPlan({
+      platform: platform.name,
+      total,
+      arrived,
+      focused: BrowserWindow.getFocusedWindow() !== null,
+      notified: getAttentionNotified(),
+    });
+    try {
+      if (plan.badge !== null) app.setBadgeCount(plan.badge);
+    } catch {
+      /* no launcher API on this desktop */
+    }
+    const win = windows.primary();
+    if (plan.overlay !== null && win) {
+      win.setOverlayIcon(
+        plan.overlay ? nativeImage.createFromBitmap(dotBitmap(16), { width: 16, height: 16 }) : null,
+        plan.overlay ? `${total} waiting for your answer` : "",
+      );
+    }
+    if (plan.flash && win) win.flashFrame(true);
+    if (plan.bounce) app.dock?.bounce("informational");
+    if (plan.notify && Notification.isSupported()) {
+      setAttentionNotified(true);
+      const n = new Notification({ title: "HappyVibe", body: ATTENTION_BODY });
+      n.on("click", () => {
+        const w = windows.primary() ?? openWindow();
+        w.show();
+        w.focus();
+        const meta = sessionId ? index.get(sessionId) : undefined;
+        if (meta) send("hv:show-session", { sessionId: meta.id, workspaceId: meta.workspaceId });
+      });
+      n.show();
+    }
+  };
+  app.on("browser-window-focus", (_e, w) => w.flashFrame(false));
+  const pendingChanged = (): void => {
+    send("hv:pending-changed", pendingUi.counts(UTILITY));
+    applyAttention(false);
+  };
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
-    if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
+    if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) {
+      send("hv:pending-changed", pendingUi.counts(UTILITY));
+      applyAttention(sessionId !== UTILITY, sessionId);
+    }
     if (!isSubagentPrompt(r.title)) promptShownAt.set(r.id, { at: Date.now(), sid: sessionId }); // §39: permission_answered.waitSec
   };
   const clearPending = (id: string): void => {
@@ -4814,26 +4866,6 @@ export function registerIpc(
   // §30: which version's changelog the user has read — the changelog dot's flag.
   // `null` means never recorded; see config.ts for why the renderer seeds that
   // case rather than treating it as "all of it is new".
-
-  // macOS dock badge = total pending permission prompts (renderer-computed).
-  /**
-   * §7 round 23: the dock badge is ONE number for the whole app, so it is a SUM
-   * over windows. Each renderer reports its own queue length; letting them each
-   * call setBadgeCount directly meant the last writer won and the badge showed
-   * one window's count as if it were everything.
-   */
-  const badgeByWindow = new Map<number, number>();
-  ipcMain.on("hv:set-badge-count", (e, n: number) => {
-    const w = windows.bySender(e.sender);
-    if (w) badgeByWindow.set(w.id, Number.isInteger(n) && n > 0 ? n : 0);
-    let total = 0;
-    for (const win of windows.all()) total += badgeByWindow.get(win.id) ?? 0;
-    try {
-      app.setBadgeCount(total);
-    } catch {
-      /* not supported on this platform */
-    }
-  });
 
   // Live model list from Pi's registry (only models with configured auth).
   ipcMain.handle("hv:list-models", async () => {

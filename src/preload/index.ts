@@ -341,7 +341,6 @@ contextBridge.exposeInMainWorld("hv", {
   evalRules: (workspaceId: string, tool: string, input: Record<string, unknown>) =>
     ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),
-  setBadgeCount: (n: number) => ipcRenderer.send("hv:set-badge-count", n),
 
   // ── B7: local analytics + onboarding (additive) ──────────────────
   getAnalytics: (filter?: { workspaceId?: string; sinceTs?: string }) =>

@@ -2838,11 +2838,6 @@ export default function App(): React.JSX.Element {
     if (lastUser && lastUser.kind === "user") await send(sid, lastUser.text);
   };
 
-  // macOS dock badge mirrors total unanswered permission prompts.
-  useEffect(() => {
-    window.hv.setBadgeCount(uiQueue.length);
-  }, [uiQueue.length]);
-
   // Selecting a session surfaces ITS oldest pending prompt (B4 routing).
   const uiReq = headFor(uiQueue, selectedId);
   const respondPermission = (choice: PermissionChoice): void => {

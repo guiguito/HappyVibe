@@ -110,6 +110,8 @@ interface ConfigFile {
       is what makes a DELETED one stay deleted — without it every launch would
       resurrect a rule the user removed on purpose. */
   gitRulesSeeded?: boolean;
+  /** §10 round 25: the one-time macOS notification that asks for permission went out. */
+  attentionNotified?: boolean;
   /** §13 (2026-10-05): stored mcp: rules rewritten once for Pi's tool spelling. */
   mcpRulesMigrated?: boolean;
   /** §29 (2b): model for "Write it for me". Absent = the same cheap-flash
@@ -322,6 +324,17 @@ export function getGitRulesSeeded(): boolean {
 export function setGitRulesSeeded(seeded: boolean): void {
   const cfg = load();
   cfg.gitRulesSeeded = seeded;
+  save(cfg);
+}
+
+// §10 round 25: see attentionPlan.ts — the badge needs macOS notification permission.
+export function getAttentionNotified(): boolean {
+  return load().attentionNotified ?? false;
+}
+
+export function setAttentionNotified(v: boolean): void {
+  const cfg = load();
+  cfg.attentionNotified = v;
   save(cfg);
 }
 

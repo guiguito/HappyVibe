@@ -312,9 +312,11 @@ describe("prompts are routed and counted by main (round 23)", () => {
     expect(ipc.slice(i - 400, i)).toMatch(/pendingUi\.dropSession\(sessionId\)/);
   });
 
-  it("the dock badge is summed in main — one number for the whole app", () => {
-    expect(ipc).toMatch(/const badgeByWindow = new Map<number, number>\(\)/);
-    expect(ipc).toMatch(/for \(const win of windows\.all\(\)\) total \+= badgeByWindow\.get\(win\.id\) \?\? 0/);
+  it("the dock badge is computed in main — one number for the whole app", () => {
+    // §10 round 25: from pendingUi (every session, every window, even none open),
+    // replacing the per-window counts the renderers used to report.
+    expect(ipc).toMatch(/const total = Object\.values\(pendingUi\.counts\(UTILITY\)\)\.reduce/);
+    expect(ipc).toMatch(/app\.setBadgeCount\(plan\.badge\)/);
   });
 
   it("an answered prompt is retracted from every window", () => {
