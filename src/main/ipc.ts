@@ -5518,9 +5518,12 @@ export function registerIpc(
   ipcMain.handle("hv:reset-all", async () => {
     const blockers = await resetBlockers(agentDir());
     if (blockers.length) return { ok: false, blockers };
-    for (const s of index.list()) if (manager.get(s.id)) await endSession(s.id); // nothing may hold a worktree's cwd
+    // Nothing may hold a worktree's cwd: on Windows a live shell locks the folder.
+    for (const s of index.list()) if (manager.get(s.id)) await endSession(s.id, "stop");
+    terminals.killAll();
     const refused = await removeAppWorktrees(agentDir());
-    if (refused.length) return { ok: false, blockers: refused };
+    // Git refused one: sessions are already stopped and earlier worktrees may be gone — say so.
+    if (refused.length) return { ok: false, blockers: refused, removed: true };
     markForReset(app.getPath("userData"));
     app.relaunch();
     app.quit();

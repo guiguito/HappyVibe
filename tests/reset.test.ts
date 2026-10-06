@@ -41,16 +41,32 @@ describe("app-data worktrees", () => {
     expect(git(repo, "worktree", "list")).not.toContain(wt);
     expect(git(repo, "branch", "--list", "feat")).toContain("feat");
   });
-  test("a worktree whose repo is gone is not a blocker and needs no git", async () => {
+  test("a worktree whose repo can't be found BLOCKS — its files may hold unsaved work (review I1)", async () => {
     const { agentDir, repo, wt } = repoWithWorktree();
-    fs.rmSync(repo, { recursive: true, force: true });
-    expect(await resetBlockers(agentDir)).toEqual([]);
-    expect(await removeAppWorktrees(agentDir)).toEqual([]);
-    expect(fs.existsSync(wt)).toBe(true); // left for the boot wipe, which deletes all of userData
+    fs.rmSync(repo, { recursive: true, force: true }); // moved, renamed, or on an unplugged drive
+    const b = await resetBlockers(agentDir);
+    expect(b.map((x) => x.path)).toEqual([wt]);
+    expect(b[0].reason).toMatch(/project can.t be found/);
   });
 });
 
 describe("boot wipe", () => {
+  test("one undeletable entry doesn't stop the rest, and the marker still goes (review I2)", () => {
+    const ud = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ud-"));
+    const locked = path.join(ud, "locked");
+    fs.mkdirSync(locked);
+    fs.writeFileSync(path.join(locked, "held.txt"), "x");
+    fs.chmodSync(locked, 0o500); // its child can't be unlinked — stands in for Windows EBUSY
+    fs.writeFileSync(path.join(ud, "zz-config.json"), "{}");
+    markForReset(ud);
+    try {
+      expect(wipeIfMarked(ud)).toBe(true);
+      expect(fs.existsSync(path.join(ud, "zz-config.json"))).toBe(false);
+      expect(fs.existsSync(path.join(ud, RESET_MARKER))).toBe(false); // a later boot never wipes again
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  });
   test("does nothing without the marker", () => {
     const ud = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ud-"));
     fs.writeFileSync(path.join(ud, "config.json"), "{}");
@@ -84,6 +100,19 @@ describe("wiring", () => {
     const h = ipc.slice(ipc.indexOf('"hv:reset-all"'), ipc.indexOf('"hv:reset-all"') + 900);
     expect(h).toContain("resetBlockers(");
     expect(h).toContain("app.relaunch()");
+  });
+  test("before removing worktrees: sessions AND their terminals stop (a shell's cwd locks the folder on Windows; review I3)", () => {
+    const ipc = src("src/main/ipc.ts");
+    const h = ipc.slice(ipc.indexOf('"hv:reset-all"'), ipc.indexOf('"hv:reset-all"') + 1200);
+    expect(h).toContain('endSession(s.id, "stop")');
+    expect(h.indexOf("terminals.killAll()")).toBeGreaterThan(-1);
+    expect(h.indexOf("terminals.killAll()")).toBeLessThan(h.indexOf("removeAppWorktrees("));
+  });
+  test("a refusal from git says so — never 'unsaved work' or 'Nothing was deleted'", () => {
+    const ipc = src("src/main/ipc.ts");
+    const h = ipc.slice(ipc.indexOf('"hv:reset-all"'), ipc.indexOf('"hv:reset-all"') + 1200);
+    expect(h).toContain("removed: true");
+    expect(src("src/renderer/src/components/PrivacyView.tsx")).toContain("Some worktrees couldn't be removed");
   });
   test("the dialog names the project folders it leaves alone", () => {
     const pv = src("src/renderer/src/components/PrivacyView.tsx");

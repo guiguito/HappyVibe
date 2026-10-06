@@ -37,7 +37,12 @@ async function repoOf(wt: string): Promise<string | null> {
 export async function resetBlockers(agentDir: string): Promise<Array<{ path: string; reason: string }>> {
   const out: Array<{ path: string; reason: string }> = [];
   for (const wt of appWorktrees(agentDir)) {
-    if (!(await repoOf(wt))) continue; // nothing git can still lose
+    // A repo that can't be found may be moved, renamed or on an unplugged drive —
+    // its working files can still hold unsaved work, so they are never wiped unnamed.
+    if (!(await repoOf(wt))) {
+      out.push({ path: wt, reason: "its project can't be found — move this folder somewhere safe or delete it, then try again" });
+      continue;
+    }
     const s = await run(wt, ["status", "--porcelain"]);
     if (s.ok && s.stdout.trim()) out.push({ path: wt, reason: "has uncommitted changes" });
   }
@@ -49,7 +54,7 @@ export async function removeAppWorktrees(agentDir: string): Promise<Array<{ path
   const refused: Array<{ path: string; reason: string }> = [];
   for (const wt of appWorktrees(agentDir)) {
     const repo = await repoOf(wt);
-    if (!repo) continue; // the boot wipe deletes the folder
+    if (!repo) continue; // unreachable after resetBlockers; left for the boot wipe
     // No force: git refuses a dirty or locked tree itself — the second safety net.
     const r = await removeWorktree(repo, wt);
     if (!r.ok) refused.push({ path: wt, reason: r.error });
@@ -62,13 +67,23 @@ export function markForReset(userData: string): void {
   fs.writeFileSync(path.join(userData, RESET_MARKER), new Date().toISOString());
 }
 
-/** Runs before anything reads userData. A failed wipe keeps the marker, so the next boot retries. */
+/**
+ * Runs before anything reads userData. ONE pass: each entry is retried briefly
+ * (a lingering process can hold a file on Windows) and a failure is skipped, never
+ * fatal; then the marker goes regardless, so a later boot can't wipe a profile the
+ * user has already set up again.
+ */
 export function wipeIfMarked(userData: string): boolean {
   const marker = path.join(userData, RESET_MARKER);
   if (!fs.existsSync(marker)) return false;
   for (const name of fs.readdirSync(userData)) {
-    if (name !== RESET_MARKER) fs.rmSync(path.join(userData, name), { recursive: true, force: true });
+    if (name === RESET_MARKER) continue;
+    try {
+      fs.rmSync(path.join(userData, name), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch {
+      /* skipped: a leftover file is better than a second wipe later */
+    }
   }
-  fs.rmSync(marker, { force: true }); // last: a partial wipe retries next boot
+  fs.rmSync(marker, { force: true });
   return true;
 }

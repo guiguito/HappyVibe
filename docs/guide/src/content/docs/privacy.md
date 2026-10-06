@@ -66,7 +66,7 @@ Nothing is deleted until you click **Clear all data** in the dialog. After that,
 
 - **What goes:** every chat, workspace, setting, permission rule, sign-in and API key, your memory, schedules and Audit log, downloaded voice models, and the worktrees HappyVibe made.
 - **What stays:** the branches of those worktrees, in your repositories, and everything inside your project folders. HappyVibe writes two folders there, `.pi-subagents/` and `.agents/plans/`. Delete them yourself if you want them gone.
-- **When it refuses:** if a worktree has changes you haven't committed, the dialog says "Some worktrees have unsaved work", lists them, and deletes nothing. Commit or discard those changes, then try again.
+- **When it refuses:** if a worktree has changes you haven't committed, or its project can't be found (moved, renamed, or on a drive that isn't plugged in), the dialog says "Some worktrees have unsaved work", lists them, and deletes nothing. Commit or discard those changes, or move the folder somewhere safe, then try again.
 
 ## During a session
 

@@ -1703,7 +1703,12 @@ export default function App(): React.JSX.Element {
       // result) starts without a local send, so mark busy here too — otherwise
       // the composer would send a fresh prompt instead of steering into it.
       if (e.type === "agent_start") {
+        toolDraftRef.current[sid] = null; // review I5: a crashed or retried attempt leaves no label behind
         setBusy((p) => (p[sid] ? p : { ...p, [sid]: true }));
+      }
+      // A retry after a mid-tool-call stream error starts a fresh assistant message.
+      if (e.type === "message_start") {
+        toolDraftRef.current[sid] = null;
       }
       // §7 round 25 — the busy status line. Pi strips `partial` over RPC, so
       // the raw fragments ARE the arguments until the card lands (d1.md).
@@ -2805,6 +2810,9 @@ export default function App(): React.JSX.Element {
     // A fresh prompt ends any abort window: this turn's text belongs to a new
     // bubble, never merged into the one the user stopped.
     delete aborted.current[sid];
+    // §7 round 25: the wait counter starts at this send, not at the last turn's final event
+    // (a hibernated session can take seconds to emit its first one).
+    activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 };
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
       const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);

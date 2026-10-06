@@ -93,6 +93,22 @@ describe("App feeds the status line from the tool-call stream", () => {
   });
 });
 
+describe("review fixes", () => {
+  const app = readFileSync(path.join(process.cwd(), "src/renderer/src/App.tsx"), "utf8");
+  test("sending stamps the activity, so the wait counter starts at 0s, not at the last turn (I4)", () => {
+    const i = app.indexOf("const send = async");
+    const body = app.slice(i, app.indexOf("setBusy((p) => ({ ...p, [sid]: true }));", i) + 200);
+    expect(body).toContain("activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 }");
+  });
+  test("a new attempt or turn drops a stale draft (I5)", () => {
+    for (const t of ['e.type === "agent_start"', 'e.type === "message_start"']) {
+      const i = app.indexOf(t);
+      expect(i, t).toBeGreaterThan(-1);
+      expect(app.slice(i, i + 300)).toContain("toolDraftRef.current[sid] = null");
+    }
+  });
+});
+
 describe("Transcript renders the line beside the dots", () => {
   const tr = readFileSync(path.join(process.cwd(), "src/renderer/src/components/Transcript.tsx"), "utf8");
   test("a BusyStatusLine inside the busy row", () => {

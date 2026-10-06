@@ -172,12 +172,17 @@ const dialogBtn = "px-2.5 py-1 rounded-lg border border-line font-bold text-xs c
 /** Refuses outright over unsaved worktrees; otherwise one red confirm. */
 function ResetDialog({ blockers: initial, onClose }: { blockers: Array<{ path: string; reason: string }>; onClose: () => void }): React.JSX.Element {
   const [blockers, setBlockers] = useState(initial);
+  // Git refused DURING removal: sessions were stopped and other worktrees may be gone.
+  const [partial, setPartial] = useState(false);
   const [busy, setBusy] = useState(false);
   const confirm = async (): Promise<void> => {
     setBusy(true);
     const r = await window.hv.resetAll();
     // On success the app quits; only a refusal comes back.
-    if (!r.ok) setBlockers(r.blockers);
+    if (!r.ok) {
+      setBlockers(r.blockers);
+      setPartial(!!r.removed);
+    }
     setBusy(false);
   };
   return (
@@ -185,7 +190,9 @@ function ResetDialog({ blockers: initial, onClose }: { blockers: Array<{ path: s
       <div className="hv-dialog-flow w-full max-w-lg rounded-2xl border-2 border-line-strong bg-paper shadow-sticker-lg p-5">
         {blockers.length > 0 ? (
           <>
-            <h2 className="font-black text-lg tracking-tight">Some worktrees have unsaved work</h2>
+            <h2 className="font-black text-lg tracking-tight">
+              {partial ? "Some worktrees couldn't be removed" : "Some worktrees have unsaved work"}
+            </h2>
             <ul className="mt-3 space-y-1.5 max-h-60 overflow-y-auto">
               {blockers.map((b) => (
                 <li key={b.path} className="rounded-xl border border-line px-3 py-2 text-xs">
@@ -194,7 +201,11 @@ function ResetDialog({ blockers: initial, onClose }: { blockers: Array<{ path: s
                 </li>
               ))}
             </ul>
-            <p className="text-sm text-ink-soft mt-3">Commit or discard their changes, then try again. Nothing was deleted.</p>
+            <p className="text-sm text-ink-soft mt-3">
+              {partial
+                ? "Your sessions were stopped and other worktrees may already be gone. Your other data wasn't touched. Fix what git says above, then try again."
+                : "Commit or discard their changes, then try again. Nothing was deleted."}
+            </p>
             <div className="flex gap-2 justify-end mt-4">
               <button type="button" className={dialogBtn} onClick={onClose}>Close</button>
             </div>

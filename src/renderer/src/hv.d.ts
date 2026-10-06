@@ -1125,7 +1125,7 @@ interface HvApi {
   /** §17 round 25: app-data worktrees with unsaved work — a reset refuses while any exist. */
   resetCheck(): Promise<Array<{ path: string; reason: string }>>;
   /** §17 round 25: re-checks, removes the app's worktrees, then restarts and wipes all app data. */
-  resetAll(): Promise<{ ok: true } | { ok: false; blockers: Array<{ path: string; reason: string }> }>;
+  resetAll(): Promise<{ ok: true } | { ok: false; blockers: Array<{ path: string; reason: string }>; removed?: true }>;
   /** Dev-only, refused in a packaged build. Nothing in the UI calls it — the
       GUI pass drives it from electron-debug. */
   crashTest(kind: "throw" | "reject" | "crash" | "message"): Promise<boolean>;
