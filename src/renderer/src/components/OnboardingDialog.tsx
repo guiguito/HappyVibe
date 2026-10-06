@@ -279,7 +279,10 @@ export function OnboardingDialog({
                     // Centred, not top-anchored: the stack is shorter than the
                     // panel and pinning it to the top left a dead strip along
                     // the bottom. The left column centres too, so they agree.
-                    <div className="h-full flex flex-col justify-center gap-3">
+                    // `min-h-full`, not `h-full`: a column pinned to the
+                    // scroller's height spills its overflow ABOVE the top edge,
+                    // where no scroll can reach (round 25).
+                    <div className="min-h-full flex flex-col justify-center gap-3">
                         <StepRow n="1" done={step1Done} active={!step1Done} title={C.step1Title} body={C.step1Body} note={keyNote?.text}>
                           <ProviderDoors onChanged={onRefreshModel} onNote={setKeyNote} />
                           <ModelsEscape onGo={onGoModels} />
@@ -336,7 +339,7 @@ export function OnboardingDialog({
                   ) : (
                     /* The celebration lands in the RIGHT panel, so the brand
                        column never moves and the dialog never resizes. */
-                    <div className="h-full flex flex-col items-center justify-center text-center">
+                    <div className="min-h-full flex flex-col items-center justify-center text-center">
                       <div className="hv-burst text-6xl mb-4" aria-hidden>🎉</div>
                       <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
                       <p className="hv-done-body text-ink-soft mt-2">{C.doneBody}</p>

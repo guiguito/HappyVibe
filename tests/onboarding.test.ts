@@ -671,3 +671,15 @@ describe("cleanup C11: dismissing with a refused key reports step 1", () => {
     expect(dialog).toContain("onboardingStep({ welcome, modelReady: step1Done, workspaceReady })");
   });
 });
+
+describe("round 25: a tall onboarding step scrolls from its own top", () => {
+  const src = fs.readFileSync(path.join(process.cwd(), "src/renderer/src/components/OnboardingDialog.tsx"), "utf8");
+  it("no centred column is pinned to the scroller's height", () => {
+    // `h-full` + `justify-center` inside an overflow-y-auto box spills the
+    // overflow ABOVE the top edge, where no scroll can reach (sub_9ga78tmehgm1).
+    expect(src).not.toMatch(/className="h-full flex flex-col[^"]*justify-center/);
+  });
+  it("the step column grows with its content and still centres when short", () => {
+    expect(src).toContain('className="min-h-full flex flex-col justify-center gap-3"');
+  });
+});
