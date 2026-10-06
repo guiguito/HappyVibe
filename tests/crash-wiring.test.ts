@@ -207,4 +207,11 @@ describe("§37 build knobs", () => {
     const mainBlock = viteConfig.slice(viteConfig.indexOf("main: {"), viteConfig.indexOf("preload:"));
     expect(mainBlock).toMatch(/__RUNTIME_PINS__/);
   });
+
+  it("every pin the runtime line names is still a pi-runtime dependency — no 'undefined' in a report", () => {
+    const deps = JSON.parse(fs.readFileSync("pi-runtime/package.json", "utf8")).dependencies;
+    const named = [...viteConfig.matchAll(/pins\['([^']+)'\]/g)].map((m) => m[1]);
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((p) => !(p in deps))).toEqual([]);
+  });
 });

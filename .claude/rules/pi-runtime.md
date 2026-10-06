@@ -28,7 +28,9 @@ paths:
   no RPC param; the known route in is a `before_provider_request` extension hook (it fails OPEN, must
   be armed per turn or `agent_end` hangs, and `askUntil` stays). `docs/validation/tc1.md` predates
   the provider change — re-measure whether a setter exists before re-opening this.
-- `PiClient.send` has no timeout: a request to a child whose cwd was deleted never settles.
+- `PiClient.send` has no timeout: a request to a LIVE child whose cwd was deleted never settles. One
+  made after the child exited rejects `pi exited`, and a write to a dead child never throws (stdin
+  has an `error` listener — an unheard EPIPE is an uncaughtException in main). `tests/piclient.test.ts`.
 - Pi emits nothing on boot in RPC mode (no ready event) and `PiClient.start()` only spawns, so there
   is no handshake to await; an early stdin write is buffered until boot finishes.
 

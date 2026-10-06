@@ -55,6 +55,9 @@ export class PiClient extends EventEmitter {
       // Windows: without this every session pops a console window for a moment.
       windowsHide: true,
     });
+    // A write to a Pi that already died EPIPEs; unheard, that is an uncaughtException in main.
+    // The death itself is reported by "exit" below.
+    this.child.stdin!.on("error", () => {});
     this.child.stdout!.setEncoding("utf8");
     this.child.stdout!.on("data", (chunk: string) => {
       for (const msg of this.decoder.push(chunk)) this.route(msg as Record<string, unknown>);
@@ -94,6 +97,9 @@ export class PiClient extends EventEmitter {
 
   send(cmd: { type: string; [k: string]: unknown }): Promise<PiResponse> {
     const id = `req-${++this.seq}`;
+    // "exit" already rejected everything pending; a request made after it would wait forever.
+    const c = this.child;
+    if (c && (c.exitCode !== null || c.signalCode !== null)) return Promise.reject(new Error("pi exited"));
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.child!.stdin!.write(encodeCommand({ id, ...cmd }));
