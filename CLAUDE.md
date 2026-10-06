@@ -9,7 +9,7 @@ permission UX and context-window visibility as the differentiators.
 
 ## Commands
 - Install: `npm install && (cd pi-runtime && npm ci)` — BOTH. `pi-runtime/` is a separate vendored
-  tree; its postinstall patches tintinweb and builds the MCP OAuth sidecar. A fresh worktree
+  tree; its postinstall applies the two owned patches (tintinweb, Pi's OAuth page). A fresh worktree
   without it fails the live tests.
 - `npm run dev` · `npm test` (non-live suite, ~50 s) · `npm run build`
 - **Gate = `npm run gate`** (build → non-live suite). `build` runs all three typechecks first and
@@ -76,7 +76,7 @@ permission UX and context-window visibility as the differentiators.
   over stdio. `spawn.ts` is electron-free (vitest-importable). We deliberately don't use Pi's
   in-process SDK: process isolation gives crash isolation and hibernation.
 - `pi-runtime/`: vendored `@earendil-works/pi-coding-agent`, `@tintinweb/pi-subagents` (patched at
-  install), `pi-mcp-adapter`, `@firecrawl/anydoc`, all pinned exact — plus `extensions/`
+  install), `@firecrawl/anydoc`, all pinned exact — plus `extensions/`
   (`happyvibe-bridge.ts` + pure `hv-*.ts` modules shared with main and tests).
 - **The bridge owns ALL permission UI and enforcement** (Pi's permission package is TUI-only in RPC,
   `docs/validation/v6.md`). Prompts never time out and never auto-allow, except under a full bypass
@@ -94,6 +94,8 @@ permission UX and context-window visibility as the differentiators.
   `--prompt-template` still load); `tests/resource-gate-contract.test.ts` pins that. `--no-context-files`
   is deliberately NOT passed (AGENTS.md loading is wanted). `--no-extensions` also keeps Pi's BUILT-IN
   extensions off (mcp, codemode, tool-search, llama.cpp); loading one is `-e builtin:<name>`, a decision.
+  Chat sessions load `builtin:mcp` + `builtin:tool-search` (`mcp: true`, PRD §13 2026-10-05) — never
+  the utility client or one-shots: Pi has no lazy start, so any Pi with MCP starts every server.
 - Model resolution is session → workspace → global, in TWO places that change together: `ipc.ts`
   `spawnOpts` and renderer `composer.ts` `resolveModel`. When nothing resolves the app REFUSES (the
   SessionManager `spawn` callback throws, ChatView disables send) — it never invents a model. The

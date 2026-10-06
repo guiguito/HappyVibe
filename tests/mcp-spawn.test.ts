@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
-import { resolvePiSpawn, PI_MCP_ADAPTER_RELPATH, TW_RELPATH } from "../src/main/pi/spawn";
+import { resolvePiSpawn, PI_MCP_EXTENSIONS, TW_RELPATH } from "../src/main/pi/spawn";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -14,16 +14,31 @@ const extensionArgs = (args: string[]): string[] => args.filter((_, i) => args[i
 // a mutating handler would prompt with the args we display and execute others,
 // so the permission prompt could no longer be trusted to describe what runs.
 test("the bridge is the LAST -e extension, so the permission gate sees final tool input", () => {
-  const spec = resolvePiSpawn("/ws", "/sessions", runtime);
+  const spec = resolvePiSpawn("/ws", "/sessions", runtime, { mcp: true });
   expect(extensionArgs(spec.args)).toEqual([
     path.join(runtime, TW_RELPATH),
-    path.join(runtime, PI_MCP_ADAPTER_RELPATH),
+    "builtin:mcp",
+    "builtin:tool-search",
     path.join(runtime, "extensions/happyvibe-bridge.ts"),
   ]);
 });
 
-test("pinned adapter entry file exists in the vendored tree", () => {
-  expect(fs.existsSync(path.join(runtime, PI_MCP_ADAPTER_RELPATH))).toBe(true);
+// §13 (2026-10-05): Pi has no lazy start — a Pi that loads MCP starts every configured
+// server. Only chat sessions may; the utility client and one-shots never do.
+test("chat sessions load Pi's MCP and tool search, and say so to the bridge", () => {
+  const spec = resolvePiSpawn("/ws", "/sessions", runtime, { mcp: true });
+  const i = spec.args.indexOf("builtin:mcp");
+  expect(spec.args.slice(i - 1, i + 3)).toEqual([...PI_MCP_EXTENSIONS]);
+  expect(spec.env.HV_MCP).toBe("1");
+});
+
+test("without the flag (the utility client) no MCP loads at all", () => {
+  for (const spec of [resolvePiSpawn("/ws", "/sessions", runtime), resolvePiSpawn("/ws", "/sessions", runtime, { mcp: false })]) {
+    expect(spec.args).not.toContain("builtin:mcp");
+    expect(spec.args).not.toContain("builtin:tool-search");
+    expect(spec.args.some((a) => a.includes("pi-mcp-adapter"))).toBe(false);
+    expect(spec.env.HV_MCP).toBeUndefined();
+  }
 });
 
 test("the child guard spawn.ts names actually exists in the vendored tree", () => {

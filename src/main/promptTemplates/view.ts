@@ -50,6 +50,7 @@ export const RESERVED_SLASH_COMMANDS: ReadonlySet<string> = new Set([
   "hv-subagent-list",
   "hv-sysprompt",
   "hv-tools",
+  "hv-mcp-tools",
 ]);
 
 /** A bare command name (no leading slash), as discovery derives it from the filename. */

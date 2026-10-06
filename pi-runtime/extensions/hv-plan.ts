@@ -177,6 +177,8 @@ export function planSlug(body: string): string {
 export const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate", "SubagentWorkflow"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
+  // §13 (2026-10-05): read-only MCP discovery — finding a tool or listing resources changes nothing.
+  "tool_search", "list_mcp_resources", "list_mcp_resource_templates",
   // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
   // gate, §14) — strictly a read. Without it, planning raised a permission modal
   // on every skill load.
@@ -221,7 +223,6 @@ const PLAN_PASS_TOOLS = new Set([
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
 import { isDelegationTool, isShellTool } from "./hv-rules";
-import { unwrapMcpCall } from "./hv-mcp";
 
 export type PlanGate =
   | { kind: "block"; reason: string }
@@ -302,7 +303,7 @@ export function resolvePlanVerdict(
   }
 }
 
-export function gatePlanCall(toolName: string, input: unknown): PlanGate {
+export function gatePlanCall(toolName: string, input: unknown, opts?: { mcpReadOnly?: boolean }): PlanGate {
   // Checked FIRST so the intent is unmissable: `subagent` is deliberately absent
   // from BLOCKED_PLAN_TOOLS, and this is where that shows. Planning IS
   // exploration, and delegating a long codebase search to a read-only explorer is
@@ -312,11 +313,6 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
   if (BLOCKED_PLAN_TOOLS.has(toolName)) {
     return { kind: "block", reason: `Plan mode is read-only — '${toolName}' is blocked. Explore and draft a plan; the user implements it later.` };
   }
-  // docs-round #34: installing an MCP server or signing in to one writes config, so both
-  // read-only modes block it. Every other proxy call keeps the floor-ask below.
-  if (toolName === "mcp" && unwrapMcpCall(typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {}).kind === "manage") {
-    return { kind: "block", reason: "Plan mode is read-only — adding an MCP server or signing in to one is blocked. Explore and draft a plan; the user implements it later." };
-  }
   // isShellTool, not === "bash": a PowerShell session would otherwise fall through to
   // floor-ask, turning plan mode's block into a permission PROMPT for arbitrary shell.
   if (isShellTool(toolName)) {
@@ -324,6 +320,11 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
     if (isSafeCommand(cmd, PLAN_SAFE_SUBCOMMANDS)) return { kind: "pass" };
     return { kind: "block", reason: `Plan mode blocks mutating or non-allowlisted shell commands.\nCommand: ${cmd}` };
   }
+  // §13 (2026-10-05): a tool its MCP server marks read-only follows the RULES (checked after every block above, so a hint
+  // can never lift one) while planning
+  // instead of being clamped to ask. The server can lie, so this only lifts the clamp — an
+  // allow still has to come from a rule the user wrote.
+  if (opts?.mcpReadOnly) return { kind: "pass" };
   if (PLAN_PASS_TOOLS.has(toolName)) return { kind: "pass" };
   return { kind: "floor-ask" };
 }

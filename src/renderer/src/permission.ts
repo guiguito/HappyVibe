@@ -8,6 +8,7 @@ export interface UiRequest {
 }
 
 import type { BoundarySummary } from "../../../pi-runtime/extensions/hv-subagent-boundary";
+import type { ServerHint } from "../../../pi-runtime/extensions/hv-mcp";
 
 export interface PermissionInfo {
   tool: string;
@@ -37,7 +38,15 @@ export interface PermissionInfo {
   /** §10 (2026-09-26, Phase 4): a sub-agent's own `ask`, raised on the parent's pane.
       Only what the app knows. The run's description is the model's words (docs round #1). */
   child?: { agent: string; runId: string };
+  /** §13 (2026-10-05): what the MCP SERVER declares about the tool — a claim, shown as one. */
+  serverHint?: ServerHint;
 }
+
+/** §13 (2026-10-05): the hint line, as data (tests/permission-hint.test.ts). */
+export const SERVER_HINT_COPY: Record<ServerHint, string> = {
+  "read-only": "Server says: read-only",
+  "may delete data": "Server says: may delete data",
+};
 
 // Round 3 #13: "Allow for workspace" / "Always allow" persist a rule (workspace /
 // global scope). They are renderer-level choices — the bridge only ever receives
@@ -97,6 +106,7 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
       if (ch && typeof ch === "object" && typeof ch.agent === "string" && typeof ch.runId === "string") {
         info.child = { agent: ch.agent, runId: ch.runId };
       }
+      if (p.serverHint === "read-only" || p.serverHint === "may delete data") info.serverHint = p.serverHint;
       if (p.reason === "outside-workspace") {
         info.reason = "outside-workspace";
         if (typeof p.path === "string") info.path = p.path;

@@ -8,7 +8,7 @@
  * rather than the cause. It is a rule of this repo (CLAUDE.md) that `ipc.ts`
  * must not reach `@electron-toolkit/utils`, and reaching it one hop away
  * through a feature module breaks exactly the same three test files, plus
- * `documents.ts` and `mcpAdapterStore.ts`, which are vitest-imported too.
+ * `documents.ts`, which is vitest-imported too.
  *
  * So everything the rest of main needs lives here — reporting a child that
  * died, and handing over the audit log — and the Electron half wires itself in

@@ -2,9 +2,9 @@
  * Env-var naming for catalog MCP secrets (§13 round 8). Electron-free (mirrors
  * mcpStatusKey.ts) so it is unit-testable without mocking safeStorage.
  *
- * The `${...}` wrapper is load-bearing: pi-mcp-adapter interpolates `${VAR}`
- * and `$env:VAR` but NOT bare `$VAR`, which is Pi's separate models.json
- * syntax. Pinned by tests/mcp-adapter-interpolation.test.ts.
+ * The `${...}` wrapper is the form Pi's MCP resolves in `headers` and stdio `env`
+ * (core/resolve-config-value.js; `$VAR` works too, `$env:VAR` does not), and a missing
+ * variable fails the connection rather than sending an empty value.
  */
 const sanitize = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
 

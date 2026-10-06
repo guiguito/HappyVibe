@@ -196,7 +196,7 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
       { exitCode: false },
     );
     client = installed.client;
-    // The seam `documents.ts` and `mcpAdapterStore.ts` report through — they are
+    // The seam `documents.ts` reports through — they are
     // vitest-imported and must never reach `electron` (see ./client.ts).
     setCrashCapture((r) => { void installed.client.captureReport(r); });
   } catch (err) {

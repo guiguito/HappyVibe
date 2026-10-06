@@ -182,16 +182,18 @@ describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
     return src.slice(i, j);
   };
 
-  it("the entry the install writes is off, attributed, and still normalised", () => {
+  it("the entry the install writes is off (Pi's enabled:false), attributed, and carries no auth key", () => {
     const e = pluginServerEntry({ url: "https://mcp.miro.com/", headers: { "X-AI-Source": "claude-code-plugin" } }, "miro", "official");
-    expect(e.disabled).toBe(true);
+    expect(e.enabled).toBe(false);
     expect(isMcpServerOff(e)).toBe(true);
     expect(e.origin).toEqual({ plugin: "miro", marketplace: "official" });
-    expect(e.auth).toBe("oauth"); // normalizePluginMcpServer still ran
+    // §13 (2026-10-05): Pi rejects a non-object `auth` and skips the whole entry; it starts
+    // OAuth on a 401 whenever there is no Authorization header, so no hint is needed.
+    expect(e).not.toHaveProperty("auth");
   });
 
   it("a plugin that ships disabled:false still arrives off", () => {
-    expect(pluginServerEntry({ command: "npx", args: ["x"], disabled: false }, "p", "m").disabled).toBe(true);
+    expect(pluginServerEntry({ command: "npx", args: ["x"], enabled: true }, "p", "m").enabled).toBe(false);
   });
 
   it("the flag survives mcp.json, and withoutOffFlag turns it on without touching the rest", () => {
@@ -200,7 +202,7 @@ describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
     const cfg = readMcpFile(f).mcpServers.s;
     expect(isMcpServerOff(cfg)).toBe(true);
     const on = withoutOffFlag(cfg);
-    expect("disabled" in on).toBe(false);
+    expect("enabled" in on).toBe(false);
     expect(on).toMatchObject({ command: "npx", args: ["x"], origin: { plugin: "demo", marketplace: "official" } });
     expect(isMcpServerOff(on)).toBe(false);
     expect(findPluginServers(f, "demo")).toEqual(["s"]); // Remove still finds it
@@ -212,10 +214,14 @@ describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
     expect(install).toMatch(/pluginServerEntry\(cfg, scan\.name, marketplaceId\), \{ failIfExists: true \}/); // Review Focus 2: a reinstall never rewrites (so never re-disables) a server you already connected
     expect(install).not.toMatch(/scheduleMcpReload\(/);
     const flow = between(ipc, '"hv:mcp-connect-flow"', 'ipcMain.handle("hv:mcp-status"');
-    expect(flow).toMatch(/if \(result\.state === "connected"\) \{/);
-    expect(flow).toMatch(/if \(now && isMcpServerOff\(now\)\) \{\s*writeMcpServer\(file, name, withoutOffFlag\(now\)\);\s*scheduleMcpReload\(scope, workspaceId\);/);
-    expect(between(ipc, "const checkServer = async", "// Startup connectivity sweep")).toMatch(/if \(!cfg \|\| isMcpServerOff\(cfg\)\) \{/);
-    expect(between(ipc, "const httpByName", "const wanted").match(/isMcpServerOff\(cfg\)/g)).toHaveLength(2);
+    // §13 (2026-10-05): Pi neither lists nor probes an off server, so Connect switches it on
+    // first and puts it back off when the connect fails.
+    expect(flow).toMatch(/const wasOff = isMcpServerOff\(cfg\);\s*if \(wasOff\) writeMcpServer\(file, name, withoutOffFlag\(cfg\)\);/);
+    expect(flow).toMatch(/if \(status\?\.state === "connected"\) \{\s*if \(wasOff \|\| signedIn\) scheduleMcpReload\(scope, workspaceId\);/);
+    expect(flow).toMatch(/writeMcpServer\(file, name, \{ \.\.\.now, enabled: false \}\)/);
+    // Every status refresh skips an off server (Pi's own list would show it "disabled").
+    expect(between(ipc, "const refreshGlobal = async", "const refreshWorkspace").match(/isMcpServerOff\(c\)/g)).toHaveLength(2);
+    expect(between(ipc, "const refreshWorkspace = async", "const refreshTier").match(/isMcpServerOff\(c\)/g)).toHaveLength(1);
   });
 
   it("cleanup C5: a failed Connect on an off server leaves no status, Log out hides on off, saving an off server reloads nothing", () => {
@@ -232,15 +238,15 @@ describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
     expect(MCP_OFF_PILL.label).toBe("off");
     expect(MCP_OFF_PILL.title).toBe("Installed by a plugin and switched off. Sessions can't use it until you click Connect.");
     const src = read("src/renderer/src/components/McpServersSection.tsx");
-    expect(src).toMatch(/const off = s\.cfg\.disabled === true;/);
+    expect(src).toMatch(/const off = s\.cfg\.enabled === false;/);
     expect(src).toMatch(/status=\{status\}\s*off=\{off\}/);
     expect(src).toMatch(/onClick=\{\(\) => \(off \? authenticate\(s\.scope, s\.name, "connect"\) : reconnect\(s\)\)\}/);
     expect(src).toMatch(/\{off \? "Connect" : "Reconnect"\}/);
     expect(src).toMatch(/\{!off && status\?\.state === "needs-auth" && \(/);
     expect(src).toMatch(/via === "connect" \? window\.hv\.mcpConnectFlow : window\.hv\.mcpAuthenticate/);
     // Edit keeps it off, and saving an off server does not sign in behind the row's back.
-    expect(src).toMatch(/\.\.\.\(cfg\.disabled === true \? \{ disabled: true \} : \{\}\),/);
-    expect(src).toMatch(/onSaved\(scope, name, kind === "http" && cfg\.disabled !== true\);/);
+    expect(src).toMatch(/\.\.\.\(cfg\.enabled === false \? \{ enabled: false \} : \{\}\),/);
+    expect(src).toMatch(/onSaved\(scope, name, kind === "http" && cfg\.enabled !== false\);/);
   });
 
   it("the install dialog still tells the truth about servers", () => {

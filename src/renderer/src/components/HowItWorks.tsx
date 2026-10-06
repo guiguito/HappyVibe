@@ -29,7 +29,7 @@ export const HOWTO_COPY = {
   mcpBadge: {
     title: "What the badge means",
     body:
-      "This badge is HappyVibe's own probe: the app connects to the server itself, checks that it answers, and lists its tools. Your agent's connection is a different one, made when a session starts. So a red badge does not mean the running session lost those tools, and a green one is not proof that it has them. Changing a server restarts your sessions so they pick it up.",
+      "This badge is HappyVibe's own check: a separate copy of the agent connects to the server, checks that it answers, and lists its tools. Your agent's connection is a different one, made when a session starts. So a red badge does not mean the running session lost those tools, and a green one is not proof that it has them. Changing a server restarts your sessions so they pick it up.",
   },
   contextNumbers: {
     title: "How these numbers are measured",

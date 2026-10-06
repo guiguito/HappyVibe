@@ -17,10 +17,12 @@ paths:
   provider fails there instead of drifting.
 - pi-ai is a NESTED scoped dep:
   `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/` —
-  since Pi 1.0.1 dropped its shrinkwrap, only because pi-mcp-adapter's optional peer range keeps a
-  stale top-level pi-ai (extensions never see that copy; Pi serves its embedded one). When the
-  adapter goes, pi-ai dedupes to the top level and the generator plus `provider-catalog` /
-  `cache-retention` tests fail loudly at the nested path — repoint them then.
+  since Pi 1.0.1 dropped its shrinkwrap, because tintinweb's open peer range (`>=0.84.0`) keeps a
+  stale top-level pi-ai from the lockfile (extensions never see that copy; Pi serves its embedded
+  one). Never `npm dedupe` pi-runtime to "fix" it: dedupe hoists the NEWEST matching pi-ai (1.0.3
+  under Pi 1.0.2, measured 2026-10-05) — a silent runtime change behind the pin. If the nested
+  copy ever disappears, the generator plus `provider-catalog` / `cache-retention` tests fail loudly
+  at the nested path — repoint them then.
 - A new OAuth flow can need the options Pi's own `/login` passes as `login()`'s 4th argument
   (`interactive-mode.js` `loginProvider`); "Sign in with ChatGPT" throws without `getDeviceId`. The
   bridge's `/hv-login` passes the same one — diff the two on a bump. `tests/auth-bridge.test.ts`.

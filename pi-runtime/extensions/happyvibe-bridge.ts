@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, evaluate, isResultWait, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
@@ -11,7 +12,8 @@ import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOO
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
-import { isMcpNamespaceProxy, isMcpNamespaceTool, unwrapMcpCall, unwrapMcpNamespaceCall } from "./hv-mcp";
+import { isPiMcpTool, mcpCallInfo, mcpNamespace, PI_MCP_SOURCE, READ_RESOURCE_TOOL, TOOL_SEARCH_LIMIT, TOOL_SEARCH_SOURCE } from "./hv-mcp";
+import { workspaceRegistrations } from "./hv-mcp-config";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type MarkKey, type SessionEntry, type ToolSpecLike,
@@ -221,9 +223,6 @@ function documentReply(raw: unknown): {
 // param to the model and makes validation require it; the value then rides
 // tool_call.input and tool_execution_*.args untouched. New bundled tools:
 // add their name to INTENT_TOOLS.
-// "mcp" is the pi-mcp-adapter proxy tool: injecting intent gives every MCP call
-// a customer-facing headline. The adapter's execute ignores the top-level intent
-// (it forwards only the `args` JSON to the server), so this is safe in proxy mode.
 // "use_skill" (§14): loading a skill goes through requireIntent like MCP, so a
 // skill load surfaces as a transcript card with a model-authored "why". Built-in
 // `read` can't carry intent (params stripped), which is exactly why a raw read of
@@ -231,10 +230,10 @@ function documentReply(raw: unknown): {
 // §26: terminal_run/terminal_kill take the REQUIRED intent, per the standing rule
 // above. `subagent`'s demotion to optional (below) is deliberately NOT copied — a
 // terminal that starts is a card in someone's transcript and must say why.
-const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill", "schedule_create", "schedule_update", "schedule_delete"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
-// Direct-mode MCP tools (adapter's "expose tools directly") get the same
-// required `intent`, BUT the direct executor forwards params VERBATIM to the
-// MCP server (pi-mcp-adapter direct-tools.ts `arguments: params`) — a strict
+const INTENT_TOOLS = ["ask_user", "use_skill", "terminal_run", "terminal_kill", "schedule_create", "schedule_update", "schedule_delete"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// MCP tools (§13, Pi's built-in MCP: source "builtin:mcp") get the same required
+// `intent`, BUT Pi forwards params VERBATIM to the MCP server
+// (extensions/mcp/tools.js `client.callTool(tool.name, params)`) — a strict
 // server would reject the unknown param. So the bridge strips `intent` from
 // these tools in its tool_call handler (event.input is Pi's documented mutable
 // pre-execution hook). Safe for the UI: tool_execution_start is emitted with
@@ -312,9 +311,9 @@ export function requireIntent(pi: ExtensionAPI, enabled = true): void {
     params.properties.intent = INTENT_PARAM;
     params.required = [...(params.required ?? []), "intent"];
   }
-  // Direct MCP tools = everything else pi-mcp-adapter registered.
+  // MCP tools = everything Pi's built-in MCP registered (server tools and the resource tools).
   for (const t of pi.getAllTools()) {
-    if (INTENT_TOOLS.includes(t.name) || !t.sourceInfo?.path?.includes("pi-mcp-adapter")) continue;
+    if (INTENT_TOOLS.includes(t.name) || t.sourceInfo?.path !== PI_MCP_SOURCE) continue;
     if (strippedIntentTools.has(t.name)) continue; // already wired on an earlier session_start
     const params = t.parameters as MutableParams | undefined;
     if (!params?.properties) continue;
@@ -596,6 +595,39 @@ const loginAborts = new Map<string, AbortController>();
 
 export default function (pi: ExtensionAPI) {
   loadRules();
+  // §13 (2026-10-05): workspace .mcp.json servers. Pi reads project servers only from a
+  // TRUSTED project's .pi/mcp.json and HappyVibe never trusts one, so the bridge registers
+  // them. Registered during load → they connect on session_start beside <agentDir>/mcp.json
+  // (Pi's file wins on a name clash). Only when main loaded Pi's MCP (HV_MCP=1): with no MCP
+  // extension a registration is an extension error.
+  const mcpRegistered: string[] = [];
+  const mcpRegisterErrors: string[] = [];
+  if (process.env.HV_MCP === "1") {
+    try {
+      const file = path.join(process.cwd(), ".mcp.json");
+      if (fs.existsSync(file)) {
+        const { servers, errors } = workspaceRegistrations(JSON.parse(fs.readFileSync(file, "utf8")));
+        mcpRegisterErrors.push(...errors);
+        for (const [name, entry] of servers) {
+          try { pi.registerMcpServer(name, entry as never); mcpRegistered.push(name); }
+          catch (e) { mcpRegisterErrors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`); }
+        }
+      }
+    } catch (e) {
+      mcpRegisterErrors.push(`.mcp.json: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  const piAgentDir = process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
+  /** Configured names, for namespace → server. Read per call: a few hundred bytes, and a
+      config change respawns the session anyway. */
+  const mcpServerNames = (): string[] => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(piAgentDir, "mcp.json"), "utf8")) as { mcpServers?: object };
+      return [...Object.keys(raw.mcpServers ?? {}), ...mcpRegistered];
+    } catch {
+      return [...mcpRegistered];
+    }
+  };
   // §13 round 6: global on/off for plan mode + ask_user, resolved by main at
   // spawn (same pattern as HV_BYPASS). Fail-open on a corrupt value.
   const builtins = parseBuiltins(process.env.HV_BUILTINS);
@@ -705,18 +737,14 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  // session_start is NOT enough on its own: pi-mcp-adapter >=2.17.0 re-registers
-  // its "mcp" proxy tool whenever the proxy DESCRIPTION changes (syncProxyTool →
-  // registerProxyTool), and each registration builds a FRESH Type.Object schema.
-  // That silently discards the `intent` property requireIntent injected at
-  // session_start, so the model stops being asked for a headline and
-  // tool_execution_start arrives with intent === undefined. Re-applying per turn
-  // costs nothing — requireIntent early-continues on every already-wired tool —
-  // and re-wires whatever the adapter replaced since the last turn.
+  // session_start is NOT enough on its own: Pi connects MCP servers in the background
+  // AFTER session_start (extensions/mcp/index.js), and a server's tools are registered
+  // only once it connects — so they don't exist yet when session_start runs.
+  // Re-applying per turn costs nothing — requireIntent early-continues on every
+  // already-wired tool — and wires whatever connected since the last turn.
   // Regression-tested by tests/mcp-bridge.test.ts (live).
   // §13 round 12: the headline is bought with tokens, so it has a switch. In
-  // proxy mode that is five tools; with a server exposing tools DIRECTLY it is
-  // every tool that server publishes, which is where the cost actually scales.
+  // MCP that is every tool a server publishes, which is where the cost scales.
   pi.on("turn_start", (_e, ctx) => {
     requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent);
   });
@@ -991,13 +1019,15 @@ export default function (pi: ExtensionAPI) {
     // forward it verbatim to the MCP server otherwise. The UI already has it:
     // tool_execution_start fired with the original args.
     if (strippedIntentTools.has(tool)) delete input.intent;
-    // MCP proxy unwrapping: rules, grants, prompts and audit all operate on
-    // the real MCP tool ("mcp:<tool>"), never the bare proxy.
-    // #35: the adapter's per-server `mcp__<ns>` tools run the same call, so they gate the same
-    // way — but only when the registered tool really is one (a direct tool can be named alike).
-    const mcp = tool === "mcp" ? unwrapMcpCall(input)
-      : isMcpNamespaceTool(tool) && isMcpNamespaceProxy(pi.getAllTools().find((t) => t.name === tool))
-        ? unwrapMcpNamespaceCall(tool, input) : null;
+    // §13 (2026-10-05): cap every tool_search (TOOL_SEARCH_LIMIT) — event.input is Pi's documented
+    // mutable pre-execution hook and the bridge is the last handler, so this is what runs.
+    if (tool === "tool_search" && pi.getAllTools().find((t) => t.name === tool)?.sourceInfo?.path === TOOL_SEARCH_SOURCE) {
+      const asked = typeof input.limit === "number" && input.limit > 0 ? input.limit : TOOL_SEARCH_LIMIT;
+      input.limit = Math.min(asked, TOOL_SEARCH_LIMIT);
+    }
+    // §13 (2026-10-05): Pi's MCP tools gate as mcp:<server>_<tool> — the adapter-era name, so
+    // stored rules keep matching. Identified by SOURCE, never by name (hv-mcp.ts).
+    const mcp = mcpCallInfo(pi.getAllTools().find((t) => t.name === tool) as never, input, mcpServerNames());
     // §28: a navigation gates per DESTINATION, not per tool — one `browser_navigate`
     // rule would be the difference between localhost and a stranger's server
     // being the same decision. Same virtual-name trick as mcp:<server>_<tool>,
@@ -1148,7 +1178,7 @@ export default function (pi: ExtensionAPI) {
     // resolvePlanVerdict and reported through the same hv.plan.blocked notify,
     // so the renderer draws one "Skipped" card for both entrances.
     if (readonly) {
-      const g = resolvePlanVerdict(gateReadonlyCall(tool, input), boundary);
+      const g = resolvePlanVerdict(gateReadonlyCall(tool, input, { mcpReadOnly: mcp?.hint === "read-only" }), boundary);
       if (g.kind === "block") {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "readonly" });
         ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
@@ -1163,7 +1193,7 @@ export default function (pi: ExtensionAPI) {
     if (builtins.plan && plan.enabled) {
       // §23: the verdict — including the read-only-delegation decision — is
       // resolved in hv-plan.ts, which is typechecked. See resolvePlanVerdict.
-      const g = resolvePlanVerdict(gatePlanCall(tool, input), boundary);
+      const g = resolvePlanVerdict(gatePlanCall(tool, input, { mcpReadOnly: mcp?.hint === "read-only" }), boundary);
       if (g.kind === "block") {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "plan" });
         ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
@@ -1288,15 +1318,6 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // MCP discovery (search/describe/connect) is read-only against servers the
-    // user configured — allow by default; an explicit ask/deny rule still wins
-    // (handled above), matching the SAFE_TOOLS safe-default semantics.
-    // (Not while planning: the floor-of-ask covers discovery too.)
-    if (mcp?.kind === "discovery" && v.source === "default" && !planFloorAsk) {
-      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "safe-default" });
-      return;
-    }
-
     // ask — an earlier "Allow for session" grant covers default asks only;
     // an explicit ask RULE always re-prompts (that's what the rule is for).
     // v5: a session grant also covers the outside-workspace confinement ask.
@@ -1319,6 +1340,8 @@ export default function (pi: ExtensionAPI) {
             // own prose, and the prompt must show a NAME, not a uuid.
             ...(tool === "schedule_delete" && typeof input.id === "string" ? { scheduleId: input.id } : {}),
             ...(boundary ? { boundary } : {}),
+            // §13 (2026-10-05): the server's own claim about the tool, shown as a claim.
+            ...(mcp?.hint ? { serverHint: mcp.hint } : {}),
           },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
@@ -2473,12 +2496,34 @@ export default function (pi: ExtensionAPI) {
       // does NOT list them (s0.3). Permission state is joined renderer-side via
       // hv:eval-rules (the SAME evaluate() this bridge's gate runs), so the
       // rules logic is never forked into two implementations.
-      const tools = pi.getAllTools().map((t) => ({
-        name: t.name,
-        description: t.description ?? "",
-        source: t.sourceInfo?.source ?? t.sourceInfo?.scope ?? "builtin",
-      }));
+      // §13 (2026-10-05): each Pi MCP tool carries the rule name it is checked under.
+      const servers = mcpServerNames();
+      const tools = pi.getAllTools().map((t) => {
+        const info = isPiMcpTool(t as never) && t.name !== READ_RESOURCE_TOOL ? mcpCallInfo(t as never, {}, servers) : null;
+        return {
+          name: t.name,
+          description: t.description ?? "",
+          source: t.sourceInfo?.source ?? t.sourceInfo?.scope ?? "builtin",
+          ...(info ? { checkedAs: info.ruleTool } : {}),
+        };
+      });
       ctx.ui.notify(JSON.stringify({ kind: "hv.tools", tools }), "info");
+    },
+  });
+
+  // §13 (2026-10-05): tool names of this workspace's .mcp.json servers, for the MCP page —
+  // Pi's shell commands never see servers an extension registered (mcpWorkspaceProbe.ts).
+  pi.registerCommand("hv-mcp-tools", {
+    description: "HappyVibe: tool names of this workspace's .mcp.json servers (hv.mcp-tools notify)",
+    handler: async (_args, ctx) => {
+      const servers: Record<string, string[]> = Object.fromEntries(mcpRegistered.map((s) => [s, [] as string[]]));
+      for (const t of pi.getAllTools()) {
+        const ns = (t as { namespace?: { name: string } }).namespace?.name;
+        if (!isPiMcpTool(t as never) || !ns) continue;
+        const s = mcpRegistered.find((n) => mcpNamespace(n) === ns);
+        if (s) servers[s].push(t.name.slice(ns.length + 2));
+      }
+      ctx.ui.notify(JSON.stringify({ kind: "hv.mcp-tools", servers, errors: mcpRegisterErrors }), "info");
     },
   });
 }

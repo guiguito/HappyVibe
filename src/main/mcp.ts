@@ -1,6 +1,6 @@
 /**
- * MCP server config files (standard `mcpServers` JSON, the shape
- * pi-mcp-adapter and the wider ecosystem read). Electron-free — callers
+ * MCP server config files (standard `mcpServers` JSON, the shape Pi's
+ * built-in MCP and the wider ecosystem read — PRD §13, Decision 2026-10-05). Electron-free — callers
  * (ipc.ts) supply the absolute file path: agentDir()/mcp.json for the global
  * tier, <workspace>/.mcp.json for the workspace tier. Unknown keys are
  * preserved so hand-edited files (imports, settings, lifecycle…) survive a
@@ -8,6 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { isOff, toPiEntry } from "../../pi-runtime/extensions/hv-mcp-config";
 
 export interface McpServerConfig {
   command?: string;
@@ -15,9 +16,13 @@ export interface McpServerConfig {
   env?: Record<string, string>;
   url?: string;
   headers?: Record<string, string>;
-  directTools?: boolean | string[];
-  /** The adapter's own off switch (`isServerDisabled`: only literal true). docs-round #25. */
-  disabled?: boolean;
+  /** Pi's off switch: only literal false (core/mcp-servers.js). docs-round #25. */
+  enabled?: boolean;
+  /** How the model reaches the tools; HappyVibe writes "deferred" unless "Expose tools directly". */
+  exposure?: "deferred" | "direct" | "codemode" | "hidden";
+  toolExposure?: Record<string, string>;
+  /** One line; Pi lists it for the model and ranks tool_search by it. */
+  description?: string;
   [k: string]: unknown;
 }
 
@@ -30,15 +35,16 @@ export function isValidServerName(name: string): boolean {
   return /^[\w-]+$/.test(name);
 }
 
-/** docs-round #25: main's reading of the adapter's `disabled` flag — the same truth table
-    (tests/mcp-adapter-disabled.test.ts). An off server is never probed and never swept. */
+/** docs-round #25: an off server (a plugin's, until Connect) is never probed and never
+    started. Reads Pi's `enabled: false` and the adapter-era `disabled: true`. */
 export function isMcpServerOff(cfg: McpServerConfig | undefined): boolean {
-  return cfg?.disabled === true;
+  return isOff(cfg);
 }
 
 /** The same config, switched on: what a successful Connect writes back. */
 export function withoutOffFlag(cfg: McpServerConfig): McpServerConfig {
   const on = { ...cfg };
+  delete on.enabled;
   delete on.disabled;
   return on;
 }
@@ -91,7 +97,8 @@ export function writeMcpServer(
     );
     if (clash) throw new Error(`A server named "${clash}" already exists`);
   }
-  if (cfg) cur.mcpServers[name] = cfg;
+  // §13 (2026-10-05): every write lands in Pi's shape (deferred exposure unless set).
+  if (cfg) cur.mcpServers[name] = toPiEntry(cfg).entry as McpServerConfig;
   else delete cur.mcpServers[name];
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(cur, null, 2) + "\n");

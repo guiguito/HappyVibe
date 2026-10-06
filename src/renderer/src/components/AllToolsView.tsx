@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkedAs, joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
+import { checkedAsOf, joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
 import { GoTo } from "./GoTo";
@@ -9,7 +9,7 @@ const PERM_TONE: Record<ToolRow["permission"], string> = {
   ask: "bg-honey-soft text-tangerine-deep border-honey/60",
   allow: "bg-leaf-soft text-leaf border-leaf/50",
   // docs round #3: not verdicts. Which rule decides depends on the call.
-  "per MCP tool": "bg-card text-ink-soft border-line",
+  "per server": "bg-card text-ink-soft border-line",
   "per agent": "bg-card text-ink-soft border-line",
   "per site": "bg-card text-ink-soft border-line",
 };
@@ -93,8 +93,8 @@ export function AllToolsView({
     let stale = false;
     void Promise.all(
       tools
-        .filter((t) => !checkedAs(t.name)?.per)
-        .map((t) => window.hv.evalRules(ws, checkedAs(t.name)?.name ?? t.name, {}).then((v) => [t.name, v.action] as const)),
+        .filter((t) => !checkedAsOf(t)?.per)
+        .map((t) => window.hv.evalRules(ws, checkedAsOf(t)?.name ?? t.name, {}).then((v) => [t.name, v.action] as const)),
     ).then((pairs) => {
       if (stale) return;
       const verdicts = Object.fromEntries(pairs) as Record<string, PermState>;

@@ -7,7 +7,7 @@ import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, AGENTS_INTRO, AGENTS_LOADING_SUB
 import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
 import { checkedAs } from "../src/renderer/src/agents";
 import { boundaryRuleName } from "../pi-runtime/extensions/hv-subagent-boundary";
-import { unwrapMcpCall } from "../pi-runtime/extensions/hv-mcp";
+import { mcpRuleName } from "../pi-runtime/extensions/hv-mcp";
 import { browserRuleName } from "../pi-runtime/extensions/hv-browser";
 import {
   applySubagentStarted,
@@ -19,6 +19,7 @@ import {
   isSubagentQuery,
   isSubagentTool,
   joinToolPermissions,
+  checkedAsOf,
   testedAction,
   mergeTrace,
   parseAgents,
@@ -1026,7 +1027,7 @@ describe("cleanup C8: the test box never says allow for a workflow", () => {
 
 describe("per-call pills (docs round #3)", () => {
   test("the tools the gate checks under another name say which, and the per-call ones have no verdict", () => {
-    expect(checkedAs("mcp")).toEqual({ name: "mcp:<tool>", per: "per MCP tool" });
+    expect(checkedAs("read_mcp_resource")).toEqual({ name: "mcp:<server>_read_mcp_resource", per: "per server" });
     expect(checkedAs("Agent")).toEqual({ name: "subagent:<agent>", per: "per agent" });
     for (const t of ["browser_open", "browser_navigate", "web_fetch", "web_map", "web_crawl"]) {
       expect(checkedAs(t)).toEqual({ name: "browser:<host>", per: "per site" });
@@ -1037,7 +1038,7 @@ describe("per-call pills (docs round #3)", () => {
   });
 
   test("the names are the gate's own", () => {
-    expect(checkedAs("mcp")!.name).toBe(unwrapMcpCall({ tool: "<tool>" }).ruleTool);
+    expect(checkedAs("read_mcp_resource")!.name).toBe(mcpRuleName("<server>", "read_mcp_resource"));
     expect(checkedAs("Agent")!.name).toBe(boundaryRuleName("<agent>"));
     expect(browserRuleName("https://example.org")).toBe("browser:example.org");
     const bridge = readFileSync(path.join(process.cwd(), "pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
@@ -1045,6 +1046,17 @@ describe("per-call pills (docs round #3)", () => {
     expect(bridge).toContain('WEB_URL_TOOLS.has(tool) && typeof input.url === "string" ? browserRuleName(input.url) : null');
     expect(bridge).toContain("const permTool = mcp?.ruleTool ?? browserNav ?? webHost ?? (subagentName ? boundaryRuleName(subagentName) : tool);");
     expect(bridge).toContain('evaluate(rules, { tool: "workflow", input');
+  });
+
+  test("§13: a Pi MCP tool row carries its own rule name and gets a real verdict", () => {
+    expect(checkedAs("mcp")).toBeNull();
+    expect(checkedAs("read_mcp_resource")).toEqual({ name: "mcp:<server>_read_mcp_resource", per: "per server" });
+    const rows = joinToolPermissions(
+      [{ name: "mcp__linear__get_issue", description: "", source: "builtin", checkedAs: "mcp:linear_get_issue" }],
+      { "mcp__linear__get_issue": "allow" },
+    );
+    expect(rows[0]).toMatchObject({ permission: "allow", checkedAs: { name: "mcp:linear_get_issue" } });
+    expect(checkedAsOf({ name: "mcp__linear__get_issue", description: "", source: "builtin", checkedAs: "mcp:linear_get_issue" })).toEqual({ name: "mcp:linear_get_issue" });
   });
 
   test("a per-call tool shows what it is checked per; a workflow never shows allow", () => {
@@ -1063,7 +1075,7 @@ describe("per-call pills (docs round #3)", () => {
 
   test("the page evaluates the checked name, and the test box says which name to test", () => {
     const view = readFileSync(path.join(process.cwd(), "src/renderer/src/components/AllToolsView.tsx"), "utf8");
-    expect(view).toMatch(/evalRules\(ws, checkedAs\(t\.name\)\?\.name \?\? t\.name, \{\}\)/);
+    expect(view).toMatch(/evalRules\(ws, checkedAsOf\(t\)\?\.name \?\? t\.name, \{\}\)/);
     expect(view).not.toMatch(/evalRules\(ws, t\.name, \{\}\)/);
     expect(view).toContain("Checked as <span className=\"font-mono\">{t.checkedAs.name}</span> on every call.");
     const box = readFileSync(path.join(process.cwd(), "src/renderer/src/components/PermissionRulesSection.tsx"), "utf8");

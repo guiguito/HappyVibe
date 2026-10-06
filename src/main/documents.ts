@@ -5,7 +5,7 @@
  * three things and nothing else: running the sidecar, turning its wire into a
  * result or a SENTENCE, and assembling the `<document>` blocks a prompt carries.
  *
- * The sidecar shape follows mcpAdapterStore.ts: spawn, capture BOTH streams, a
+ * The sidecar shape: spawn, capture BOTH streams, a
  * deadline that SIGKILLs, an idempotent settle, and the last stdout line as the
  * reply. Its stderr is captured rather than ignored — a sidecar that dies
  * silently is how that file's every-spawn hang went undiagnosed.

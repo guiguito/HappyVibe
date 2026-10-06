@@ -45,8 +45,7 @@ In a pattern, `*` stands for any run of characters. In a path, `*` stays within 
 
 A few tools are checked under their own names, so a **tool** rule for them uses that name:
 
-- MCP tools: `mcp:` and the tool's name, or `mcp:*` for all of them. For a server with **Expose tools directly** ticked, use each tool's own name, as it's listed on [Agent tools](/docs/agent-tools/).
-- Adding an MCP server or signing in to one: `mcp-manage:install:` and the server's address, or `mcp-manage:auth:` and the server's name. `mcp:*` doesn't cover these. With no rule they ask you, and in plan mode or a read-only run they're blocked.
+- MCP tools: usually `mcp:`, the server's name, `_` and the tool's name, such as `mcp:linear_get_issue`, or `mcp:linear_*` for one whole server and `mcp:*` for all of them. [Agent tools](/docs/agent-tools/) shows the name for each tool. Reading a resource (a document or data the server offers) is `mcp:` plus the server's name and `_read_mcp_resource`, so `mcp:linear_*` covers it too. Searching for a tool doesn't ask unless a rule of yours matches it.
 - The browser and the web tools that open an address: `browser:` and the site, such as `browser:docs.example.com`, or `browser:*`.
 - Subagents: `subagent:` and the agent's name, or `subagent:*`.
 - Workflows: `workflow`. Only **deny** has an effect: every workflow asks you.
@@ -61,7 +60,7 @@ The box under the rules checks what your saved rules would do, without the agent
 
 The answer is **allow**, **ask** or **deny**, followed by why: the rule that decided it, "(safe tool default)", or "(no rule matched — default is ask)". On this screen it checks your global rules. Testing `workflow` never answers **allow**: an allow rule doesn't skip the workflow question, so the box says **ask**.
 
-Type a tool that's checked under another name (`mcp`, `Agent`, `SubagentWorkflow`, or a browser or web tool that opens an address), and the box names the one to test instead, for example "Agent is checked as `subagent:<agent>` on every call. Test that name instead."
+For an MCP tool, test its `mcp:` name, such as `mcp:linear_get_issue`. Type a tool that's checked under another name (`Agent`, `SubagentWorkflow`, `read_mcp_resource`, or a browser or web tool that opens an address), and the box names the one to test instead, for example "Agent is checked as `subagent:<agent>` on every call. Test that name instead."
 
 ### Bypass ALL permissions
 

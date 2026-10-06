@@ -86,11 +86,11 @@ describe("nothing asks for a compiler", () => {
     expect(pkg.scripts.postinstall).not.toContain("install-app-deps");
   });
 
-  it("postinstall still does the two things that ARE needed", () => {
-    // The pty helper's executable bit (npm drops it) and the esbuild bundle main's
-    // keychain sidecar runs — both real, both platform-aware on their own.
+  it("postinstall still does the one thing that IS needed", () => {
+    // The pty helper's executable bit (npm drops it). The MCP keychain sidecar went with
+    // pi-mcp-adapter (§13, 2026-10-05).
     expect(pkg.scripts.postinstall).toContain("fix-pty-helper");
-    expect(pkg.scripts.postinstall).toContain("build-mcp-oauth-bridge");
+    expect(pkg.scripts.postinstall).not.toContain("build-mcp-oauth-bridge");
   });
 
   it("electron-builder is told not to rebuild at pack time either", () => {

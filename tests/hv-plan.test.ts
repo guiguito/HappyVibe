@@ -109,8 +109,17 @@ describe("gatePlanCall", () => {
     expect(gatePlanCall("bash", { command: "git status" }).kind).toBe("pass");
     expect(gatePlanCall("bash", { command: "touch x" }).kind).toBe("block");
   });
+  test("plan mode passes a read-only-hinted MCP tool to the rules; others still floor-ask", () => {
+    expect(gatePlanCall("mcp__notion__fetch", {}, { mcpReadOnly: true })).toEqual({ kind: "pass" });
+    expect(gatePlanCall("mcp__notion__update_page", {}, {})).toEqual({ kind: "floor-ask" });
+    for (const t of ["tool_search", "list_mcp_resources", "list_mcp_resource_templates"]) expect(gatePlanCall(t, {}).kind, t).toBe("pass");
+  });
+  test("a read-only hint never lifts a block", () => {
+    expect(gatePlanCall("edit", {}, { mcpReadOnly: true }).kind).toBe("block");
+    expect(gatePlanCall("bash", { command: "touch x" }, { mcpReadOnly: true }).kind).toBe("block");
+  });
   test("unknown/MCP tools get floor-ask", () => {
-    expect(gatePlanCall("mcp", {}).kind).toBe("floor-ask");
+    expect(gatePlanCall("mcp__x__y", {}).kind).toBe("floor-ask");
     expect(gatePlanCall("some_extension_tool", {}).kind).toBe("floor-ask");
   });
   test("block wins regardless of input shape (self-escalation guard)", () => {
@@ -371,7 +380,7 @@ describe("plan mode and delegation", () => {
     // The decision lives in hv-plan.ts because happyvibe-bridge.ts is in NEITHER
     // tsconfig — an exhaustiveness check written there is decorative (verified by
     // deleting a branch and watching the typecheck stay green).
-    expect(src).toContain("resolvePlanVerdict(gatePlanCall(tool, input), boundary)");
+    expect(src).toContain('resolvePlanVerdict(gatePlanCall(tool, input, { mcpReadOnly: mcp?.hint === "read-only" }), boundary)');
   });
 });
 

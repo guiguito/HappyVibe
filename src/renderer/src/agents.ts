@@ -5,7 +5,7 @@
  * fail" discipline as context.ts / permission.ts.
  */
 import { delegationRunId, displayableTask, isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
-import { isMcpNamespaceTool } from "../../../pi-runtime/extensions/hv-mcp";
+import { READ_RESOURCE_TOOL } from "../../../pi-runtime/extensions/hv-mcp";
 import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { AGENT_TOOL, WORKFLOW_TOOL } from "../../../pi-runtime/extensions/hv-tw-gate";
 import { WEB_URL_TOOLS } from "../../../pi-runtime/extensions/hv-web";
@@ -45,6 +45,8 @@ export interface ToolInfo {
   name: string;
   description: string;
   source: string;
+  /** §13 (2026-10-05): the rule name a Pi MCP tool is checked under (bridge /hv-tools). */
+  checkedAs?: string;
 }
 
 export function parseAgents(r: { method?: string; message?: string }): AgentInfo[] | null {
@@ -80,15 +82,16 @@ export type PermState = "allow" | "ask" | "deny";
  * tool's own (happyvibe-bridge.ts `permTool`, and the SubagentWorkflow gate). `per` is set
  * when that name changes with the call (which MCP tool, which agent, which site), so the
  * bare name has no verdict of its own: a deny rule on `Agent` would paint the pill red while
- * every delegation still prompts. A directly exposed MCP tool keeps its own name (null here).
+ * every delegation still prompts. A Pi MCP tool carries its own rule name from the bridge (checkedAsOf).
  */
 export interface CheckedAs {
   name: string;
-  per?: "per MCP tool" | "per agent" | "per site";
+  per?: "per server" | "per agent" | "per site";
 }
 
 export function checkedAs(tool: string): CheckedAs | null {
-  if (tool === "mcp" || isMcpNamespaceTool(tool)) return { name: "mcp:<tool>", per: "per MCP tool" };
+  // §13: the resource read gates under whichever server it names; server tools carry their own name.
+  if (tool === READ_RESOURCE_TOOL) return { name: "mcp:<server>_read_mcp_resource", per: "per server" };
   if (tool === AGENT_TOOL) return { name: "subagent:<agent>", per: "per agent" };
   if (tool === "browser_open" || tool === "browser_navigate" || WEB_URL_TOOLS.has(tool)) {
     return { name: "browser:<host>", per: "per site" };
@@ -97,7 +100,12 @@ export function checkedAs(tool: string): CheckedAs | null {
   return null;
 }
 
-export interface ToolRow extends ToolInfo {
+/** The row's own rule name when the bridge sent one (a Pi MCP tool), else the name-based answer. */
+export function checkedAsOf(t: ToolInfo): CheckedAs | null {
+  return t.checkedAs ? { name: t.checkedAs } : checkedAs(t.name);
+}
+
+export interface ToolRow extends Omit<ToolInfo, "checkedAs"> {
   /** The verdict, or, for a per-call tool, what it is checked per (a pill, never a verdict). */
   permission: PermState | NonNullable<CheckedAs["per"]>;
   checkedAs?: CheckedAs;
@@ -110,10 +118,13 @@ export function testedAction(tool: string, action: PermState): PermState {
 
 /** Join a tool list against per-tool verdicts. A tool with no verdict → "ask". */
 export function joinToolPermissions(tools: ToolInfo[], verdicts: Record<string, PermState>): ToolRow[] {
-  return tools.map((t) => {
-    const c = checkedAs(t.name);
+  return tools.map((info) => {
+    const c = checkedAsOf(info);
+    const { checkedAs: _ruleName, ...t } = info; // the row carries the CheckedAs object instead
     if (!c) return { ...t, permission: verdicts[t.name] ?? "ask" };
     if (c.per) return { ...t, permission: c.per, checkedAs: c };
+    // §13: a Pi MCP tool is evaluated under its own mcp:<server>_<tool> name (AllToolsView).
+    if (info.checkedAs) return { ...t, permission: verdicts[t.name] ?? "ask", checkedAs: c };
     // The one fixed-name case is the workflow gate. It prompts unless a rule DENIES,
     // and an allow rule never skips it, so the pill never says allow.
     const v = verdicts[t.name] ?? "ask";
