@@ -10,7 +10,7 @@ import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
 import { guideLinkScript, navAction } from './navGuard'
-import { parseLayoutFile, type WindowRecord } from './windowLayout'
+import { firstWindowSize, parseLayoutFile, type WindowRecord } from './windowLayout'
 import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
 import { installCrash } from './crash'
@@ -18,6 +18,7 @@ import { installRemoteConfig } from './remoteConfig'
 import { installUsage } from './usage'
 import { platform } from './platform'
 import { DOCS_BASE } from './docsBase'
+import { wipeIfMarked } from './reset'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -25,6 +26,10 @@ import { DOCS_BASE } from './docsBase'
 // first menu item's label and always uses app.getName(), so setting it here is the
 // only thing that renames the bold app-menu title. Must run before getName/getPath.
 app.setName('HappyVibe')
+
+// Inert unless set: points userData somewhere else, so a destructive flow (Clear
+// all data, §17 round 25) can be exercised without touching the real profile.
+if (process.env.HV_USER_DATA) app.setPath('userData', process.env.HV_USER_DATA)
 
 // Opt-in Chrome DevTools Protocol port for external debuggers (electron-debug MCP,
 // Chrome inspector). Inert unless HV_DEBUG_PORT is set — safe to leave in.
@@ -42,6 +47,14 @@ try {
   if (existsSync(legacy) && !existsSync(current)) renameSync(legacy, current)
 } catch {
   /* non-fatal: fall back to a fresh userData dir */
+}
+
+// §17 round 25: Clear all data marked the profile and relaunched. Wipe it now,
+// before the crash queue, config or Chromium open anything in it.
+try {
+  wipeIfMarked(app.getPath('userData'))
+} catch {
+  /* the marker survives a partial wipe; the next boot retries */
 }
 
 // §37: as early as possible, and immediately after the migration because the
@@ -241,9 +254,10 @@ ipcMain.handle(
 
 /** The record is opaque here — main stores it and hands it back; see windows.ts. */
 export function openWindow(record: WindowRecord, at?: { x: number; y: number }): BrowserWindow {
+  const first = record.bounds ? null : firstWindowSize(screen.getPrimaryDisplay().workAreaSize)
   const win = new BrowserWindow({
-    width: record.bounds?.width ?? 900,
-    height: record.bounds?.height ?? 670,
+    width: record.bounds?.width ?? first!.width,
+    height: record.bounds?.height ?? first!.height,
     // A torn-off window opens at the pointer, a restored one where it was.
     // Omitting both is what "centred by the platform" means, and is right for
     // a first launch and for ⌘⇧N.

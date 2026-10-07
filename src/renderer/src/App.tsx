@@ -61,6 +61,7 @@ import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
+import type { Activity, ToolDraft } from "./busyStatus";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
   activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane, activeTabOf,
@@ -482,7 +483,17 @@ export default function App(): React.JSX.Element {
     // Pending-per-session comes from MAIN, which is the only place that knows
     // every window's prompts. Counting our own queue would report only the ones
     // we were chosen to show, so the other window's sidebar would look idle.
-    const offPending = window.hv.onPendingChanged(setPendingBySession);
+    const offPending = window.hv.onPendingChanged((next) => {
+      // §7 round 25: an answered prompt restarts the wait counter — the minutes the
+      // agent spent waiting on the user are not the model stalling (GUI pass).
+      const now = Date.now();
+      for (const [sid, n] of Object.entries(pendingPrevRef.current)) {
+        if (n > 0 && !((next[sid] ?? 0) > 0)) activityRef.current[sid] = { eventAt: now, streamAt: 0 };
+      }
+      pendingPrevRef.current = next;
+      setActivity({ ...activityRef.current });
+      setPendingBySession(next);
+    });
     // Fetched once (this window may have opened after the last broadcast) and
     // then kept current as windows open and close.
     /**
@@ -597,6 +608,13 @@ export default function App(): React.JSX.Element {
   /** §7 round 16: the live reasoning's render mirror, flushed by the same rAF
    *  as streamText — thinking streams token by token like the answer does. */
   const [thinkingText, setThinkingText] = useState<Record<string, string>>({});
+  /** §7 round 25: the busy status line's inputs — refs written per event, mirrored by the same rAF. */
+  const toolDraftRef = useRef<Record<string, ToolDraft | null>>({});
+  const activityRef = useRef<Record<string, Activity>>({});
+  /** The last pending counts, to spot a prompt being answered (see onPendingChanged). */
+  const pendingPrevRef = useRef<Record<string, number>>({});
+  const [toolDrafts, setToolDrafts] = useState<Record<string, ToolDraft | null>>({});
+  const [activity, setActivity] = useState<Record<string, Activity>>({});
   const streamRef = useRef<Record<string, string>>({});
   // §7 round 16: the thinking buffer, separate from the text one so a thinking
   // block and an answer never merge into one bubble. Committed at
@@ -800,6 +818,8 @@ export default function App(): React.JSX.Element {
       rafRef.current = null;
       setStreamText({ ...streamRef.current });
       setThinkingText({ ...thinkRef.current });
+      setToolDrafts({ ...toolDraftRef.current });
+      setActivity({ ...activityRef.current });
     });
   };
 
@@ -1482,6 +1502,9 @@ export default function App(): React.JSX.Element {
     const offPiEvent = window.hv.onPiEvent((e) => {
       const sid = e.sessionId as string | undefined;
       if (!sid) return;
+      // §7 round 25: any event resets the "Waiting for the model · Ns" counter.
+      activityRef.current[sid] = { eventAt: Date.now(), streamAt: activityRef.current[sid]?.streamAt ?? 0 };
+      scheduleFlush();
       // pi-subagents' wait tool is always intercepted by the bridge in HappyVibe
       // (async results auto-deliver as a new turn), so it never does anything
       // useful — hide its card entirely instead of showing a scary blocked-tool
@@ -1507,6 +1530,7 @@ export default function App(): React.JSX.Element {
       // §7 round 16: a tool call IS the next action — settle the reasoning that
       // chose it, so the collapsed block sits above the card it produced.
       if (e.type === "tool_execution_start") {
+        toolDraftRef.current[sid] = null; // the card has landed; it carries the headline now
         commitThinking(sid);
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
         commitStream(sid); // flush the live bubble before the tool card (order preserved)
@@ -1665,6 +1689,7 @@ export default function App(): React.JSX.Element {
         // the collapsed block lands ABOVE the bubble it produced.
         if (!streaming.current[sid]) commitThinking(sid);
         streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
+        activityRef.current[sid] = { eventAt: Date.now(), streamAt: Date.now() };
         streaming.current[sid] = true;
         scheduleFlush();
       }
@@ -1683,15 +1708,37 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "message_update" && (ame?.type === "thinking_delta" || ame?.type === "thinking") && ame.delta) {
         thinkRef.current[sid] = (thinkRef.current[sid] ?? "") + ame.delta;
+        activityRef.current[sid] = { eventAt: Date.now(), streamAt: Date.now() };
         scheduleFlush();
       }
       // A triggered turn (e.g. an async subagent completion delivering its
       // result) starts without a local send, so mark busy here too — otherwise
       // the composer would send a fresh prompt instead of steering into it.
       if (e.type === "agent_start") {
+        toolDraftRef.current[sid] = null; // review I5: a crashed or retried attempt leaves no label behind
         setBusy((p) => (p[sid] ? p : { ...p, [sid]: true }));
       }
+      // A retry after a mid-tool-call stream error starts a fresh assistant message.
+      if (e.type === "message_start") {
+        toolDraftRef.current[sid] = null;
+      }
+      // §7 round 25 — the busy status line. Pi strips `partial` over RPC, so
+      // the raw fragments ARE the arguments until the card lands (d1.md).
+      if (e.type === "message_update" && ame?.type === "toolcall_start") {
+        const s = ame as unknown as { contentIndex: number; toolName?: string };
+        toolDraftRef.current[sid] = { contentIndex: s.contentIndex, toolName: s.toolName ?? "", raw: "" };
+      }
+      if (e.type === "message_update" && ame?.type === "toolcall_delta") {
+        const d = ame as unknown as { contentIndex: number; delta?: string };
+        const cur = toolDraftRef.current[sid];
+        // ponytail: one draft per session, the latest call; parallel calls in one message show the newest.
+        if (cur && cur.contentIndex === d.contentIndex && d.delta) toolDraftRef.current[sid] = { ...cur, raw: cur.raw + d.delta };
+      }
+      if (e.type === "message_update" && ame?.type === "toolcall_end") {
+        toolDraftRef.current[sid] = null;
+      }
       if (e.type === "agent_end") {
+        toolDraftRef.current[sid] = null;
         // §22: the second wow, once — after a whole turn, when there is
         // something in the window worth opening the gauge for.
         if (sid === firstRunSession.current && !wowShown.current.context) {
@@ -2775,6 +2822,10 @@ export default function App(): React.JSX.Element {
     // A fresh prompt ends any abort window: this turn's text belongs to a new
     // bubble, never merged into the one the user stopped.
     delete aborted.current[sid];
+    // §7 round 25: the wait counter starts at this send, not at the last turn's final event
+    // (a hibernated session can take seconds to emit its first one).
+    activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 };
+    setActivity((p) => ({ ...p, [sid]: activityRef.current[sid] }));
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
       const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);
@@ -2807,11 +2858,6 @@ export default function App(): React.JSX.Element {
     }
     if (lastUser && lastUser.kind === "user") await send(sid, lastUser.text);
   };
-
-  // macOS dock badge mirrors total unanswered permission prompts.
-  useEffect(() => {
-    window.hv.setBadgeCount(uiQueue.length);
-  }, [uiQueue.length]);
 
   // Selecting a session surfaces ITS oldest pending prompt (B4 routing).
   const uiReq = headFor(uiQueue, selectedId);
@@ -3858,6 +3904,9 @@ export default function App(): React.JSX.Element {
             sessionThinking={sess?.thinking ?? null}
             items={transcripts[sid] ?? []}
             streaming={streamText[sid] || undefined}
+            toolDraft={toolDrafts[sid] ?? undefined}
+            activity={activity[sid]}
+            promptWaiting={(pendingBySession[sid] ?? 0) > 0}
             thinking={thinkingText[sid] || undefined}
             busy={busy[sid] || false}
             /* §34: `show` drops while the agent streams and comes back at idle;

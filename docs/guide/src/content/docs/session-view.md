@@ -88,6 +88,12 @@ On a tool card:
 And around them:
 
 - **Thinking…** shows while the agent reasons, then **Thought for 12s**. Click it to read its reasoning for that turn. It folds again each time you send.
+- While the agent works, three dots bounce at the bottom, with a short line beside them saying what's happening:
+  - **Creating jobs.py · 54 lines** while it writes a file. The count climbs as the file arrives. Some models send a file's contents before its name, so the line reads **Creating a file · 54 lines** until the name arrives.
+  - The name of the tool it's running, the same words as the tool's card.
+  - **Waiting for your answer** while a question or an approval is open.
+  - **Waiting for the model · 14s** when nothing is moving, counting the seconds since anything last happened in the session.
+  - Nothing while the answer or the reasoning is being written: you can see those move.
 - A long session starts at its latest messages. **Show earlier messages (…)** draws the rest.
 - After a compaction ([Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) says more), a note says "Earlier messages were compacted into a summary" and why. **Load earlier messages** brings them back into view, marked "earlier — not in the agent's context": you can read them, but the agent can't see them.
 - Scrolled up while the agent writes? The conversation stops following it. **Jump to latest** takes you back down.

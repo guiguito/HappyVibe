@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
 import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
 import { featureOfTool } from "./usage/features";
@@ -32,7 +33,10 @@ import {
   getVoiceSettings, setVoiceSettings,
   getWebService, setWebService, resolveWebServiceForCall,
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
+  getAttentionNotified,
+  setAttentionNotified,
 } from "./config";
+import { markForReset, removeAppWorktrees, resetBlockers } from "./reset";
 import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
 // `./crash` itself is NOT imported here: it reaches @electron-toolkit/utils,
 // which under vitest takes three unrelated test files down (CLAUDE.md). The
@@ -1207,9 +1211,69 @@ export function registerIpc(
   const pendingUi = new PendingPrompts(BLOCKING_UI_METHODS);
   // docs round #2: the latest ON `hv.dangerous` notify per session, replayed to a window that opens later.
   const bypassNotices = new BypassNotices();
-  const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
+  /**
+   * The app's ONE Notification constructor (§35's schedule messages, §10 round 25's
+   * permission ask). The app can be running with every window closed on macOS —
+   * which is the whole point of a scheduled run — so a click may have to open one.
+   */
+  const postNotification = (body: string, silent: boolean, onClick: () => void): void => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title: "HappyVibe", body, silent });
+    n.on("click", () => {
+      const w = windows.primary() ?? openWindow();
+      w.show();
+      w.focus();
+      onClick();
+    });
+    n.show();
+  };
+  /**
+   * §10 round 25 — the Dock badge, the bounce, the taskbar flash and dot all come
+   * from HERE: pendingUi already knows every blocking prompt across sessions and
+   * windows, even with no window open (a §35 run at 3 a.m.). The renderer used to
+   * report a per-window count that main summed — two sources for one number.
+   */
+  const applyAttention = (arrived: boolean, sessionId?: string): void => {
+    const total = Object.values(pendingUi.counts(UTILITY)).reduce((a, b) => a + b, 0);
+    const plan = attentionPlan({
+      platform: platform.name,
+      total,
+      arrived,
+      focused: BrowserWindow.getFocusedWindow() !== null,
+      notified: getAttentionNotified(),
+    });
+    try {
+      if (plan.badge !== null) app.setBadgeCount(plan.badge);
+    } catch {
+      /* no launcher API on this desktop */
+    }
+    const win = windows.primary();
+    if (plan.overlay !== null && win) {
+      win.setOverlayIcon(
+        plan.overlay ? nativeImage.createFromBitmap(dotBitmap(16), { width: 16, height: 16 }) : null,
+        plan.overlay ? `${total} waiting for your answer` : "",
+      );
+    }
+    if (plan.flash && win) win.flashFrame(true);
+    if (plan.bounce) app.dock?.bounce("informational");
+    if (plan.notify && Notification.isSupported()) {
+      setAttentionNotified(true);
+      postNotification(ATTENTION_BODY, false, () => {
+        const meta = sessionId ? index.get(sessionId) : undefined;
+        if (meta) send("hv:show-session", { sessionId: meta.id, workspaceId: meta.workspaceId });
+      });
+    }
+  };
+  app.on("browser-window-focus", (_e, w) => w.flashFrame(false));
+  const pendingChanged = (): void => {
+    send("hv:pending-changed", pendingUi.counts(UTILITY));
+    applyAttention(false);
+  };
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
-    if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
+    if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) {
+      send("hv:pending-changed", pendingUi.counts(UTILITY));
+      applyAttention(sessionId !== UTILITY, sessionId);
+    }
     if (!isSubagentPrompt(r.title)) promptShownAt.set(r.id, { at: Date.now(), sid: sessionId }); // §39: permission_answered.waitSec
   };
   const clearPending = (id: string): void => {
@@ -3262,17 +3326,10 @@ export function registerIpc(
       kind === "needs_you" ? `${s.title} needs your permission`
       : kind === "missed" ? `${x.count} schedule${x.count === 1 ? "" : "s"} missed ${x.count === 1 ? "its" : "their"} time`
       : `${s.title} finished${mins}${cost}`;
-    const n = new Notification({ title: "HappyVibe", body, silent: kind === "done" });
-    n.on("click", () => {
-      // The app can be running with every window closed on macOS — which is the
-      // whole point of a scheduled run — so a click may have to open one.
-      const w = windows.primary() ?? openWindow();
-      w.show();
-      w.focus();
+    postNotification(body, kind === "done", () => {
       if (kind === "missed") send("hv:schedules-missed", scheduleStore.list().filter((x2) => x2.missed).map((x2) => x2.id));
       else if (x.sessionId) send("hv:show-session", { sessionId: x.sessionId, workspaceId: s.workspaceId });
     });
-    n.show();
   };
 
   const scheduler = new Scheduler(scheduleStore, {
@@ -4815,26 +4872,6 @@ export function registerIpc(
   // `null` means never recorded; see config.ts for why the renderer seeds that
   // case rather than treating it as "all of it is new".
 
-  // macOS dock badge = total pending permission prompts (renderer-computed).
-  /**
-   * §7 round 23: the dock badge is ONE number for the whole app, so it is a SUM
-   * over windows. Each renderer reports its own queue length; letting them each
-   * call setBadgeCount directly meant the last writer won and the badge showed
-   * one window's count as if it were everything.
-   */
-  const badgeByWindow = new Map<number, number>();
-  ipcMain.on("hv:set-badge-count", (e, n: number) => {
-    const w = windows.bySender(e.sender);
-    if (w) badgeByWindow.set(w.id, Number.isInteger(n) && n > 0 ? n : 0);
-    let total = 0;
-    for (const win of windows.all()) total += badgeByWindow.get(win.id) ?? 0;
-    try {
-      app.setBadgeCount(total);
-    } catch {
-      /* not supported on this platform */
-    }
-  });
-
   // Live model list from Pi's registry (only models with configured auth).
   ipcMain.handle("hv:list-models", async () => {
     const c = await ensureUtility();
@@ -5473,6 +5510,24 @@ export function registerIpc(
     // gated push would drop the one refresh the user is waiting for.
     pushGitChanged(parent, { force: true });
     return r;
+  });
+
+  // §17 round 25 — Clear all data. Check is read-only; the act re-checks, removes
+  // the app's worktrees through git, marks, and relaunches. will-quit stops every Pi.
+  ipcMain.handle("hv:reset-check", () => resetBlockers(agentDir()));
+  ipcMain.handle("hv:reset-all", async () => {
+    const blockers = await resetBlockers(agentDir());
+    if (blockers.length) return { ok: false, blockers };
+    // Nothing may hold a worktree's cwd: on Windows a live shell locks the folder.
+    for (const s of index.list()) if (manager.get(s.id)) await endSession(s.id, "stop");
+    terminals.killAll();
+    const refused = await removeAppWorktrees(agentDir());
+    // Git refused one: sessions are already stopped and earlier worktrees may be gone — say so.
+    if (refused.length) return { ok: false, blockers: refused, removed: true };
+    markForReset(app.getPath("userData"));
+    app.relaunch();
+    app.quit();
+    return { ok: true };
   });
 
   ipcMain.handle("hv:worktree-remove", async (_e, worktreePath: string, force = false) => {

@@ -1037,7 +1037,6 @@ interface HvApi {
   terminalShells(): Promise<{ default: string; found: Array<{ label: string; path: string }> }>;
   evalRules(workspaceId: string, tool: string, input: Record<string, unknown>): Promise<HvVerdict>;
   readAudit(filter?: { sessionId?: string; workspaceId?: string }): Promise<HvAuditEvent[]>;
-  setBadgeCount(n: number): void;
   // B5: context visibility
   contextSnapshot(sessionId: string): Promise<void>;
   contextRemove(sessionId: string, keys: string[]): Promise<void>;
@@ -1123,6 +1122,10 @@ interface HvApi {
   setCrashReports(on: boolean): Promise<void>;
   crashInfo(): Promise<HvCrashInfo>;
   crashReveal(): Promise<void>;
+  /** §17 round 25: app-data worktrees with unsaved work — a reset refuses while any exist. */
+  resetCheck(): Promise<Array<{ path: string; reason: string }>>;
+  /** §17 round 25: re-checks, removes the app's worktrees, then restarts and wipes all app data. */
+  resetAll(): Promise<{ ok: true } | { ok: false; blockers: Array<{ path: string; reason: string }>; removed?: true }>;
   /** Dev-only, refused in a packaged build. Nothing in the UI calls it — the
       GUI pass drives it from electron-debug. */
   crashTest(kind: "throw" | "reject" | "crash" | "message"): Promise<boolean>;

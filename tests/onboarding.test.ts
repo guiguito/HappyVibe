@@ -671,3 +671,22 @@ describe("cleanup C11: dismissing with a refused key reports step 1", () => {
     expect(dialog).toContain("onboardingStep({ welcome, modelReady: step1Done, workspaceReady })");
   });
 });
+
+describe("round 25: a tall onboarding step scrolls from its own top", () => {
+  const src = fs.readFileSync(path.join(process.cwd(), "src/renderer/src/components/OnboardingDialog.tsx"), "utf8");
+  it("no centred column is pinned to the scroller's height", () => {
+    // `h-full` + `justify-center` inside an overflow-y-auto box spills the
+    // overflow ABOVE the top edge, where no scroll can reach (sub_9ga78tmehgm1).
+    expect(src).not.toMatch(/className="h-full flex flex-col[^"]*justify-center/);
+  });
+  it("the step column grows with its content and still centres when short", () => {
+    expect(src).toContain('className="min-h-full flex flex-col justify-center gap-3"');
+  });
+});
+
+describe("round 25: the dialog is tall enough for both steps in a default window", () => {
+  const src = fs.readFileSync(path.join(process.cwd(), "src/renderer/src/components/OnboardingDialog.tsx"), "utf8");
+  it("caps at 34rem (both steps measured at 465px of content; 30rem left a 45px scroll)", () => {
+    expect(src).toContain("h-[min(34rem,calc(100vh-3rem))]");
+  });
+});

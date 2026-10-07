@@ -341,7 +341,6 @@ contextBridge.exposeInMainWorld("hv", {
   evalRules: (workspaceId: string, tool: string, input: Record<string, unknown>) =>
     ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),
-  setBadgeCount: (n: number) => ipcRenderer.send("hv:set-badge-count", n),
 
   // ── B7: local analytics + onboarding (additive) ──────────────────
   getAnalytics: (filter?: { workspaceId?: string; sinceTs?: string }) =>
@@ -439,6 +438,9 @@ contextBridge.exposeInMainWorld("hv", {
   setCrashReports: (on: boolean) => ipcRenderer.invoke("hv:set-crash-reports", on),
   crashInfo: () => ipcRenderer.invoke("hv:crash-info"),
   crashReveal: () => ipcRenderer.invoke("hv:crash-reveal"),
+  /** §17 round 25: Clear all data. */
+  resetCheck: () => ipcRenderer.invoke("hv:reset-check"),
+  resetAll: () => ipcRenderer.invoke("hv:reset-all"),
   /** Dev-only; main refuses it in a packaged build. No button calls this — the
       GUI pass drives it from electron-debug. */
   crashTest: (kind: "throw" | "reject" | "crash" | "message") => ipcRenderer.invoke("hv:crash-test", kind),

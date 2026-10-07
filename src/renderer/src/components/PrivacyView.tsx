@@ -24,6 +24,7 @@ export function PrivacyView(): React.JSX.Element {
   const [stats, setStats] = useState(true);
   const [info, setInfo] = useState<HvCrashInfo | null>(null);
   const [showReport, setShowReport] = useState(false);
+  const [reset, setReset] = useState<{ blockers: Array<{ path: string; reason: string }> } | null>(null);
 
   // After an opt-out the report is gone; the button must not stay on "Hide".
   useEffect(() => {
@@ -149,7 +150,92 @@ export function PrivacyView(): React.JSX.Element {
           </pre>
         )}
       </Section>
+
+      {/* §17 round 25: the only way back to a clean slate — reinstalling keeps this data. */}
+      <Section icon="audit" title="Clear all data" subtitle="Start over as if HappyVibe were just installed.">
+        <button
+          type="button"
+          className={`${smallBtn} bg-berry text-paper border-berry`}
+          onClick={() => void window.hv.resetCheck().then((b) => setReset({ blockers: b }))}
+        >
+          Clear all data…
+        </button>
+      </Section>
     </div>
+    {reset && <ResetDialog blockers={reset.blockers} onClose={() => setReset(null)} />}
+    </div>
+  );
+}
+
+const dialogBtn = "px-2.5 py-1 rounded-lg border border-line font-bold text-xs cursor-pointer hover:bg-card";
+
+/** Refuses outright over unsaved worktrees; otherwise one red confirm. */
+function ResetDialog({ blockers: initial, onClose }: { blockers: Array<{ path: string; reason: string }>; onClose: () => void }): React.JSX.Element {
+  const [blockers, setBlockers] = useState(initial);
+  // Git refused DURING removal: sessions were stopped and other worktrees may be gone.
+  const [partial, setPartial] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const confirm = async (): Promise<void> => {
+    setBusy(true);
+    const r = await window.hv.resetAll();
+    // On success the app quits; only a refusal comes back.
+    if (!r.ok) {
+      setBlockers(r.blockers);
+      setPartial(!!r.removed);
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6">
+      <div className="hv-dialog-flow w-full max-w-lg rounded-2xl border-2 border-line-strong bg-paper shadow-sticker-lg p-5">
+        {blockers.length > 0 ? (
+          <>
+            <h2 className="font-black text-lg tracking-tight">
+              {partial ? "Some worktrees couldn't be removed" : "Some worktrees have unsaved work"}
+            </h2>
+            <ul className="mt-3 space-y-1.5 max-h-60 overflow-y-auto">
+              {blockers.map((b) => (
+                <li key={b.path} className="rounded-xl border border-line px-3 py-2 text-xs">
+                  <span className="font-mono break-all">{b.path}</span>
+                  <span className="block text-ink-soft mt-0.5">{b.reason}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-ink-soft mt-3">
+              {partial
+                ? "Your sessions were stopped and other worktrees may already be gone. Your other data wasn't touched. Fix what git says above, then try again."
+                : "Commit or discard their changes, then try again. Nothing was deleted."}
+            </p>
+            <div className="flex gap-2 justify-end mt-4">
+              <button type="button" className={dialogBtn} onClick={onClose}>Close</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="font-black text-lg tracking-tight">Clear all data?</h2>
+            <p className="text-sm text-ink-soft mt-1">
+              This removes every chat, workspace, setting, sign-in and API key, and the app&apos;s worktrees (their
+              branches stay in your repositories). HappyVibe then closes and reopens on its first-run screen.
+            </p>
+            <p className="text-sm text-ink-soft mt-2">
+              Folders inside your projects are not touched — if you want them gone, delete{" "}
+              <code className="font-mono">.pi-subagents/</code> and <code className="font-mono">.agents/plans/</code>{" "}
+              yourself.
+            </p>
+            <div className="flex gap-2 justify-end mt-4">
+              <button type="button" className={dialogBtn} onClick={onClose} disabled={busy}>Cancel</button>
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded-lg border-2 border-berry bg-berry text-paper font-bold text-xs cursor-pointer disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void confirm()}
+              >
+                Clear all data
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

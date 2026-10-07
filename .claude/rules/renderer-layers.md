@@ -37,6 +37,9 @@ paths:
   pane is hidden (`dialogHost`, `paneDialog.ts`: null for `offsetParent === null` or a zero rect) —
   prompts never time out, so an invisible one waits forever. The pane wrapper needs `relative`.
 
+- Header menus (model chip, skills, agents, MCP) are z-30: the run rail under the top bar is `sticky z-20`
+  and comes later in the DOM, so a z-20 menu loses the tie (`tests/model-select-layer.test.ts`).
+
 ## Menus
 - A menu dismissed by `onBlur` loses its own clicks: pressing a `<button>` doesn't focus it, so the
   menu unmounts between mousedown and mouseup. Items act on `onMouseDown` + `preventDefault()`
