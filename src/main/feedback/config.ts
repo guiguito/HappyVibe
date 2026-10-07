@@ -69,6 +69,9 @@ export function resolveFeedbackConfig(
   env: Record<string, string | undefined>,
   isDev: boolean,
 ): FeedbackConfig | null {
+  // HV_NO_PHONE_HOME=1: the machine's owner wants nothing sent to Inlet. Null is
+  // the keyless path above, so feedback, crash, usage and remote config all stay off.
+  if (env.HV_NO_PHONE_HOME === "1") return null;
   const forced = env.HV_FEEDBACK_CHANNEL;
   const channel: FeedbackChannel = forced === "dev" || forced === "prod" ? forced : isDev ? "dev" : "prod";
   const base = FEEDBACK_CHANNELS[channel];
