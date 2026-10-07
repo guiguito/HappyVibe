@@ -102,7 +102,9 @@ describe("review fixes", () => {
     // …and pushed to the screen NOW: the stamp in a ref alone left "· 81s" from the last
     // turn on screen until the first event (GUI pass, 2026-10-07).
     const at = body.indexOf("activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 }");
-    expect(body.slice(at, at + 160)).toContain("scheduleFlush()");
+    // In the SAME render as the dots (setBusy) — a next-frame flush still flashed the old
+    // count for one frame (GUI pass, 2026-10-07).
+    expect(body.slice(at, at + 200)).toMatch(/setActivity\(\(p\) => \(\{ \.\.\.p, \[sid\]: activityRef\.current\[sid\] \}\)\)/);
   });
   test("a new attempt or turn drops a stale draft (I5)", () => {
     for (const t of ['e.type === "agent_start"', 'e.type === "message_start"']) {
