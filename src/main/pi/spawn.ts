@@ -279,6 +279,7 @@ export function resolvePiSpawn(
             document: opts.builtinTools.document,
             memory: opts.builtinTools.memory,
             memoryAppend: opts.builtinTools.memoryAppend,
+            schedules: opts.builtinTools.schedules,
           }) }
         : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),
