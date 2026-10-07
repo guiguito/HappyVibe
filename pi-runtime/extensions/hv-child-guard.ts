@@ -15,6 +15,7 @@ import { containsPath } from "./hv-paths";
 import * as path from "node:path";
 import { EMPTY_RULES, parseRulesFile, SAFE_TOOLS, type RuleAction, type RulesFile } from "./hv-rules";
 import { childDecision } from "./hv-child-rules";
+import { offToolRefusal, parseBuiltins } from "./hv-builtins";
 import { childPolicy, currentChildSpawn, type ChildPolicy } from "./hv-child-policy";
 
 /**
@@ -140,6 +141,8 @@ export function guardDecision(args: {
   bypass: boolean;
   workspace: string;
   writeRoots?: readonly string[];
+  /** §13 round 26: core tools the user switched off (HV_BUILTINS coreOff). */
+  off?: readonly string[];
 }): { action: "allow" | "deny"; reason?: string; wouldHave: RuleAction; askable?: { grantable: boolean } } {
   const { tool, input, workspace } = args;
   const d = childDecision(
@@ -147,6 +150,10 @@ export function guardDecision(args: {
     { tool, input, workspace, caseInsensitivePaths: CI_PATHS },
     { bypass: args.bypass, rulesReadable: args.rulesReadable },
   );
+  // §13 round 26: first, and under bypass too — a switched-off tool is absent, not a permission.
+  // Never askable: there is nothing for the user to approve that the switch has not answered.
+  const off = offToolRefusal(tool, { coreOff: [...(args.off ?? [])] });
+  if (off) return { action: "deny", wouldHave: d.wouldHave, reason: off };
   if (!SAFE_TOOLS.has(tool) && !args.boundary.includes(tool)) {
     return {
       action: "deny",
@@ -203,6 +210,8 @@ function inProcessGuard(
   const boundary = [...policy.boundaryFor(who?.type)];
   const { rules, rulesReadable } = readRules();
   const bypass = process.env.HV_BYPASS === "1";
+  // Children run in the parent's process, so they read the parent's switches.
+  const coreOff = parseBuiltins(process.env.HV_BUILTINS).coreOff;
   // §35: a read-only scheduled run has nobody to answer, so an ask stays a deny.
   const canAsk = process.env.HV_READONLY !== "1" && typeof policy.ask === "function";
   // "Allow for this run": per CHILD (this factory runs once per child), so it dies with the run.
@@ -222,7 +231,7 @@ function inProcessGuard(
   pi.on("tool_call", async (event) => {
     const tool = typeof event.toolName === "string" ? event.toolName : "tool";
     const input = (event.input ?? {}) as Record<string, unknown>;
-    const d = guardDecision({ tool, input, boundary, rules, rulesReadable, bypass, workspace: process.cwd() });
+    const d = guardDecision({ tool, input, boundary, rules, rulesReadable, bypass, workspace: process.cwd(), off: coreOff });
     if (d.action === "deny" && d.askable && canAsk) {
       const covered = runGrants.has(tool) || (d.askable.grantable && policy.hasSessionGrant?.(tool) === true);
       const answer = covered

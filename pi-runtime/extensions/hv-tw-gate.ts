@@ -34,7 +34,13 @@ export interface TwAgentInfo {
  * The boundary a human approves for an `Agent` call, or undefined when the agent does
  * not exist (tintinweb would refuse it too — `fallbackSubagent: "none"`).
  */
-export function twBoundary(agent: string, info: TwAgentInfo | undefined, input: Record<string, unknown>): BoundarySummary | undefined {
+export function twBoundary(
+  agent: string,
+  info: TwAgentInfo | undefined,
+  input: Record<string, unknown>,
+  /** §13 round 26: switched-off core tools — never promised, since the child guard refuses them. */
+  off: ReadonlySet<string> = new Set(),
+): BoundarySummary | undefined {
   if (!info) return undefined;
   const declarations: string[] = [];
   const nested = info.allowedSubagents === "all" ? "any agent" : info.allowedSubagents?.join(", ");
@@ -49,7 +55,8 @@ export function twBoundary(agent: string, info: TwAgentInfo | undefined, input: 
     context: input.inherit_context === true ? "fork" : "fresh",
     declarations,
   });
-  return { ...b, fanout: b.fanout || !!nested };
+  const keep = (t: string) => !off.has(t);
+  return { ...b, tools: b.tools.filter(keep), writeCapable: b.writeCapable.filter(keep), fanout: b.fanout || !!nested };
 }
 
 /** Did an agent file's frontmatter write a `tools:` key at all? */

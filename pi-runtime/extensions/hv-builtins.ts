@@ -82,7 +82,7 @@ export function excludedTools(b: Pick<BuiltinToggles, "coreOff" | "subagents" | 
  * session and an agent file with no `tools:` gets every core tool, so the parent's
  * `--exclude-tools` alone would leave a delegated way round the switch.
  */
-export function offToolRefusal(tool: string, b: BuiltinToggles): string | null {
+export function offToolRefusal(tool: string, b: Pick<BuiltinToggles, "coreOff">): string | null {
   return b.coreOff.includes(tool)
     ? `The user switched off '${tool}' in Settings → Built-in tools. Do not retry it and do not work around it; finish what you can with the tools you have.`
     : null;

@@ -1065,7 +1065,7 @@ export default function (pi: ExtensionAPI) {
     // a boundary rather than a verb. Side-effect-free.
     // The boundary comes from tintinweb's discovery + the agent file (hv-tw-gate.ts).
     const boundary = subagentName
-      ? twBoundary(subagentName, await twAgentInfo(subagentName), input)
+      ? twBoundary(subagentName, await twAgentInfo(subagentName), input, new Set(builtins.coreOff))
       : undefined;
     if (subagentName) {
       if (twDisabledAgents().has(subagentName)) {
@@ -1224,7 +1224,7 @@ export default function (pi: ExtensionAPI) {
       }
       const parsed = workflowAgents(src.script);
       const agents = await Promise.all(parsed.types.map(async (type) => {
-        const b = twBoundary(type, await twAgentInfo(type), {});
+        const b = twBoundary(type, await twAgentInfo(type), {}, new Set(builtins.coreOff));
         return { type, known: !!b, tools: b?.tools ?? [], writeCapable: b?.writeCapable ?? [] };
       }));
       const approve = (): void => { for (const a of agents) if (a.known) approvedBoundaries.set(a.type, [...a.tools]); };
