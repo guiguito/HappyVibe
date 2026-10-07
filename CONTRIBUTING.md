@@ -18,6 +18,10 @@ On **Linux** the first install compiles `node-pty`, so you need `build-essential
 (`sudo apt install -y build-essential python3`). On **Windows**, install from Windows itself, not
 from WSL — one `node_modules` cannot serve both.
 
+Behind an HTTP proxy, Electron's binary is fetched on first use by Node's `fetch`, which ignores
+`HTTPS_PROXY` unless told otherwise. If `npm run dev` stops at `TypeError: fetch failed`, fetch it
+once through the proxy: `NODE_USE_ENV_PROXY=1 node node_modules/electron/install.js`.
+
 ## Before you open a pull request
 
 ```bash
