@@ -4320,7 +4320,7 @@ export function registerIpc(
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }) => {
+  ipcMain.handle("hv:builtins-set", (_e, t: Parameters<typeof setBuiltinTools>[0]) => {
     const prev = getBuiltinTools() as Record<string, unknown>;
     for (const [k, v] of Object.entries(t)) {
       if (typeof v === "boolean" && prev[k] !== v) track("builtin_toggled", { item: k, kind: "builtin_tool", on: v });

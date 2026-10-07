@@ -1,32 +1,32 @@
 import { describe, it, expect } from "vitest";
-import { parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
+import { coreToolNames, excludedTools, offToolRefusal, parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
 
 describe("parseBuiltins", () => {
   it("defaults everything on when unset", () => {
-    expect(parseBuiltins(undefined)).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true });
+    expect(parseBuiltins(undefined)).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] });
   });
   it("reads explicit offs", () => {
-    expect(parseBuiltins(JSON.stringify({ plan: false, askUser: true }))).toEqual({ plan: false, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true });
+    expect(parseBuiltins(JSON.stringify({ plan: false, askUser: true }))).toEqual({ plan: false, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] });
   });
   it("carries the plan prompt append", () => {
     expect(parseBuiltins(JSON.stringify({ planAppend: "Prefer small diffs." })).planAppend).toBe("Prefer small diffs.");
   });
   it("defaults on for corrupt input rather than silently disabling a tool", () => {
-    expect(parseBuiltins("{not json")).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true });
+    expect(parseBuiltins("{not json")).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] });
   });
 });
 
 describe("parseBuiltins — plan requires ask_user (Important 3 defence in depth)", () => {
   it("forces askUser on when plan is on, even if the config says otherwise", () => {
-    expect(parseBuiltins(JSON.stringify({ plan: true, askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true });
+    expect(parseBuiltins(JSON.stringify({ plan: true, askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] });
   });
 
   it("honours askUser:false once plan is off", () => {
-    expect(parseBuiltins(JSON.stringify({ plan: false, askUser: false }))).toEqual({ plan: false, askUser: false, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true });
+    expect(parseBuiltins(JSON.stringify({ plan: false, askUser: false }))).toEqual({ plan: false, askUser: false, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] });
   });
 
   it("defaults (plan on) also force askUser on", () => {
-    expect(parseBuiltins(JSON.stringify({ askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true });
+    expect(parseBuiltins(JSON.stringify({ askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] });
   });
 
   // §32: the web group. Same fail-open convention as its neighbours — a corrupt
@@ -66,5 +66,33 @@ describe("parseBuiltins — §35 schedules", () => {
   it("defaults on, and reads an explicit off", () => {
     expect(parseBuiltins(undefined).schedules).toBe(true);
     expect(parseBuiltins(JSON.stringify({ schedules: false })).schedules).toBe(false);
+  });
+});
+
+// §13 round 26: every tool the agent has can be switched off — families as one switch,
+// Pi's core tools one by one. Same fail-open convention as every key above.
+describe("parseBuiltins — §13 round 26 family and core switches", () => {
+  it("defaults the families on and coreOff empty", () => {
+    const b = parseBuiltins(undefined);
+    expect([b.mcp, b.subagents, b.workflows, b.skills, b.coreOff]).toEqual([true, true, true, true, []]);
+  });
+  it("reads explicit offs, and coreOff keeps only core tool names", () => {
+    const b = parseBuiltins(JSON.stringify({ mcp: false, skills: false, coreOff: ["bash", "Agent", 3] }));
+    expect([b.mcp, b.skills, b.coreOff]).toEqual([false, false, ["bash"]]);
+  });
+  it("names powershell as the shell on Windows", () => {
+    expect(coreToolNames("powershell")).toEqual(["read", "powershell", "edit", "write", "grep", "find", "ls"]);
+    expect(coreToolNames("bash")).toEqual(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+    expect(parseBuiltins(JSON.stringify({ coreOff: ["powershell"] })).coreOff).toEqual(["powershell"]);
+  });
+  it("excludes SubagentWorkflow only while sub-agents are on", () => {
+    expect(excludedTools(parseBuiltins(JSON.stringify({ workflows: false, coreOff: ["ls"] })))).toEqual(["ls", "SubagentWorkflow"]);
+    expect(excludedTools(parseBuiltins(JSON.stringify({ workflows: false, subagents: false })))).toEqual([]);
+    expect(excludedTools(parseBuiltins(undefined))).toEqual([]);
+  });
+  it("refuses only a switched-off tool", () => {
+    const b = parseBuiltins(JSON.stringify({ coreOff: ["bash"] }));
+    expect(offToolRefusal("bash", b)).toMatch(/switched off 'bash'/);
+    expect(offToolRefusal("read", b)).toBeNull();
   });
 });

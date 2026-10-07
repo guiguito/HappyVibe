@@ -50,13 +50,49 @@ export interface BuiltinToggles {
   schedules: boolean;
   /** §33: the user's append to the memory policy (PromptRow, Plan mode's shape). */
   memoryAppend: string;
+  /**
+   * §13 round 26 — the family switches. Each is enforced at SPAWN by not loading the family
+   * (main never passes its -e / --skill), so the bridge reads them only to keep every prompt
+   * line from naming a tool the session lacks (§26).
+   */
+  mcp: boolean;
+  subagents: boolean;
+  /** `SubagentWorkflow` alone (~5.5k tok/request); meaningful only while `subagents` is on. */
+  workflows: boolean;
+  skills: boolean;
+  /** §13 round 26: Pi core tools switched off, one by one (`--exclude-tools`). Sparse. */
+  coreOff: string[];
+}
+
+/** §13 round 26: Pi's core tools, exactly its default set. */
+export const CORE_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
+
+/** The core set as this session has it — `powershell` stands in for `bash` on Windows (§4). */
+export function coreToolNames(shell: "bash" | "powershell"): string[] {
+  return CORE_TOOLS.map((t) => (t === "bash" ? shell : t));
+}
+
+/** Every name the spawn hands Pi's `--exclude-tools`. */
+export function excludedTools(b: BuiltinToggles): string[] {
+  return [...b.coreOff, ...(b.subagents && !b.workflows ? ["SubagentWorkflow"] : [])];
+}
+
+/**
+ * The refusal a sub-agent child gets for a switched-off core tool, or null. A child is its own
+ * session and an agent file with no `tools:` gets every core tool, so the parent's
+ * `--exclude-tools` alone would leave a delegated way round the switch.
+ */
+export function offToolRefusal(tool: string, b: BuiltinToggles): string | null {
+  return b.coreOff.includes(tool)
+    ? `The user switched off '${tool}' in Settings → Built-in tools. Do not retry it and do not work around it; finish what you can with the tools you have.`
+    : null;
 }
 
 export function parseBuiltins(raw: string | undefined): BuiltinToggles {
-  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true };
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] };
   if (!raw) return out;
   try {
-    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean }>;
+    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; skills: boolean; coreOff: unknown[] }>;
     if (p.plan === false) out.plan = false;
     if (p.askUser === false) out.askUser = false;
     if (p.terminal === false) out.terminal = false;
@@ -66,6 +102,12 @@ export function parseBuiltins(raw: string | undefined): BuiltinToggles {
     if (p.document === false) out.document = false;
     if (p.memory === false) out.memory = false;
     if (p.schedules === false) out.schedules = false;
+    if (p.mcp === false) out.mcp = false;
+    if (p.subagents === false) out.subagents = false;
+    if (p.workflows === false) out.workflows = false;
+    if (p.skills === false) out.skills = false;
+    const core: readonly string[] = [...CORE_TOOLS, "powershell"];
+    if (Array.isArray(p.coreOff)) out.coreOff = p.coreOff.filter((t): t is string => typeof t === "string" && core.includes(t));
     if (typeof p.memoryAppend === "string") out.memoryAppend = p.memoryAppend;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
     // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
