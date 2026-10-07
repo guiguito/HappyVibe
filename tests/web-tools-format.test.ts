@@ -4,6 +4,7 @@ import {
   resolveWebService,
   WEB_CUSTOM_URL_INVALID,
   WEB_DEFAULT_PAUSED,
+  WEB_DEFAULT_OFF,
   clampInt,
   pageWindow,
   formatFetch,
@@ -194,6 +195,15 @@ describe("§39 the default service can be paused remotely", () => {
   });
   it("flag off + custom mode → the custom service, untouched", () => {
     expect(resolveWebService({ mode: "custom", baseUrl: "https://x.test" }, dec, false)).toEqual({ baseUrl: "https://x.test", service: "custom" });
+  });
+  it("HV_NO_PHONE_HOME=1 + default mode → DEFAULT_OFF, no URL, even with the flag on", () => {
+    const r = resolveWebService({ mode: "default" }, dec, true, { HV_NO_PHONE_HOME: "1" });
+    expect(r).toEqual({ error: WEB_DEFAULT_OFF, code: "DEFAULT_OFF", service: "default" });
+    expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
+    expect(resolveWebService(undefined, dec, true, { HV_NO_PHONE_HOME: "1" })).toEqual(r);
+  });
+  it("HV_NO_PHONE_HOME=1 + custom mode → the custom service, untouched", () => {
+    expect(resolveWebService({ mode: "custom", baseUrl: "https://x.test" }, dec, true, { HV_NO_PHONE_HOME: "1" })).toEqual({ baseUrl: "https://x.test", service: "custom" });
   });
   it("flag on (and the default argument) → today's behaviour", () => {
     expect(resolveWebService(undefined, dec)).toEqual({ baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" });
