@@ -54,6 +54,25 @@ From that moment, nothing is sent. Click it again whenever you want to turn repo
 
 If HappyVibe breaks mid-session, the report describes where in the app's own code it failed, never what you and the agent were saying. Each report that's sent is recorded in the [Audit log](/docs/audit-log/).
 
+## Turn off everything HappyVibe sends on its own
+
+Some machines must not talk to anything but the model you chose: a company laptop, an air-gapped lab, a proxy that only allows a list. Start HappyVibe with `HV_NO_PHONE_HOME=1` in its environment and it stops all of these:
+
+- crash reports, feedback, anonymous usage statistics and remote settings
+- the update check (download new versions yourself)
+- the default web service behind the agent's web tools (your own service still works)
+- Pi's own calls home: its version check, its install telemetry, its model-list refresh and its download of the `fd` and `rg` search tools. Install those two yourself; HappyVibe uses the ones on your `PATH`.
+
+Your conversations still go to the model you picked on [Models](/docs/models/). That's the one connection the switch leaves alone.
+
+On Linux or macOS, start it like this:
+
+```bash
+HV_NO_PHONE_HOME=1 happyvibe
+```
+
+On Windows, set `HV_NO_PHONE_HOME` to `1` in your user environment variables, then start HappyVibe.
+
 ## Related
 
 - [Audit log](/docs/audit-log/): a record of every crash report that left your computer.
