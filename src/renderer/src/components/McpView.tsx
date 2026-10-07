@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FamilySwitch } from "./FamilySwitch";
 import { Section } from "./Section";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
@@ -27,6 +28,7 @@ export function McpView(): React.JSX.Element {
           External MCP servers, available in every workspace. To add one for a single project
           instead, open that workspace&apos;s own settings.
         </p>
+        <FamilySwitch family="mcp" />
 
         <Section
           icon="mcp"

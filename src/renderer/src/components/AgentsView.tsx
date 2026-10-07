@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FamilySwitch } from "./FamilySwitch";
 import { agentBlurb, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
@@ -104,6 +105,7 @@ export function AgentsView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Agents</h1>
         <p className="text-sm text-ink-soft mb-8">{AGENTS_INTRO}</p>
+        <FamilySwitch family="subagents" />
 
         {/* Agents */}
         <Section
