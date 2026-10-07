@@ -106,6 +106,14 @@ describe("review fixes", () => {
     // count for one frame (GUI pass, 2026-10-07).
     expect(body.slice(at, at + 200)).toMatch(/setActivity\(\(p\) => \(\{ \.\.\.p, \[sid\]: activityRef\.current\[sid\] \}\)\)/);
   });
+  test("answering a prompt restarts the wait counter — waiting on the user is not the model stalling (GUI pass)", () => {
+    const i = app.indexOf("window.hv.onPendingChanged(");
+    expect(i).toBeGreaterThan(-1);
+    const h = app.slice(i, i + 700);
+    expect(h).toContain("activityRef.current[sid] = { eventAt: now, streamAt: 0 }");
+    expect(h).toContain("setActivity(");
+    expect(h).toContain("setPendingBySession(next)");
+  });
   test("a new attempt or turn drops a stale draft (I5)", () => {
     for (const t of ['e.type === "agent_start"', 'e.type === "message_start"']) {
       const i = app.indexOf(t);

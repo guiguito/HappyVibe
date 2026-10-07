@@ -483,7 +483,17 @@ export default function App(): React.JSX.Element {
     // Pending-per-session comes from MAIN, which is the only place that knows
     // every window's prompts. Counting our own queue would report only the ones
     // we were chosen to show, so the other window's sidebar would look idle.
-    const offPending = window.hv.onPendingChanged(setPendingBySession);
+    const offPending = window.hv.onPendingChanged((next) => {
+      // §7 round 25: an answered prompt restarts the wait counter — the minutes the
+      // agent spent waiting on the user are not the model stalling (GUI pass).
+      const now = Date.now();
+      for (const [sid, n] of Object.entries(pendingPrevRef.current)) {
+        if (n > 0 && !((next[sid] ?? 0) > 0)) activityRef.current[sid] = { eventAt: now, streamAt: 0 };
+      }
+      pendingPrevRef.current = next;
+      setActivity({ ...activityRef.current });
+      setPendingBySession(next);
+    });
     // Fetched once (this window may have opened after the last broadcast) and
     // then kept current as windows open and close.
     /**
@@ -601,6 +611,8 @@ export default function App(): React.JSX.Element {
   /** §7 round 25: the busy status line's inputs — refs written per event, mirrored by the same rAF. */
   const toolDraftRef = useRef<Record<string, ToolDraft | null>>({});
   const activityRef = useRef<Record<string, Activity>>({});
+  /** The last pending counts, to spot a prompt being answered (see onPendingChanged). */
+  const pendingPrevRef = useRef<Record<string, number>>({});
   const [toolDrafts, setToolDrafts] = useState<Record<string, ToolDraft | null>>({});
   const [activity, setActivity] = useState<Record<string, Activity>>({});
   const streamRef = useRef<Record<string, string>>({});
