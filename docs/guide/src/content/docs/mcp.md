@@ -13,6 +13,8 @@ This screen holds the global (in every workspace) servers: "External MCP servers
 
 ## What's on the screen
 
+At the top, one switch turns MCP on or off for the whole app. It's the same switch as the **MCP** row on [Built-in tools](/docs/built-in-tools/#mcp). While it's off, it says "MCP is off — no server starts in any session. Your servers are kept." Your conversation stays: open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
+
 ### Add a server
 
 "Recognised Model Context Protocol servers, ready to install." The list is part of the app, so browsing it doesn't go online. Every server in it still asks first where your rules say so: "Every one still goes through your permission rules."

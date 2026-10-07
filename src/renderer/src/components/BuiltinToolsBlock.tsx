@@ -644,7 +644,7 @@ export function BuiltinToolsBlock({
       icon="tools"
       title="Built-in Custom Tools"
       // "Both" was written when there were two entries; §26 made it three.
-      subtitle="App-provided tools implemented as ordinary tool calls, not part of Pi core. All are on by default — turn any of them off if you don't want the agent to have it."
+      subtitle="App-provided tools implemented as ordinary tool calls, then Pi's own core tools at the bottom. All are on by default — turn any of them off if you don't want the agent to have it."
     >
       {allToolsOff(builtins, shell) && <p className="mb-3 text-sm font-semibold">{ALL_OFF_COPY}</p>}
       <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">

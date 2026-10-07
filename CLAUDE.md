@@ -94,8 +94,13 @@ permission UX and context-window visibility as the differentiators.
   `--prompt-template` still load); `tests/resource-gate-contract.test.ts` pins that. `--no-context-files`
   is deliberately NOT passed (AGENTS.md loading is wanted). `--no-extensions` also keeps Pi's BUILT-IN
   extensions off (mcp, codemode, tool-search, llama.cpp); loading one is `-e builtin:<name>`, a decision.
-  Chat sessions load `builtin:mcp` + `builtin:tool-search` (`mcp: true`, PRD §13 2026-10-05) — never
-  the utility client or one-shots: Pi has no lazy start, so any Pi with MCP starts every server.
+  Chat sessions load `builtin:mcp` + `builtin:tool-search` (`mcp: true`, PRD §13 2026-10-05) unless the
+  MCP switch is off — never the utility client or one-shots: Pi has no lazy start, so any Pi with MCP
+  starts every server.
+- **Tool switches** (PRD §13 round 26) ride `HV_BUILTINS`, whose keys spawn.ts lists EXPLICITLY — a key
+  missing there never reaches the bridge. A family off isn't loaded (no `-e`/`--skill`); core tools and
+  `SubagentWorkflow` go to ONE `--exclude-tools`. The child guard reads the same `coreOff` (children
+  run in-process), so off holds in sub-agents and under bypass.
 - Model resolution is session → workspace → global, in TWO places that change together: `ipc.ts`
   `spawnOpts` and renderer `composer.ts` `resolveModel`. When nothing resolves the app REFUSES (the
   SessionManager `spawn` callback throws, ChatView disables send) — it never invents a model. The
