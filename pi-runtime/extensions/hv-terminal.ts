@@ -106,6 +106,15 @@ export const AGENT_SHELL = process.env.HV_AGENT_SHELL ?? "bash";
 export const TERMINAL_STEER_LINE = shellSteerLine(AGENT_SHELL);
 
 /**
+ * §13 round 26: the steer line this session gets. It exists to steer AWAY from the shell, so it
+ * goes when the shell is switched off — and with the terminal group off it would name
+ * `terminal_run`, which the session lacks (§26).
+ */
+export function terminalSteerFor(terminalOn: boolean, coreOff: readonly string[], shell: string = AGENT_SHELL): string {
+  return terminalOn && !coreOff.includes(shell) ? shellSteerLine(shell) : "";
+}
+
+/**
  * The three tool descriptions, HERE rather than inline at their registerTool
  * calls, because §13 round 6 shows a built-in's prompt read-only on the All
  * Tools page and "read-only" is worth nothing if the page renders a second copy
@@ -116,14 +125,14 @@ export const TERMINAL_TOOL_DESCRIPTIONS: Record<string, string> = {
   terminal_run:
     "Run ONE command line in a persistent terminal the user can see, type into and stop. " +
     "Use this for anything long-running (dev servers, watchers, `docker compose up`) instead of " +
-    "backgrounding a bash command. Omit terminalId to open a new terminal; pass one to reuse an " +
+    "backgrounding a shell command. Omit terminalId to open a new terminal; pass one to reuse an " +
     "IDLE terminal you already own (reusing a busy one is refused — the bytes would go to the " +
     "running program's stdin, not the shell). Exactly one command line per call: newlines are " +
     "rejected, and each call is permission-gated separately. Poll the output with terminal_read.",
   terminal_read:
     "Read the most recent output of one of your terminals, as plain text. Defaults to the last " +
     "200 lines and is capped there. Pass waitMs to wait (up to 15s) for the output to go quiet " +
-    "before reading, instead of sleeping in bash. Tells you whether the terminal is still running " +
+    "before reading, instead of sleeping in the shell. Tells you whether the terminal is still running " +
     "and whether the USER has typed into it since your last read — if they have, re-read before " +
     "assuming you know its state.",
   terminal_kill:

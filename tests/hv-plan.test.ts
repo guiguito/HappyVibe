@@ -217,6 +217,17 @@ describe("buildPlanPrompt", () => {
     expect(full).not.toMatch(/sub-?agents? (are|is) blocked/i);
   });
 
+  test("§13 round 26 — the shell and delegation clauses follow the tools the session has", () => {
+    const bare = buildPlanPrompt("", ["read", "grep"]);
+    expect(bare).not.toMatch(/\bbash\b|powershell/);
+    expect(bare).not.toMatch(/sub-agent/i);
+    const full = buildPlanPrompt("", ["read", "bash", "Agent"]);
+    expect(full).toMatch(/bash is limited to a\s+read-only allowlist/);
+    expect(full).toMatch(/Delegating to a sub-agent works/);
+    // Windows: the clause names the shell the session actually has.
+    expect(buildPlanPrompt("", ["read", "powershell"])).toMatch(/powershell is limited/);
+  });
+
   test("A3 — one delimiter, the marker inside it, and the calm register", () => {
     const p = buildPlanPrompt();
     expect(p.startsWith("<happyvibe_plan_mode>\n[HAPPYVIBE PLAN MODE ACTIVE]")).toBe(true);

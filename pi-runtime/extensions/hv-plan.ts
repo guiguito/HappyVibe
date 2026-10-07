@@ -346,15 +346,21 @@ export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>)
   // the full set is shown, because that page is about what the mode does.
   const have = registeredTools ? new Set(registeredTools) : null;
   const blocked = [...BLOCKED_PLAN_TOOLS].filter((t) => !have || have.has(t));
+  // §13 round 26: the shell and sub-agents can be switched off, so their clauses follow the
+  // tools too. With no list (settings panel) both show, as the blocked list does.
+  const shell = !have ? "bash" : ["bash", "powershell"].find((t) => have.has(t));
+  const shellClause = shell ? `; ${shell} is limited to a\nread-only allowlist` : "";
+  const delegateClause = !have || have.has("Agent")
+    ? ` Delegating to a sub-agent works — the user approves its
+boundary first, and a read-only explorer is the most useful thing a planning
+session can do.`
+    : "";
   const body = `${PLAN_PROMPT_MARKER}
 # Plan Mode (read-only)
 
 You are in Plan Mode: explore, ask, and produce a decision-complete
 implementation plan the user will approve. The user implements it later, not
-you. Blocked while planning: ${blocked.join(", ")}; bash is limited to a
-read-only allowlist. Delegating to a sub-agent works — the user approves its
-boundary first, and a read-only explorer is the most useful thing a planning
-session can do.
+you. Blocked while planning: ${blocked.join(", ")}${shellClause}.${delegateClause}
 
 ## Phase 1 — Ground in the repository
 - Explore first. Read files, search, inspect config, run read-only checks to
