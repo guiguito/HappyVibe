@@ -25,7 +25,7 @@ const EVERY_MS = 4 * 60 * 60_000;
 const GATE_POLL_MS = 5_000;
 
 export function startUpdater(deps: UpdateDeps): void {
-  const mode = updateMode({ packaged: app.isPackaged, platform: process.platform, appImage: process.env.APPIMAGE });
+  const mode = updateMode({ packaged: app.isPackaged, platform: process.platform, appImage: process.env.APPIMAGE, noPhoneHome: process.env.HV_NO_PHONE_HOME === "1" });
   let state: UpdateState = initialState(mode, getAutoUpdate());
 
   const push = (): void => deps.send("hv:update-state", state);

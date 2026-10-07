@@ -15,6 +15,10 @@ describe("updateMode", () => {
     expect(updateMode({ packaged: true, platform: "linux", appImage: "/x.AppImage" })).toBe("auto");
     expect(updateMode({ packaged: true, platform: "linux" })).toBe("manual");
   });
+  it("HV_NO_PHONE_HOME turns every packaged build off, AppImage included", () => {
+    for (const p of [{ platform: "darwin" }, { platform: "win32" }, { platform: "linux" }, { platform: "linux", appImage: "/x.AppImage" }])
+      expect(updateMode({ packaged: true, noPhoneHome: true, ...p })).toBe("disabled");
+  });
 });
 
 describe("reduce", () => {

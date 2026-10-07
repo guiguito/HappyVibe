@@ -13,7 +13,7 @@ export const RELEASES_URL = "https://github.com/guiguito/HappyVibe/releases/late
 /**
  * `auto`: electron-updater replaces the app in place (macOS, Windows, AppImage).
  * `manual`: it cannot (a `.deb`), so the row links to the release page instead.
- * `disabled`: a dev build — never checks, never installs over itself.
+ * `disabled`: a dev build, or HV_NO_PHONE_HOME=1 — never checks, never installs over itself.
  */
 export type UpdateMode = "disabled" | "auto" | "manual";
 
@@ -55,8 +55,8 @@ export function initialState(mode: UpdateMode, auto: boolean): UpdateState {
   return { mode, auto, lastCheckedAt: null, phase: { k: "idle" }, gate: { blockedBy: [], terminalsOpen: false, armed: false } };
 }
 
-export function updateMode(p: { packaged: boolean; platform: string; appImage?: string }): UpdateMode {
-  if (!p.packaged) return "disabled";
+export function updateMode(p: { packaged: boolean; platform: string; appImage?: string; noPhoneHome?: boolean }): UpdateMode {
+  if (!p.packaged || p.noPhoneHome) return "disabled";
   if (p.platform === "linux" && !p.appImage) return "manual";
   return "auto";
 }
