@@ -2813,6 +2813,7 @@ export default function App(): React.JSX.Element {
     // §7 round 25: the wait counter starts at this send, not at the last turn's final event
     // (a hibernated session can take seconds to emit its first one).
     activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 };
+    scheduleFlush();
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
       const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);

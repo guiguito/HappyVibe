@@ -99,6 +99,10 @@ describe("review fixes", () => {
     const i = app.indexOf("const send = async");
     const body = app.slice(i, app.indexOf("setBusy((p) => ({ ...p, [sid]: true }));", i) + 200);
     expect(body).toContain("activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 }");
+    // …and pushed to the screen NOW: the stamp in a ref alone left "· 81s" from the last
+    // turn on screen until the first event (GUI pass, 2026-10-07).
+    const at = body.indexOf("activityRef.current[sid] = { eventAt: Date.now(), streamAt: 0 }");
+    expect(body.slice(at, at + 160)).toContain("scheduleFlush()");
   });
   test("a new attempt or turn drops a stale draft (I5)", () => {
     for (const t of ['e.type === "agent_start"', 'e.type === "message_start"']) {
