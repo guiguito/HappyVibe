@@ -18,6 +18,7 @@ import { installRemoteConfig } from './remoteConfig'
 import { installUsage } from './usage'
 import { platform } from './platform'
 import { DOCS_BASE } from './docsBase'
+import { piNoPhoneHomeEnv } from './pi/spawn'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -25,6 +26,9 @@ import { DOCS_BASE } from './docsBase'
 // first menu item's label and always uses app.getName(), so setting it here is the
 // only thing that renames the bold app-menu title. Must run before getName/getPath.
 app.setName('HappyVibe')
+
+// HV_NO_PHONE_HOME=1: before any Pi child exists, so all of them inherit it.
+Object.assign(process.env, piNoPhoneHomeEnv(process.env))
 
 // Opt-in Chrome DevTools Protocol port for external debuggers (electron-debug MCP,
 // Chrome inspector). Inert unless HV_DEBUG_PORT is set — safe to leave in.

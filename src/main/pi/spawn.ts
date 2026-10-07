@@ -39,6 +39,15 @@ export const TW_RELPATH = "node_modules/@tintinweb/pi-subagents/src/index.ts";
     otherwise start every configured server (Pi has no lazy start). */
 export const PI_MCP_EXTENSIONS = ["-e", "builtin:mcp", "-e", "builtin:tool-search"] as const;
 
+/** HV_NO_PHONE_HOME=1: Pi's own switches for pi.dev — the version check, install
+    telemetry, the model-catalog refresh and the fd/rg downloads (those two then come
+    from PATH). Model providers are not touched. index.ts writes these into process.env
+    at boot, so every Pi child inherits them: sessions, one-shots, export and `pi mcp`. */
+export function piNoPhoneHomeEnv(env: Record<string, string | undefined>): Record<string, string> {
+  if (env.HV_NO_PHONE_HOME !== "1") return {};
+  return { PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" };
+}
+
 export interface PiSpawnOptions {
   /** Global default model (config.ts); falls back to the spike default. */
   model?: { provider: string; modelId: string } | null;
