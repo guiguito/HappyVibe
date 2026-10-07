@@ -51,7 +51,9 @@ describe("app-data worktrees", () => {
 });
 
 describe("boot wipe", () => {
-  test("one undeletable entry doesn't stop the rest, and the marker still goes (review I2)", () => {
+  // chmod can't make a file undeletable on Windows (no POSIX permission bits), so the
+  // simulation only means something on macOS and Linux.
+  test.skipIf(process.platform === "win32")("one undeletable entry doesn't stop the rest, and the marker still goes (review I2)", () => {
     const ud = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ud-"));
     const locked = path.join(ud, "locked");
     fs.mkdirSync(locked);
@@ -64,7 +66,7 @@ describe("boot wipe", () => {
       expect(fs.existsSync(path.join(ud, "zz-config.json"))).toBe(false);
       expect(fs.existsSync(path.join(ud, RESET_MARKER))).toBe(false); // a later boot never wipes again
     } finally {
-      fs.chmodSync(locked, 0o700);
+      if (fs.existsSync(locked)) fs.chmodSync(locked, 0o700);
     }
   });
   test("does nothing without the marker", () => {
