@@ -53,3 +53,20 @@ describe("parseLayoutFile", () => {
       .toEqual([{ tabsByWs: {}, ui: { "hv:sidebar-collapsed": "1" } }]);
   });
 });
+
+import { firstWindowSize } from "../src/main/windowLayout";
+import { readFileSync as readSrc } from "node:fs";
+
+describe("round 25: a first launch opens a bigger window, never larger than the screen", () => {
+  it("1280 x 860 on a screen with room", () => {
+    expect(firstWindowSize({ width: 1728, height: 1079 })).toEqual({ width: 1280, height: 860 });
+  });
+  it("capped to 90% of a small work area", () => {
+    expect(firstWindowSize({ width: 1280, height: 777 })).toEqual({ width: 1152, height: 699 });
+  });
+  it("is what index.ts uses when no bounds were saved", () => {
+    const idx = readSrc("src/main/index.ts", "utf8");
+    expect(idx).toContain("firstWindowSize(screen.getPrimaryDisplay().workAreaSize)");
+    expect(idx).not.toMatch(/\?\? 900\b/);
+  });
+});

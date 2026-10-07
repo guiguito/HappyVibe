@@ -78,3 +78,15 @@ export function parseLayoutFile(raw: unknown): WindowRecord[] {
   // "windows" cannot occur and the discriminator above is unambiguous.
   return [{ tabsByWs: raw, ui: {} }];
 }
+
+/**
+ * Round 25: the size of a window opened with no saved bounds (first launch, ⌘⇧N).
+ * 900 x 670 left onboarding scrolling; a returning user keeps whatever they saved.
+ * Never more than 90% of the screen's usable area, so a small laptop still fits it.
+ */
+export function firstWindowSize(workArea: { width: number; height: number }): { width: number; height: number } {
+  return {
+    width: Math.min(1280, Math.floor(workArea.width * 0.9)),
+    height: Math.min(860, Math.floor(workArea.height * 0.9)),
+  };
+}

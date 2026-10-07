@@ -197,7 +197,7 @@ export function OnboardingDialog({
            * `overflow-hidden` is load-bearing — it is what clips the logo while
            * it is still off frame to the right.
            */
-          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(54rem,calc(100vw-3rem))] h-[min(30rem,calc(100vh-3rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-7 focus:outline-none"
+          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(54rem,calc(100vw-3rem))] h-[min(34rem,calc(100vh-3rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-7 focus:outline-none"
           onEscapeKeyDown={(e) => {
             // First Esc lands the animation; only a second one dismisses. §27's
             // "last in the Escape chain" care, one dialog over.

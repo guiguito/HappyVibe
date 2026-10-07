@@ -10,7 +10,7 @@ import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
 import { guideLinkScript, navAction } from './navGuard'
-import { parseLayoutFile, type WindowRecord } from './windowLayout'
+import { firstWindowSize, parseLayoutFile, type WindowRecord } from './windowLayout'
 import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
 import { installCrash } from './crash'
@@ -254,9 +254,10 @@ ipcMain.handle(
 
 /** The record is opaque here — main stores it and hands it back; see windows.ts. */
 export function openWindow(record: WindowRecord, at?: { x: number; y: number }): BrowserWindow {
+  const first = record.bounds ? null : firstWindowSize(screen.getPrimaryDisplay().workAreaSize)
   const win = new BrowserWindow({
-    width: record.bounds?.width ?? 900,
-    height: record.bounds?.height ?? 670,
+    width: record.bounds?.width ?? first!.width,
+    height: record.bounds?.height ?? first!.height,
     // A torn-off window opens at the pointer, a restored one where it was.
     // Omitting both is what "centred by the platform" means, and is right for
     // a first launch and for ⌘⇧N.
