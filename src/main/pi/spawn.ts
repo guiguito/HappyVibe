@@ -1,3 +1,4 @@
+import { excludedTools } from "../../../pi-runtime/extensions/hv-builtins";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { buildIdentity } from "../appendSystem";
@@ -161,6 +162,13 @@ export function resolvePiSpawn(
   // runs. It exists for the utility client, which drives /hv-login before any
   // provider is configured and never runs a model turn at all.
   const model = opts.model ?? null;
+  // §13 round 26: a family that is switched off is simply not loaded, and one --exclude-tools
+  // list carries the rest (Pi 1.0.2 applies it to any tool name, extension tools included).
+  // Absent builtinTools (the utility client, older tests) means every switch at its default: on.
+  const sw = opts.builtinTools;
+  const twOn = sw?.subagents ?? true;
+  const mcpOn = !!opts.mcp && (sw?.mcp ?? true);
+  const excluded = sw ? excludedTools({ coreOff: sw.coreOff ?? [], subagents: twOn, workflows: sw.workflows ?? true }) : [];
   return {
     execPath: plat.nodeExecPath(),
     args: [
@@ -171,12 +179,12 @@ export function resolvePiSpawn(
       ...(opts.resumeFile ? ["--session", opts.resumeFile] : []),
       // §12: tintinweb's pi-subagents. The `Agent` tool it registers is a normal
       // tool_call, so the bridge's permission gate applies.
-      "-e", path.join(runtimeDir, TW_RELPATH),
+      ...(twOn ? ["-e", path.join(runtimeDir, TW_RELPATH)] : []),
       // MCP: Pi's built-in client. Every server tool is an ordinary tool_call, so
       // the bridge's permission gate applies (docs/validation/mcp2.md "Gate").
       // Config: PI_CODING_AGENT_DIR/mcp.json (Pi reads it) + <cwd>/.mcp.json
       // (the bridge registers it — Pi only reads a TRUSTED project's .pi/mcp.json).
-      ...(opts.mcp ? PI_MCP_EXTENSIONS : []),
+      ...(mcpOn ? PI_MCP_EXTENSIONS : []),
       // The HappyVibe bridge is the SOLE permission path in RPC mode.
       // @gotgenes/pi-permission-system was removed from the spawn after Gate V6
       // proved it is TUI-only (both its prompt paths gate on ctx.hasUI, which is
@@ -211,7 +219,7 @@ export function resolvePiSpawn(
       // loads) and add back exactly the approved+active ones. --skill is
       // additive even with --no-skills (verified against pinned Pi 0.80.10).
       "--no-skills",
-      ...(opts.skills ?? []).flatMap((s) => ["--skill", s]),
+      ...((sw?.skills ?? true) ? (opts.skills ?? []) : []).flatMap((s) => ["--skill", s]),
       // The other two auto-discovery tiers, gated for the same reason. The agent's
       // `bash` tool is NOT path-confined (every fs writer is; bash isn't), so one
       // approved bash command can write <agentDir>/extensions/x.ts — a bare .ts is
@@ -240,6 +248,7 @@ export function resolvePiSpawn(
       ...(opts.agentShell === "powershell"
         ? ["--tools", "read,powershell,edit,write,grep,find,ls"]
         : []),
+      ...(excluded.length ? ["--exclude-tools", excluded.join(",")] : []),
       // §16 round 21: identity first, the user's own additions LAST — Pi joins
       // the sources with "\n\n" in argv order, so last wins on a conflict.
       // A1 (2026-09-10): built here rather than imported as a constant — the
@@ -266,7 +275,7 @@ export function resolvePiSpawn(
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       ...(opts.readonly ? { HV_READONLY: "1" } : {}),
       // §13: tells the bridge Pi's MCP is loaded, so it may register workspace servers.
-      ...(opts.mcp ? { HV_MCP: "1" } : {}),
+      ...(mcpOn ? { HV_MCP: "1" } : {}),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,
@@ -280,6 +289,11 @@ export function resolvePiSpawn(
             memory: opts.builtinTools.memory,
             memoryAppend: opts.builtinTools.memoryAppend,
             schedules: opts.builtinTools.schedules,
+            mcp: opts.builtinTools.mcp,
+            subagents: opts.builtinTools.subagents,
+            workflows: opts.builtinTools.workflows,
+            skills: opts.builtinTools.skills,
+            coreOff: opts.builtinTools.coreOff,
           }) }
         : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),

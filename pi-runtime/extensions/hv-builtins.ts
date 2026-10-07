@@ -73,7 +73,7 @@ export function coreToolNames(shell: "bash" | "powershell"): string[] {
 }
 
 /** Every name the spawn hands Pi's `--exclude-tools`. */
-export function excludedTools(b: BuiltinToggles): string[] {
+export function excludedTools(b: Pick<BuiltinToggles, "coreOff" | "subagents" | "workflows">): string[] {
   return [...b.coreOff, ...(b.subagents && !b.workflows ? ["SubagentWorkflow"] : [])];
 }
 

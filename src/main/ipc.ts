@@ -1020,7 +1020,9 @@ export function registerIpc(
     // §14: resolve the approved ∩ enabled ∩ active-for-workspace skill set and
     // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
-    const entries = workspace && sessionId ? activeSkillEntries(workspace, project) : [];
+    // §13 round 26: the Skills switch off ⇒ no entries, so no --skill and an empty manifest.
+    const builtins = getBuiltinTools();
+    const entries = workspace && sessionId && builtins.skills ? activeSkillEntries(workspace, project) : [];
     // §33: the two memory scopes, resolved per spawn like every other tier here.
     //
     // The utility client has no workspace and no session id and gets NEITHER — it drives
@@ -1029,7 +1031,6 @@ export function registerIpc(
     // The workspace dir is omitted when the per-workspace toggle is off, and the bridge then
     // renders no workspace block at all (renderMemorySection's `workspace: null`). Both dirs
     // are created eagerly so the bridge's first read cannot race the first save.
-    const builtins = getBuiltinTools();
     let memoryGlobalDir: string | undefined;
     let memoryWorkspaceDir: string | undefined;
     if (sessionId) {
