@@ -77,10 +77,12 @@ export const READONLY_PROMPT_MARKER = "[HAPPYVIBE READ-ONLY RUN]";
  * session actually registered (§26's rule: never name a tool the model does
  * not have). It never mentions planning — this mode has no plan to write.
  */
-export function buildReadonlyPrompt(registeredTools?: Iterable<string>): string {
+export function buildReadonlyPrompt(registeredTools?: Iterable<string>, agentShell: string = AGENT_SHELL): string {
   const have = registeredTools ? [...registeredTools] : [];
   const blocked = have.filter((t) => !READONLY_BLOCKED.has(t) && gateReadonlyCall(t, {}).kind === "block");
   const names = blocked.length ? blocked.join(", ") : "file edits and shell writes";
+  // §13 round 26: the shell can be switched off — name it only when this session has it.
+  const shellClause = !registeredTools || have.includes(agentShell) ? `; ${agentShell} is limited to a read-only allowlist` : "";
   return `<happyvibe_readonly_run>
 ${READONLY_PROMPT_MARKER}
 This is a scheduled, read-only run. Nobody is watching it live, so your final
@@ -88,7 +90,7 @@ message IS the report: read, search and analyse, then say what you found and
 what it means, in full, in chat. Do not end a turn by announcing what you are
 about to do.
 
-Blocked here: ${names}; ${AGENT_SHELL} is limited to a read-only allowlist. Do not try to
+Blocked here: ${names}${shellClause}. Do not try to
 plan, to schedule anything, or to ask a question — there is no one to answer.
 </happyvibe_readonly_run>`;
 }

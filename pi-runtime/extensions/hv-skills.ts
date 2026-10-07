@@ -114,10 +114,34 @@ export function skillTokenLines(m: SkillManifest): { global: SkillScopeWeight; w
  */
 export const PI_SKILLS_SENTENCE =
   "Use the read tool to load a skill's file when the task matches its description.";
+/** Pi's sentence when `read` is absent — reachable since §13 round 26 lets `read` be switched off. */
+export const PI_SKILLS_SENTENCE_BASH =
+  "Use bash to load a skill's file when the task matches its description.";
 export const HV_SKILLS_SENTENCE =
   "Load a skill with `use_skill(name, intent)`; it returns the skill's instructions.";
 
 /** Pi's system prompt with its skills instruction swapped for ours. A prompt without it is returned unchanged. */
 export function replaceSkillsSentence(systemPrompt: string): string {
-  return systemPrompt.replace(PI_SKILLS_SENTENCE, HV_SKILLS_SENTENCE);
+  return systemPrompt.replace(PI_SKILLS_SENTENCE, HV_SKILLS_SENTENCE).replace(PI_SKILLS_SENTENCE_BASH, HV_SKILLS_SENTENCE);
+}
+
+const xml = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+
+/**
+ * §13 round 26: Pi renders its skills block only when `read` or `bash` is active
+ * (system-prompt.js), so with both switched off the model would have use_skill and no list of
+ * what to load. Append one in Pi's shape (formatSkillsForPrompt), with our sentence. A prompt
+ * that already has Pi's block, or no visible skill, is returned unchanged.
+ */
+export function ensureSkillsBlock(
+  systemPrompt: string,
+  skills: ReadonlyArray<{ name: string; description: string; filePath: string; disableModelInvocation?: boolean }>,
+): string {
+  const visible = skills.filter((s) => !s.disableModelInvocation);
+  if (!visible.length || systemPrompt.includes("<available_skills>")) return systemPrompt;
+  const items = visible.map(
+    (s) => `  <skill>\n    <name>${xml(s.name)}</name>\n    <description>${xml(s.description)}</description>\n    <location>${xml(s.filePath)}</location>\n  </skill>`,
+  );
+  return `${systemPrompt}\n\nThe following skills provide specialized instructions for specific tasks.\n${HV_SKILLS_SENTENCE}\n\n<available_skills>\n${items.join("\n")}\n</available_skills>`;
 }

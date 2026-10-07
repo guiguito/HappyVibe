@@ -223,6 +223,7 @@ const PLAN_PASS_TOOLS = new Set([
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
 import { isDelegationTool, isShellTool } from "./hv-rules";
+import { AGENT_SHELL } from "./hv-terminal";
 
 export type PlanGate =
   | { kind: "block"; reason: string }
@@ -333,7 +334,7 @@ export function gatePlanCall(toolName: string, input: unknown, opts?: { mcpReadO
 
 const PLAN_PROMPT_MARKER = "[HAPPYVIBE PLAN MODE ACTIVE]";
 
-export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>): string {
+export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>, agentShell: string = AGENT_SHELL): string {
   // A3 (Improve-prompts round, 2026-09-10) — the blocked list is DERIVED, and
   // filtered to tools that exist this session.
   //
@@ -348,7 +349,9 @@ export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>)
   const blocked = [...BLOCKED_PLAN_TOOLS].filter((t) => !have || have.has(t));
   // §13 round 26: the shell and sub-agents can be switched off, so their clauses follow the
   // tools too. With no list (settings panel) both show, as the blocked list does.
-  const shell = !have ? "bash" : ["bash", "powershell"].find((t) => have.has(t));
+  // The session's OWN shell: on macOS Pi registers an inactive powershell too, so "whichever
+  // shell is registered" would name a tool the model cannot call.
+  const shell = !have || have.has(agentShell) ? agentShell : undefined;
   const shellClause = shell ? `; ${shell} is limited to a\nread-only allowlist` : "";
   const delegateClause = !have || have.has("Agent")
     ? ` Delegating to a sub-agent works — the user approves its

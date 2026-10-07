@@ -1,4 +1,6 @@
-import { CORE_TOOLS } from "../../pi-runtime/extensions/hv-builtins";
+// §13 round 26: coreOff becomes `--exclude-tools` args — only real core names survive a
+// hand-edited config or a bad IPC payload, and a non-array never throws.
+import { normalizeCoreOff } from "../../pi-runtime/extensions/hv-builtins";
 import { app, safeStorage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
@@ -394,10 +396,6 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
   return resolveBypassPure(cfg.bypassAll ?? false, workspace ? cfg.workspaceBypass?.[workspace] : undefined);
 }
 
-// §13 round 26: coreOff becomes `--exclude-tools` args, so only real core names survive a
-// hand-edited config or a bad IPC payload.
-const CORE_OFF_NAMES: readonly string[] = [...CORE_TOOLS, "powershell"];
-
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
 export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; skills: boolean; coreOff: string[] } {
@@ -419,7 +417,7 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §31's Documents is one tool, so it has no coupling either.
   // §33's Memory is three tools over one store, coupled to each other and to nothing else —
   // same grouping argument as the terminal, so one entry.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? true, skills: t?.skills ?? true, coreOff: (t?.coreOff ?? []).filter((n) => CORE_OFF_NAMES.includes(n)) };
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? true, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
 }
 
 export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] }): void {

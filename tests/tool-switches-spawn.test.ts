@@ -42,12 +42,12 @@ describe("§13 round 26 — spawn obeys the switches", () => {
     expect(a).toContain("--no-skills");
   });
   test("one --exclude-tools list: core tools plus SubagentWorkflow", () => {
-    expect(valueAfter(argsOf({ coreOff: ["bash", "write"], workflows: false }), "--exclude-tools")).toBe("bash,write,SubagentWorkflow");
+    expect(valueAfter(argsOf({ coreOff: ["bash", "write"], workflows: false }), "--exclude-tools")).toBe("bash,write,powershell,SubagentWorkflow");
     expect(argsOf({})).not.toContain("--exclude-tools");
   });
   test("Windows: powershell is excluded alongside the --tools allowlist", () => {
     const a = argsOf({ coreOff: ["powershell"] }, { agentShell: "powershell" });
-    expect(valueAfter(a, "--exclude-tools")).toBe("powershell");
+    expect(valueAfter(a, "--exclude-tools")).toBe("powershell,bash");
     expect(a).toContain("--tools");
   });
   test("HV_BUILTINS lists every new key", () => {

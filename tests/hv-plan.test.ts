@@ -224,8 +224,10 @@ describe("buildPlanPrompt", () => {
     const full = buildPlanPrompt("", ["read", "bash", "Agent"]);
     expect(full).toMatch(/bash is limited to a\s+read-only allowlist/);
     expect(full).toMatch(/Delegating to a sub-agent works/);
-    // Windows: the clause names the shell the session actually has.
-    expect(buildPlanPrompt("", ["read", "powershell"])).toMatch(/powershell is limited/);
+    // Windows: the clause names the shell the session actually has. On macOS Pi registers an
+    // inactive powershell too, so the clause follows the session's shell, never "any shell".
+    expect(buildPlanPrompt("", ["read", "powershell"], "powershell")).toMatch(/powershell is limited/);
+    expect(buildPlanPrompt("", ["read", "powershell"], "bash")).not.toMatch(/powershell|\bbash\b/);
   });
 
   test("A3 — one delimiter, the marker inside it, and the calm register", () => {

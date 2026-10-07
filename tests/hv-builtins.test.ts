@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { coreToolNames, excludedTools, offToolRefusal, parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
+import { coreToolNames, excludedTools, normalizeCoreOff, offToolRefusal, parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
 
 describe("parseBuiltins", () => {
   it("defaults everything on when unset", () => {
@@ -78,15 +78,16 @@ describe("parseBuiltins — §13 round 26 family and core switches", () => {
   });
   it("reads explicit offs, and coreOff keeps only core tool names", () => {
     const b = parseBuiltins(JSON.stringify({ mcp: false, skills: false, coreOff: ["bash", "Agent", 3] }));
-    expect([b.mcp, b.skills, b.coreOff]).toEqual([false, false, ["bash"]]);
+    expect([b.mcp, b.skills, b.coreOff]).toEqual([false, false, ["bash", "powershell"]]);
   });
   it("names powershell as the shell on Windows", () => {
     expect(coreToolNames("powershell")).toEqual(["read", "powershell", "edit", "write", "grep", "find", "ls"]);
     expect(coreToolNames("bash")).toEqual(["read", "bash", "edit", "write", "grep", "find", "ls"]);
-    expect(parseBuiltins(JSON.stringify({ coreOff: ["powershell"] })).coreOff).toEqual(["powershell"]);
+    expect(parseBuiltins(JSON.stringify({ coreOff: ["powershell"] })).coreOff).toEqual(["powershell", "bash"]);
   });
   it("excludes SubagentWorkflow only while sub-agents are on", () => {
     expect(excludedTools(parseBuiltins(JSON.stringify({ workflows: false, coreOff: ["ls"] })))).toEqual(["ls", "SubagentWorkflow"]);
+    expect(excludedTools({ coreOff: ["bash"], subagents: true, workflows: true })).toEqual(["bash", "powershell"]);
     expect(excludedTools(parseBuiltins(JSON.stringify({ workflows: false, subagents: false })))).toEqual([]);
     expect(excludedTools(parseBuiltins(undefined))).toEqual([]);
   });
@@ -94,5 +95,24 @@ describe("parseBuiltins — §13 round 26 family and core switches", () => {
     const b = parseBuiltins(JSON.stringify({ coreOff: ["bash"] }));
     expect(offToolRefusal("bash", b)).toMatch(/switched off 'bash'/);
     expect(offToolRefusal("read", b)).toBeNull();
+  });
+});
+
+// Final review (round 26): the shell is ONE switch. The stored name is whichever shell the
+// session had when the user clicked, but the shell can change under it (Git Bash installed
+// later on Windows), and tintinweb children always get `bash`. So either name means both.
+describe("§13 round 26 — the shell is one switch", () => {
+  it("either shell name switches both off", () => {
+    expect(normalizeCoreOff(["powershell"])).toEqual(["powershell", "bash"]);
+    expect(normalizeCoreOff(["bash", "ls"])).toEqual(["bash", "ls", "powershell"]);
+    expect(normalizeCoreOff(["ls"])).toEqual(["ls"]);
+  });
+  it("a child is refused bash when the user switched the shell off as powershell", () => {
+    expect(offToolRefusal("bash", { coreOff: ["powershell"] })).toMatch(/switched off 'bash'/);
+  });
+  it("a malformed coreOff is empty, never a throw", () => {
+    expect(normalizeCoreOff("bash" as never)).toEqual([]);
+    expect(normalizeCoreOff(undefined)).toEqual([]);
+    expect(normalizeCoreOff(["nope", 3] as never)).toEqual([]);
   });
 });

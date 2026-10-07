@@ -4,7 +4,7 @@ import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
 import { HowItWorks } from "./HowItWorks";
 import { useWebDefaultPaused } from "../remoteConfig";
-import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE } from "../toolSwitches";
+import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE, toggleCore } from "../toolSwitches";
 import { FamilySwitchRow } from "./FamilySwitch";
 import { coreToolNames } from "../../../../pi-runtime/extensions/hv-builtins";
 
@@ -75,7 +75,7 @@ function CoreToolsRow({ names, off, onChange }: { names: string[]; off: string[]
           return (
             <span key={n} className="flex items-center gap-2 rounded-full border-2 border-line pl-3 pr-1 py-0.5">
               <span className="font-mono text-xs">{n}</span>
-              <TogglePill on={on} onClick={() => onChange(on ? [...off, n] : off.filter((t) => t !== n))} />
+              <TogglePill on={on} onClick={() => onChange(toggleCore(off, n))} />
             </span>
           );
         })}

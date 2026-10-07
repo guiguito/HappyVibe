@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { describe, expect, test } from "vitest";
-import { ALL_OFF_COPY, allToolsOff, FAMILY_SWITCHES } from "../src/renderer/src/toolSwitches";
+import { ALL_OFF_COPY, allToolsOff, FAMILY_SWITCHES, toggleCore } from "../src/renderer/src/toolSwitches";
 
 /**
  * §13 round 26 — the UI half of "every tool can be switched off", pinned as DATA plus a source
@@ -42,5 +42,13 @@ describe("§13 round 26 — tool switches UI contract", () => {
     expect(src("BuiltinToolsBlock.tsx")).toMatch(/<FamilySwitchRow family="mcp"/);
     expect(src("BuiltinToolsBlock.tsx")).toMatch(/<FamilySwitchRow family="subagents"/);
     expect(src("BuiltinToolsBlock.tsx")).toMatch(/<FamilySwitchRow family="skills"/);
+  });
+});
+
+describe("§13 round 26 — the shell switch on the Core tools row", () => {
+  test("turning the shell on clears both names, so it can't stay off under its other name", () => {
+    expect(toggleCore(["powershell", "bash", "ls"], "bash")).toEqual(["ls"]);
+    expect(toggleCore(["ls"], "bash")).toEqual(["ls", "bash"]);
+    expect(toggleCore(["ls"], "ls")).toEqual([]);
   });
 });

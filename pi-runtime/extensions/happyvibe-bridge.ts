@@ -32,7 +32,7 @@ import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
 import { boundaryRuleName, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
 import {
-  findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
+  ensureSkillsBlock, findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
 import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
 
@@ -830,7 +830,11 @@ export default function (pi: ExtensionAPI) {
     const base = (event.systemPrompt ?? "") as string;
     // A4: swap Pi's "use the read tool to load a skill's file" for ours, in the
     // one hook that already owns this prompt. No-op when no skills are loaded.
-    const sp = replaceSkillsSentence(base);
+    // §13 round 26: with `read` and the shell both switched off Pi drops its skills block; supply one.
+    const sp = ensureSkillsBlock(
+      replaceSkillsSentence(base),
+      builtins.skills ? ((event as { systemPromptOptions?: { skills?: Array<{ name: string; description: string; filePath: string; disableModelInvocation?: boolean }> } }).systemPromptOptions?.skills ?? []) : [],
+    );
     // W2.3: nested AGENTS.md injection — content re-read at injection time so
     // it's always current. Returning systemPrompt replaces it for THIS TURN
     // ONLY (agent-session.js resets to the base prompt when we return nothing).

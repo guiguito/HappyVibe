@@ -72,9 +72,25 @@ export function coreToolNames(shell: "bash" | "powershell"): string[] {
   return CORE_TOOLS.map((t) => (t === "bash" ? shell : t));
 }
 
+const SHELLS = ["bash", "powershell"];
+
+/**
+ * The stored list, made safe and made whole. Only core names survive (it becomes argv), and the
+ * shell is ONE switch: the name stored is whichever shell the session had when the user clicked,
+ * but the shell can change under it (Git Bash installed later on Windows) and tintinweb children
+ * always get `bash` — so either name switches both off.
+ */
+export function normalizeCoreOff(list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  const valid: readonly string[] = [...CORE_TOOLS, "powershell"];
+  const out = [...new Set(list.filter((t): t is string => typeof t === "string" && valid.includes(t)))];
+  if (out.some((t) => SHELLS.includes(t))) for (const s of SHELLS) if (!out.includes(s)) out.push(s);
+  return out;
+}
+
 /** Every name the spawn hands Pi's `--exclude-tools`. */
 export function excludedTools(b: Pick<BuiltinToggles, "coreOff" | "subagents" | "workflows">): string[] {
-  return [...b.coreOff, ...(b.subagents && !b.workflows ? ["SubagentWorkflow"] : [])];
+  return [...normalizeCoreOff(b.coreOff), ...(b.subagents && !b.workflows ? ["SubagentWorkflow"] : [])];
 }
 
 /**
@@ -83,7 +99,7 @@ export function excludedTools(b: Pick<BuiltinToggles, "coreOff" | "subagents" | 
  * `--exclude-tools` alone would leave a delegated way round the switch.
  */
 export function offToolRefusal(tool: string, b: Pick<BuiltinToggles, "coreOff">): string | null {
-  return b.coreOff.includes(tool)
+  return normalizeCoreOff(b.coreOff).includes(tool)
     ? `The user switched off '${tool}' in Settings → Built-in tools. Do not retry it and do not work around it; finish what you can with the tools you have.`
     : null;
 }
@@ -106,8 +122,7 @@ export function parseBuiltins(raw: string | undefined): BuiltinToggles {
     if (p.subagents === false) out.subagents = false;
     if (p.workflows === false) out.workflows = false;
     if (p.skills === false) out.skills = false;
-    const core: readonly string[] = [...CORE_TOOLS, "powershell"];
-    if (Array.isArray(p.coreOff)) out.coreOff = p.coreOff.filter((t): t is string => typeof t === "string" && core.includes(t));
+    out.coreOff = normalizeCoreOff(p.coreOff);
     if (typeof p.memoryAppend === "string") out.memoryAppend = p.memoryAppend;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
     // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
