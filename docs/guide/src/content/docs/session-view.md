@@ -56,7 +56,9 @@ On the right:
 - **The cost pill** shows an estimate of what this session has cost so far. Click it to open **Session cost**, the call-by-call breakdown. "—" means nothing has been billed yet, "plan" means your subscription covered it, "$?" means the app has no price for the model, and "+?" after an amount means part of the bill is missing.
 - **The context gauge** shows how full the model's context is, as a percentage. Click it to open the context panel. [Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) explains both.
 
-The skills, agents and MCP chips only appear when there's something to count, and never while that family is switched off on [Built-in tools](/docs/built-in-tools/). With **Sub-agents** off, typing @ doesn't offer agents either. In a narrow pane, the bar wraps onto a second line rather than hiding anything.
+The skills, agents and MCP chips only appear when there's something to count, and never while their switch is off on [Built-in tools](/docs/built-in-tools/). With **Sub-agents** off, typing **@** doesn't offer agents either.
+
+In a narrow pane, the bar wraps onto a second line rather than hiding anything.
 
 ### Strips above the conversation
 
@@ -172,7 +174,7 @@ The choice belongs to this session only. Other sessions keep theirs, and new ses
 2. Pick it from the list with the arrow keys and **Tab** or **Enter**, or click it.
 3. Send as usual. The agent receives the file with your message.
 
-**A subagent:** the same **@** list shows matching subagents above the files, as 🤖 **@name**. Click one, and **@name** goes into your message, so the agent knows to hand the task to it.
+**A subagent:** while **Sub-agents** is on, the same **@** list shows matching subagents above the files, as 🤖 **@name**. Click one, and **@name** goes into your message, so the agent knows to hand the task to it.
 
 **A subagent that's already running:** its row reads 💬 "Message *name* · run 1": "sends your message to this running sub-agent, not to the main agent". Pick it, and the box shows "💬 to *name* (running) — not the main agent". Send, and "Sent to *name*" confirms it. Changed your mind? Click the **✕** on that line, and your message goes to the main agent instead.
 
