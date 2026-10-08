@@ -91,3 +91,20 @@ paths:
 - `existing_user` keys on `<userData>/inlet/analytics-state.json` — config writes `installation-id.json` itself.
 - Dev builds send to the Dev project's databases. inlet-sdk 0.5.0 has no `environment` option and its server REFUSES an envelope carrying one (`unknown_field`) — never add it back (`tests/usage-wiring.test.ts` scans for it). The crash half of the one-ID check needs `HV_CRASH_DEV=1`.
 - `web_default_service` fails open (default `true`), is read per web call, and pausing it never removes the tools.
+
+## Privacy switches (Privacy round, 2026-10-09)
+
+- Every connection the app makes on its own is ONE row in `src/main/privacySwitches.ts` (import-free): its
+  negative config key and its env var. Read it through `getSwitch` (config.ts) — an env lock reads OFF,
+  never on. A new connection gets a row there, a switch, and a line in the guide's "On a managed computer"
+  table (`tests/privacy-guide.test.ts` fails otherwise).
+- `HV_*` locks count only at exactly `1`; `PI_OFFLINE` counts Pi's way (`1`/`true`/`yes`). The app never
+  names a variable (`tests/privacy-page.test.ts` scans `src/renderer/src`).
+- The Model list switch puts `PI_OFFLINE=1` in `resolvePiSpawn`'s env only — never `process.env`, which the
+  built-in terminal inherits. Only `HV_NO_PHONE_HOME` writes `process.env` (index.ts, at load). Never set
+  `PI_SKIP_VERSION_CHECK`/`PI_TELEMETRY`: Pi makes those calls only in its TUI (`tests/pi-privacy-contract.test.ts`,
+  evidence `docs/validation/pv1.md`).
+- Remote settings off = `uninstall()` + `close()` the config client and `setConfigReader(null)`; on = a fresh
+  `installElectronMain`. `starting ??=` keeps a quick off/on from building two clients.
+- `HV_NO_FEEDBACK` means `ipc.ts` never builds the feedback clients, so a queued submission isn't replayed
+  while the lock holds; the queue stays on disk.
