@@ -68,3 +68,15 @@ describe("§13 round 26 — a bash session never lists powershell", () => {
     expect(argsOf({}, { agentShell: "powershell" })).not.toContain("--exclude-tools");
   });
 });
+
+// GUI pass: with no session open, Agent tools asks the UTILITY client (anyClient), which read the
+// switches once at its spawn and was never restarted — so the page kept listing switched-off tools.
+// A switch change restarts it, the same way a key change does.
+describe("§13 round 26 — a switch change restarts the utility client", () => {
+  test("hv:builtins-set awaits restartUtility after saving", async () => {
+    const fs = await import("node:fs");
+    const ipc = fs.readFileSync("src/main/ipc.ts", "utf8");
+    const handler = ipc.slice(ipc.indexOf('ipcMain.handle("hv:builtins-set"'), ipc.indexOf('ipcMain.handle("hv:builtins-set"') + 900);
+    expect(handler).toMatch(/setBuiltinTools\(t\);[\s\S]*await restartUtility\(\)/);
+  });
+});

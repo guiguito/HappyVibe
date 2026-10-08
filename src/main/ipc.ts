@@ -4321,13 +4321,16 @@ export function registerIpc(
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: Parameters<typeof setBuiltinTools>[0]) => {
+  ipcMain.handle("hv:builtins-set", async (_e, t: Parameters<typeof setBuiltinTools>[0]) => {
     const prev = getBuiltinTools() as Record<string, unknown>;
     for (const [k, v] of Object.entries(t)) {
       if (typeof v === "boolean" && prev[k] !== v) track("builtin_toggled", { item: k, kind: "builtin_tool", on: v });
     }
     setBuiltinTools(t);
     scheduleRuntimeReload("tools", "global", null);
+    // §13 round 26: with no session open, Agent tools asks the utility client, which reads the
+    // switches only at its spawn — restart it like a key change, or the page lists stale tools.
+    await restartUtility();
   });
   // §32: the web service. Main reads it PER CALL, so a change applies to the
   // next tool call with no respawn — the row says so. Test is the only call
