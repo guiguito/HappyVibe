@@ -48,11 +48,13 @@ describe("§37 turning it off means off", () => {
   });
 
   it("the default is ON, and an older config file reads as ON rather than unset", () => {
+    // Privacy round: the getter goes through the generic, lock-aware getSwitch;
+    // behaviour (absent = on, stored only when off) is in tests/privacy-config.test.ts.
     const config = fs.readFileSync("src/main/config.ts", "utf8");
-    const at = config.indexOf("export function getCrashReports");
-    expect(config.slice(at, at + 120)).toMatch(/return !load\(\)\.crashReportsOff/);
-    const setter = config.slice(config.indexOf("export function setCrashReports"));
-    expect(setter).toMatch(/if \(on\) delete cfg\.crashReportsOff/); // stored only when off
+    expect(config).toMatch(/export const getCrashReports = \(\): boolean => getSwitch\("crashReports"\)/);
+    expect(config).toMatch(/return off \? !load\(\)\[off\] : true/);
+    expect(config).toMatch(/if \(on\) delete cfg\[off\]/); // stored only when off
+    expect(fs.readFileSync("src/main/privacySwitches.ts", "utf8")).toMatch(/crashReports: \{ off: "crashReportsOff"/);
   });
 });
 

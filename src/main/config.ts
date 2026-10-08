@@ -10,6 +10,7 @@ import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
 import type { WindowRecord } from "./windowLayout";
 import { mcpSecretEnvVar } from "./mcpSecretName";
 import { resolveBypass as resolveBypassPure } from "./bypass";
+import { PRIVACY_SWITCHES, lockedByEnv, type Env, type SwitchKey } from "./privacySwitches";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
@@ -48,6 +49,13 @@ interface ConfigFile {
   crashReportsOff?: boolean;
   /** §39: usage statistics off (absent = on, the crashReportsOff shape). */
   usageStatsOff?: boolean;
+  /** Privacy round (2026-10-09): each set only when the user turns that connection OFF
+      (absent = on). The keys are PRIVACY_SWITCHES' `off`. */
+  feedbackButtonOff?: boolean;
+  sessionPulseOff?: boolean;
+  remoteConfigOff?: boolean;
+  updateCheckOff?: boolean;
+  modelListOff?: boolean;
   /** §38: set only when the user turns OFF automatic update downloads (default on). */
   autoUpdate?: false;
   workspaceBypass?: Record<string, boolean>;
@@ -578,28 +586,28 @@ export function setOpenFilesContext(on: boolean): void {
  * "on" rather than as "unset" — which is what makes the opt-OUT an opt-out
  * rather than a silent opt-in at the next launch.
  */
+/** Privacy round (2026-10-09): every switch on the Privacy and Changelog pages.
+    An env lock reads OFF whatever is stored, and never turns anything on. */
+export function getSwitch(key: SwitchKey, env: Env = process.env): boolean {
+  if (lockedByEnv(key, env)) return false;
+  const off = PRIVACY_SWITCHES[key].off;
+  return off ? !load()[off] : true;
+}
+
+export function setSwitch(key: SwitchKey, on: boolean): void {
+  const off = PRIVACY_SWITCHES[key].off;
+  if (!off) return;
+  const cfg = load();
+  if (on) delete cfg[off];
+  else cfg[off] = true;
+  save(cfg);
+}
+
 /** §39: usage statistics, stored negative so absent means on (the crashReportsOff shape). */
-export function getUsageStats(): boolean {
-  return !load().usageStatsOff;
-}
-
-export function setUsageStats(on: boolean): void {
-  const cfg = load();
-  if (on) delete cfg.usageStatsOff;
-  else cfg.usageStatsOff = true;
-  save(cfg);
-}
-
-export function getCrashReports(): boolean {
-  return !load().crashReportsOff;
-}
-
-export function setCrashReports(on: boolean): void {
-  const cfg = load();
-  if (on) delete cfg.crashReportsOff;
-  else cfg.crashReportsOff = true;
-  save(cfg);
-}
+export const getUsageStats = (): boolean => getSwitch("usageStats");
+export const setUsageStats = (on: boolean): void => setSwitch("usageStats", on);
+export const getCrashReports = (): boolean => getSwitch("crashReports");
+export const setCrashReports = (on: boolean): void => setSwitch("crashReports", on);
 
 /** Round 8: shortcut overrides. Stored whole — the renderer owns the merge with
     the defaults (shortcuts.ts resolveBindings), so main never has to know the
