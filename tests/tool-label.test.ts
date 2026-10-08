@@ -322,3 +322,8 @@ test("§31: document_read leads with the model's sentence and falls back to the 
 test("§31: document_read degrades to a sentence when the model sent no path", () => {
   expect(toolLabel("document_read", {}).label).toBe("Reading a document");
 });
+
+test("generate_image: intent first, else the file it makes", () => {
+  expect(toolLabel("generate_image", { path: "assets/sun.png" }).label).toBe("Making sun.png");
+  expect(toolLabel("generate_image", { path: "assets/sun.png", intent: "Drawing the app icon" }).label).toBe("Drawing the app icon");
+});

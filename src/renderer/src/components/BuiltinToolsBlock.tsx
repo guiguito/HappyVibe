@@ -7,6 +7,8 @@ import { useWebDefaultPaused } from "../remoteConfig";
 import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE, toggleCore } from "../toolSwitches";
 import { FamilySwitchRow } from "./FamilySwitch";
 import { coreToolNames } from "../../../../pi-runtime/extensions/hv-builtins";
+import { GoTo } from "./GoTo";
+import { IMAGES_ROW_COPY } from "../imagePrompt";
 
 
 /** §13 round 6: the App Tools page's top block — global on/off for the two
@@ -37,8 +39,43 @@ interface Builtins {
   mcp: boolean;
   subagents: boolean;
   workflows: boolean;
+  /** §13 round 27: generate_image (needs an OpenRouter credential). */
+  images: boolean;
   skills: boolean;
   coreOff: string[];
+}
+
+type ImageSettings = { available: boolean; model: string | null; models: { id: string; name: string }[] };
+
+/** §13 round 27 — generate_image. Registered only with an OpenRouter credential; the picker lists
+    only models Pi prices, by name — no rates, because Pi's are text rates, 12–20× under what
+    OpenRouter bills (docs/validation/im1.md). Session cost shows OpenRouter's real charge. */
+function ImagesRow({ on, settings, onChange, onModel }: { on: boolean; settings: ImageSettings | null; onChange: (on: boolean) => void; onModel: (id: string) => void }): React.JSX.Element {
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-start gap-3">
+      <div className="flex-1 min-w-0">
+        <span className="font-bold block">Images — 1 tool</span>
+        <span className="text-xs text-ink-soft">{IMAGES_ROW_COPY.on}</span>
+        {settings && !settings.available && (
+          <span className="text-xs font-semibold block mt-1">{IMAGES_ROW_COPY.needsOpenRouter} <GoTo view="models" />.</span>
+        )}
+        {settings?.available && settings.model && (
+          <label className="text-xs block mt-2">
+            <span className="font-bold mr-2">Image model</span>
+            <select
+              value={settings.model}
+              onChange={(e) => onModel(e.target.value)}
+              className="rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
+            >
+              {settings.models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+        )}
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+      </div>
+      <TogglePill on={on} onClick={() => onChange(!on)} />
+    </div>
+  );
 }
 
 /** §13 round 26: SubagentWorkflow alone, nested under Sub-agents and meaningless without it. */
@@ -615,10 +652,12 @@ export function BuiltinToolsBlock({
   const [builtins, setBuiltins] = useState<Builtins | null>(null);
   const [askUserError, setAskUserError] = useState<string | null>(null);
   const [shell, setShell] = useState<"bash" | "powershell">("bash");
+  const [images, setImages] = useState<ImageSettings | null>(null);
 
   useEffect(() => {
     void window.hv.builtinsGet().then(setBuiltins);
     void window.hv.agentShell().then((s) => setShell(s.shell));
+    void window.hv.imageSettings().then(setImages);
   }, []);
 
   useEffect(() => {
@@ -646,7 +685,7 @@ export function BuiltinToolsBlock({
       // "Both" was written when there were two entries; §26 made it three.
       subtitle="App-provided tools implemented as ordinary tool calls, then Pi's own core tools at the bottom. All are on by default except Workflows — turn any of them off if you don't want the agent to have it."
     >
-      {allToolsOff(builtins, shell) && <p className="mb-3 text-sm font-semibold">{ALL_OFF_COPY}</p>}
+      {allToolsOff({ ...builtins, imagesAvailable: images?.available }, shell) && <p className="mb-3 text-sm font-semibold">{ALL_OFF_COPY}</p>}
       <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
         <PlanModeRow builtins={builtins} onChange={patch} />
         <AskUserRow
@@ -724,6 +763,14 @@ export function BuiltinToolsBlock({
               () => patch({ document: on }),
               (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
             );
+          }}
+        />
+        <ImagesRow
+          on={builtins.images}
+          settings={images}
+          onChange={(on) => save({ images: on })}
+          onModel={(id) => {
+            void window.hv.imageModelSet(id).then(() => setImages((s) => (s ? { ...s, model: id } : s)));
           }}
         />
         <IntentRow

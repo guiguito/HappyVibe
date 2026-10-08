@@ -7,6 +7,7 @@ import { toolLabel } from "../toolLabel";
 import { ToolIcon } from "./ToolCard";
 import { SkillDiff } from "./SkillsSection";
 import { memoryFactFrom, memoryFactRows, memoryPromptTitle } from "../memoryFact";
+import { imagePromptLines } from "../imagePrompt";
 
 /**
  * W1.1: rebuild enough args from the bridge's summary to feed toolLabel — the
@@ -132,6 +133,15 @@ export function PermissionModal({
       live = false;
     };
   }, [fact?.name, fact?.scope, info.tool, workspaceId]);
+  // §13 round 27: an image costs money — the model and the new file are the question.
+  const imageArgs = info.tool === "generate_image" ? (argsFromSummary(info.tool, info.summary) as { model?: string; path?: string } | undefined) : undefined;
+  const [imageModels, setImageModels] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (info.tool !== "generate_image") return;
+    let live = true;
+    void window.hv.imageSettings().then((s) => { if (live) setImageModels(s.models); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [info.tool]);
   // Standard allow/deny prompt → offer the expanded persistent-grant choices (#13);
   // any non-standard option set from the bridge is shown verbatim.
   const wire = req.options ?? ["Allow", "Allow for session", "Deny"];
@@ -228,6 +238,13 @@ export function PermissionModal({
           {/* §12: a delegation is approved as a BOUNDARY, so the child's whole
               reach is shown before launch — never behind the details toggle,
               which is where a user would not look before clicking Allow. */}
+          {imageArgs?.model && imageArgs.path && (
+            <div className="mb-4 rounded-xl border-2 border-honey bg-honey-soft px-3 py-2 text-xs font-semibold text-ink">
+              {imagePromptLines({ model: imageArgs.model, path: imageArgs.path }, imageModels).map((l) => (
+                <div key={l} className="break-words">{l}</div>
+              ))}
+            </div>
+          )}
           {info.boundary && (
             <div className={`mb-4 rounded-xl border-2 px-3 py-2 text-xs font-semibold ${
               info.boundary.writeCapable.length > 0

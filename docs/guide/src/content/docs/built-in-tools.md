@@ -74,6 +74,16 @@ Click its name to read the memory policy the agent follows, and add your own lin
 
 Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB files as Markdown. They're converted on this computer: "nothing is sent anywhere." This row also turns on **Attach document** in the message box. Scanned PDF pages can't be read, and the agent is told which ones they are.
 
+### Images — 1 tool
+
+"Lets the agent make an image and save it as a new file in your project. Each image costs money on your OpenRouter account; Session cost shows what OpenRouter charged."
+
+Images need an OpenRouter key or sign-in. Without one, the row reads "Needs an OpenRouter key or sign-in. Add one on Models." and the agent doesn't get the tool.
+
+**Image model** picks the model the agent uses. It lists only image models whose cost HappyVibe can show, cheapest first. The agent can't choose another one.
+
+Before each image, the approval dialog names the model, says it costs money and shows the new file's name. The agent never replaces an existing file: it's asked to pick a new name. Plan mode blocks this tool.
+
 ### Tool intent
 
 "The one-line “why” the model writes for each tool card." Turning it off saves the tokens (the unit models read and bill text in, roughly four characters) that sentence costs. Cards then show a label built from the call itself. Approval dialogs don't change either way: "they always show the factual action, never this sentence."
