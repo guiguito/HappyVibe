@@ -63,7 +63,7 @@ import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant, indexTools } from "./streaming";
 import { sendOutcome } from "./sendOutcome";
-import { stripInjectedBlocks } from "./mentions";
+import { parseDocumentChips, stripInjectedBlocks } from "./mentions";
 import type { Activity, ToolDraft } from "./busyStatus";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
@@ -594,7 +594,7 @@ export default function App(): React.JSX.Element {
    * ChatView appends on nonce change. Same shape as the rewind-to-composer path;
    * no store and no event bus, matching how every other prop reaches ChatView.
    */
-  const [composerInsert, setComposerInsert] = useState<{ sid: string; text: string; nonce: number } | null>(null);
+  const [composerInsert, setComposerInsert] = useState<{ sid: string; text: string; nonce: number; docs?: string[] } | null>(null);
   // Set when the user grants a permission; the next matching
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
@@ -1870,7 +1870,10 @@ export default function App(): React.JSX.Element {
           const text = typeof m.content === "string"
             ? m.content
             : (m.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
-          setTranscripts((p) => ({ ...p, [sid]: stampPiTs(p[sid] ?? [], ts, stripInjectedBlocks(text)) }));
+          setTranscripts((p) => {
+            const n = stampPiTs(p[sid] ?? [], ts, stripInjectedBlocks(text));
+            return n === p[sid] ? p : { ...p, [sid]: n };
+          });
         }
         if (m?.role === "assistant" && m.stopReason === "error") {
           commitStream(sid); // flush any partial bubble before the (deferred) error
@@ -3031,7 +3034,9 @@ export default function App(): React.JSX.Element {
     const idx = items.findIndex((x) => x.id === it.id);
     if (idx < 0) return;
     try {
-      if (scope === "both") {
+      // A running turn may be writing those files right now — never roll them back
+      // under it. ChatView already hides "both" while busy; this is the backstop.
+      if (scope === "both" && !busy[sid]) {
         const res = await window.hv.rewindRestore(sid, tailToolCallIds(items, idx));
         if (!res) {
           appendItem(sid, { kind: "notice", text: "No snapshot for that message — no files were changed." });
@@ -3042,8 +3047,18 @@ export default function App(): React.JSX.Element {
         }
       }
       const r = await window.hv.forkSession(sid, it.piTs);
+      // The fork inherits the original's workspace. Open its tab HERE, as newSession
+      // does: selectSession looks the id up in `sessions`, which this render's closure
+      // may not have received yet, and would then add no tab.
+      const ws = sessions.find((s) => s.id === sid)?.workspaceId;
+      if (ws) {
+        setActiveWs(ws);
+        setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, r.sessionId) }));
+      }
       await openSessionRef.current?.(r.sessionId);
-      setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), nonce: (prev?.nonce ?? 0) + 1 }));
+      // §31: the documents ride along, as Rewind re-attaches them, or edit-and-resend drops them.
+      const docs = parseDocumentChips(it.text).map((d) => d.path);
+      setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), docs, nonce: (prev?.nonce ?? 0) + 1 }));
     } catch (err) {
       appendItem(sid, { kind: "notice", text: ipcMessage(err) });
     }

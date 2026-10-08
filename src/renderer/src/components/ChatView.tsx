@@ -265,7 +265,7 @@ export function ChatView({
    * chat"). Appended on NONCE change, so sending the same selection twice still
    * lands — the same mechanism the rewind-to-composer path uses.
    */
-  composerInsert?: { text: string; nonce: number };
+  composerInsert?: { text: string; nonce: number; docs?: string[] };
   /**
    * This pane is on screen. Every ChatView stays MOUNTED (streaming, and a live
    * dictation, must survive switching tabs), so a component cannot infer this
@@ -396,6 +396,8 @@ export function ChatView({
     if (!n || n === lastInsert.current) return;
     lastInsert.current = n;
     insertText(composerInsert!.text);
+    // §17 round 28: a fork's documents, re-attached by path exactly as Rewind does.
+    if (composerInsert!.docs?.length) void attachDocumentPaths(composerInsert!.docs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerInsert?.nonce]);
   // F3: @file mentions — label→relPath map for the composed text, a recursive
@@ -1266,7 +1268,9 @@ export function ChatView({
                   ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
                 ];
                 if (forkMode) {
-                  if (forkScopes(rewindPreview).includes("both")) {
+                  // Fork stays offered mid-turn (it never touches this session), but
+                  // rolling files back under a running turn does not.
+                  if (!busy && forkScopes(rewindPreview).includes("both")) {
                     opts.push(["both", "Conversation and files", FORK_DIALOG.bothHint]);
                   }
                   return opts;
@@ -1340,7 +1344,8 @@ export function ChatView({
                   const it = pendingRewind;
                   if (forkMode) {
                     // App opens the fork and fills ITS composer; this one is left alone.
-                    onFork?.(it, rewindScope);
+                    // Busy may have started while the dialog was open: downgrade.
+                    onFork?.(it, busy ? "conversation" : rewindScope);
                     setPendingRewind(null);
                     return;
                   }
@@ -1528,7 +1533,7 @@ export function ChatView({
           sessionId={sessionId}
           onOpenFile={onOpenFile}
           onRewind={onRewind && !busy ? openRewind : undefined}
-          onFork={onFork && !busy ? openFork : undefined}
+          onFork={onFork ? openFork : undefined}
           onLoadEarlier={onLoadEarlier}
           searchQuery={searchOpen ? searchQuery : ""}
           searchActiveIndex={searchActive}

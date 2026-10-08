@@ -4,14 +4,20 @@ import { hasRestorable, type RewindPreview, type RewindScope } from "./rewind";
 /**
  * §17 round 28 — a live bubble learns Pi's own `message.timestamp` from the user-role
  * `message_end`; main finds the fork's entry by it (history.ts userEntryAt). Text first
- * (several may be unstamped), else the oldest unstamped one: a prompt template's bubble
- * shows what was TYPED while Pi's message holds the expansion. Synthetic bubbles (the
+ * (several may be unstamped), else the oldest unstamped one AFTER the last stamped bubble:
+ * a prompt template's bubble shows what was TYPED while Pi's message holds the
+ * expansion. An orphan Pi never echoed sits before a stamped one, so it can't steal
+ * the stamp and shift every later bubble by one. Synthetic bubbles (the
  * askUser answers summary) are not Pi user messages and never get a stamp.
  */
 export function stampPiTs(items: TranscriptItem[], piTs: number, text: string): TranscriptItem[] {
   const open = (x: TranscriptItem): boolean => x.kind === "user" && x.piTs == null && !x.synthetic;
   let i = items.findIndex((x) => open(x) && x.kind === "user" && x.text.trim() === text.trim());
-  if (i < 0) i = items.findIndex(open);
+  if (i < 0) {
+    const last = items.findLastIndex((x) => x.kind === "user" && x.piTs != null);
+    const j = items.slice(last + 1).findIndex(open);
+    i = j < 0 ? -1 : last + 1 + j;
+  }
   if (i < 0) return items;
   const next = items.slice();
   next[i] = { ...items[i], piTs } as TranscriptItem;

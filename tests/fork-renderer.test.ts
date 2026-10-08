@@ -26,3 +26,19 @@ test("Fork shows only on a Pi-confirmed bubble inside context", () => {
   const restore = fs.readFileSync("src/renderer/src/restoreMap.ts", "utf8");
   expect(restore).toContain("piTs");
 });
+
+test("stampPiTs fallback: an orphan before a stamped bubble is never stamped", () => {
+  const items = [u("orphan"), u("a", { piTs: 1 }), u("b")] as never[];
+  const out = stampPiTs(items, 9, "expanded body") as Array<{ piTs?: number }>;
+  expect(out[0].piTs).toBeUndefined();
+  expect(out[2].piTs).toBe(9);
+  // Nothing open after the last stamp → no stamp at all, same array back.
+  const none = [u("orphan"), u("a", { piTs: 1 })] as never[];
+  expect(stampPiTs(none, 9, "zzz")).toBe(none);
+});
+
+test("Fork stays offered mid-turn; only the file scope is gated on busy", () => {
+  const c = fs.readFileSync("src/renderer/src/components/ChatView.tsx", "utf8");
+  expect(c).not.toContain("onFork && !busy");
+  expect(c).toMatch(/!busy && forkScopes\(rewindPreview\)\.includes\("both"\)/);
+});
