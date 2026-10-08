@@ -1071,6 +1071,8 @@ export function registerIpc(
       memoryWorkspaceDir,
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
+      // Privacy round D10: Model list off (or locked) → this Pi skips pi.dev and the fd/rg download.
+      offline: !getSwitch("modelList"),
       // §13 round 27: generate_image exists only with the switch on AND an OpenRouter credential.
       imageModel: builtins.images && openRouterReady() ? resolveImageModel(IMAGE_MODELS, getImageModel()) ?? undefined : undefined,
       skills: entries.map((e) => e.skill.id),
