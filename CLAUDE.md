@@ -80,8 +80,9 @@ permission UX and context-window visibility as the differentiators.
   (`happyvibe-bridge.ts` + pure `hv-*.ts` modules shared with main and tests).
 - **The bridge owns ALL permission UI and enforcement** (Pi's permission package is TUI-only in RPC,
   `docs/validation/v6.md`). Prompts never time out and never auto-allow, except under a full bypass
-  (session `/hv-dangerous`, or the persistent "Bypass ALL permissions" setting, workspace over
-  global, resolved at spawn via `HV_BYPASS`). Bypass still audit-flags every call and shows the red
+  (the persistent "Bypass ALL permissions" setting, workspace over global, resolved at spawn via
+  `HV_BYPASS` — the only way on; main's slash guard, `slashGuard.ts`, refuses a typed reserved
+  command except `/hv-dangerous off`). Bypass still audit-flags every call and shows the red
   banner. Gate order in `tool_call`: read-only clamp → plan clamp → bypass → rule engine.
 - Bridge⇄main protocol: JSON envelopes `kind:"hv.*"` over `extension_ui_request`. Blocking =
   `select`/`input` with the payload in **`title`**; fire-and-forget = `notify` with the payload in
