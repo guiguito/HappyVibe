@@ -98,7 +98,7 @@ paths:
   negative config key and its env var. Read it through `getSwitch` (config.ts) — an env lock reads OFF,
   never on. A new connection gets a row there, a switch, and a line in the guide's "On a managed computer"
   table (`tests/privacy-guide.test.ts` fails otherwise).
-- `HV_*` locks count only at exactly `1`; `PI_OFFLINE` counts Pi's way (`1`/`true`/`yes`). The app never
+- `HV_*` locks count only at exactly `1`; `PI_OFFLINE` locks at ANY value: Pi's model runtime goes offline on `!== undefined` (`PI_OFFLINE=0` included). The app never
   names a variable (`tests/privacy-page.test.ts` scans `src/renderer/src`).
 - The Model list switch puts `PI_OFFLINE=1` in `resolvePiSpawn`'s env only — never `process.env`, which the
   built-in terminal inherits. Only `HV_NO_PHONE_HOME` writes `process.env` (index.ts, at load). Never set

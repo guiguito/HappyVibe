@@ -13,7 +13,8 @@ export const PRIVACY_SWITCHES = {
   sessionPulse: { off: "sessionPulseOff", env: "HV_NO_FEEDBACK" },
   remoteConfig: { off: "remoteConfigOff", env: "HV_NO_REMOTE_CONFIG" },
   updateCheck: { off: "updateCheckOff", env: "HV_NO_UPDATE_CHECK" },
-  // Pi's own variable, counted Pi's way (1, true, yes) — that's what turns Pi offline.
+  // Pi's own variable. Pi's model runtime goes offline when it is set at ALL (even to 0),
+  // so any value locks the switch — otherwise PI_OFFLINE=0 would read On while no list comes.
   modelList: { off: "modelListOff", env: "PI_OFFLINE" },
   // The user's control lives on Built-in tools (own service, or web tools off).
   defaultWeb: { off: null, env: "HV_NO_DEFAULT_WEB" },
@@ -28,12 +29,10 @@ export const MASTER_ENV = "HV_NO_PHONE_HOME";
 /** Pi's REMOTE_CATALOG_REFRESH_INTERVAL_MS in hours; tests/pi-privacy-contract.test.ts pins it. */
 export const MODEL_LIST_REFRESH_HOURS = 4;
 
-const piTruthy = (v: string | undefined): boolean => !!v && ["1", "true", "yes"].includes(v.toLowerCase());
-
 export function lockedByEnv(key: SwitchKey, env: Env): boolean {
   if (env[MASTER_ENV] === "1") return true;
   const name = PRIVACY_SWITCHES[key].env;
-  return name === "PI_OFFLINE" ? piTruthy(env[name]) : env[name] === "1";
+  return name === "PI_OFFLINE" ? env[name] !== undefined : env[name] === "1";
 }
 
 export function lockedKeys(env: Env): SwitchKey[] {

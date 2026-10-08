@@ -23,10 +23,14 @@ describe("privacy switches: env vars only ever turn a switch off", () => {
       expect(lockedByEnv("usageStats", { HV_NO_USAGE_STATS: v }), JSON.stringify(v)).toBe(false);
     }
   });
-  it("PI_OFFLINE counts Pi's way: 1, true or yes, any case", () => {
-    for (const v of ["1", "true", "TRUE", "yes", "Yes"]) expect(lockedByEnv("modelList", { PI_OFFLINE: v }), v).toBe(true);
-    for (const v of ["0", "", "no", "false"]) expect(lockedByEnv("modelList", { PI_OFFLINE: v }), v).toBe(false);
-    expect(lockedKeys({ PI_OFFLINE: "1" })).toEqual(["modelList"]);
+  it("PI_OFFLINE set to ANY value locks the model list — Pi's model runtime goes offline on `!== undefined`", () => {
+    for (const v of ["1", "true", "yes", "0", "", "no"]) expect(lockedByEnv("modelList", { PI_OFFLINE: v }), JSON.stringify(v)).toBe(true);
+    expect(lockedByEnv("modelList", {})).toBe(false);
+    expect(lockedKeys({ PI_OFFLINE: "0" })).toEqual(["modelList"]);
+  });
+  it("our rule matches the vendored Pi's model runtime", () => {
+    const rt = fs.readFileSync("pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/model-runtime.js", "utf8");
+    expect(rt).toContain("process.env.PI_OFFLINE === undefined");
   });
   it("is import-free (the renderer imports it)", () => {
     const src = fs.readFileSync("src/main/privacySwitches.ts", "utf8");

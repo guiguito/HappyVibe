@@ -12,7 +12,9 @@ Pinned where they can drift by `tests/pi-privacy-contract.test.ts`.
 | Model-list refresh (`https://pi.dev/api/models/providers/<id>?types=…`) | `main.js`: `if (!offlineMode && appMode === "rpc")` at every RPC start; throttled by `REMOTE_CATALOG_REFRESH_INTERVAL_MS` = 4 h (`core/remote-catalog-provider.js`) | Yes: every session, the utility client and MCP probes (all through `spawnOpts`) |
 | `fd` / `rg` download from GitHub | `utils/tools-manager.js` `ensureTool`, on the first `find`/`grep` when neither `<agentDir>/bin` nor `PATH` has them | Yes, once |
 
-- `PI_OFFLINE` (1/true/yes) stops the last two. Offline with the tool missing, `grep` fails with
+- `PI_OFFLINE` stops the last two, but not by one rule: the model runtime goes offline when it is set at all
+  (`core/model-runtime.js`: `process.env.PI_OFFLINE === undefined`, so `0` counts), while `ensureTool` and
+  `main.js` read it as 1/true/yes. The Model list lock follows the model runtime: any value locks it. Offline with the tool missing, `grep` fails with
   *"ripgrep (rg) is not available and could not be downloaded"*. A cached catalog overlay still applies.
 - One-shots (titles, commit message, PR draft) are print mode with `--no-tools`: no refresh, no tools.
   `--export` and `pi mcp` make no Pi call home.
