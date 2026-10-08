@@ -61,9 +61,16 @@ export function updateToolCard(
   toolCallId: string,
   update: (card: Extract<TranscriptItem, { kind: "tool" }>["card"]) => Extract<TranscriptItem, { kind: "tool" }>["card"]
 ): TranscriptItem[] {
-  const i = index.get(toolCallId);
-  const it = i != null ? items[i] : undefined;
-  if (i == null || !it || it.kind !== "tool") return items;
+  let i = index.get(toolCallId);
+  let it = i != null ? items[i] : undefined;
+  // Round 27 review: an index taken before items moved (a taken-back bubble) points at the
+  // wrong slot. Never patch another call's card — find this one and repair the entry.
+  if (i != null && !(it?.kind === "tool" && it.card.toolCallId === toolCallId)) {
+    i = items.findIndex((x) => x.kind === "tool" && x.card.toolCallId === toolCallId);
+    it = i >= 0 ? items[i] : undefined;
+    if (i >= 0) index.set(toolCallId, i);
+  }
+  if (i == null || i < 0 || !it || it.kind !== "tool") return items;
   const next = items.slice();
   next[i] = { ...it, card: update(it.card) };
   return next;
@@ -72,4 +79,13 @@ export function updateToolCard(
 /** Record where a tool card lives so `_update`/`_end` can find it in O(1). */
 export function indexTool(index: Map<string, number>, toolCallId: string, at: number): void {
   index.set(toolCallId, at);
+}
+
+/** Every tool card's position. Rebuilt whenever items move — a stale entry patches the wrong card. */
+export function indexTools(items: TranscriptItem[]): Map<string, number> {
+  const map = new Map<string, number>();
+  items.forEach((it, i) => {
+    if (it.kind === "tool") map.set(it.card.toolCallId, i);
+  });
+  return map;
 }

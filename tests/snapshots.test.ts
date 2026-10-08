@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildManifest, captureSnapshot, deleteSessionSnapshots, diffManifests, findRestoreTarget,
-  listSnapshots, MAX_SNAPSHOTS_PER_SESSION,
+  discardSnapshot, listSnapshots, MAX_SNAPSHOTS_PER_SESSION,
   previewRestore, restoreSnapshot, SNAPSHOT_EXCLUDE, stampSnapshot,
 } from "../src/main/snapshots";
 import type { Manifest, SnapshotRecord } from "../src/main/snapshots";
@@ -392,4 +392,19 @@ describe("every prompted turn gets a restore anchor", () => {
     expect(captureSnapshot(root, "s1", [ws], ws, "post", NOW)).toBeNull();
     expect(listSnapshots(root, "s1")).toHaveLength(before);
   });
+});
+
+test("round 27: discardSnapshot drops exactly one record by seq", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+  fs.writeFileSync(path.join(ws, "a.txt"), "one");
+  captureSnapshot(root, "s1", [ws], ws, "pre", "2026-10-08T00:00:00.000Z");
+  fs.writeFileSync(path.join(ws, "a.txt"), "two");
+  captureSnapshot(root, "s1", [ws], ws, "pre", "2026-10-08T00:00:01.000Z");
+  const before = listSnapshots(root, "s1");
+  expect(before).toHaveLength(2);
+  discardSnapshot(root, "s1", before[1].seq);
+  expect(listSnapshots(root, "s1").map((r) => r.seq)).toEqual([before[0].seq]);
+  discardSnapshot(root, "s1", 999); // an unknown seq changes nothing
+  expect(listSnapshots(root, "s1")).toHaveLength(1);
+  fs.rmSync(root, { recursive: true, force: true });
 });

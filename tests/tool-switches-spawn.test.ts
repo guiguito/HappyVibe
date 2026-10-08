@@ -80,3 +80,10 @@ describe("§13 round 26 — a switch change restarts the utility client", () => 
     expect(handler).toMatch(/setBuiltinTools\(t\);[\s\S]*await restartUtility\(\)/);
   });
 });
+
+describe("§13 round 27 — HV_IMAGE_MODEL", () => {
+  test("set only when main names a model; absent means the tool is not registered", () => {
+    expect(spawnWith({}, { imageModel: "google/gemini-3.1-flash-lite-image" }).env.HV_IMAGE_MODEL).toBe("google/gemini-3.1-flash-lite-image");
+    expect(spawnWith({}).env.HV_IMAGE_MODEL).toBeUndefined();
+  });
+});

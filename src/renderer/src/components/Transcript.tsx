@@ -78,6 +78,8 @@ export type TranscriptItem = { id?: number; live?: true } & (
       imagesDropped?: boolean;
       outOfContext?: boolean;
       promptTemplate?: { typed: string };
+      /** Round 27: the send that drew this bubble, so a queued or refused send can take it back. */
+      sendId?: number;
       /** Round 15: epoch ms. Live items are stamped at commit, restored ones
           come from the session file. Absent on pre-round-15 live items, which
           simply render no time rather than a guess. */

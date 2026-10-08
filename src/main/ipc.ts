@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { parseImageDataUrl } from "./imageData";
 import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
 import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
@@ -22,7 +23,7 @@ import { piRuntimeDir } from "./pi/runtimeDir";
 import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
 import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, documentExtension, isDocumentPath } from "../../pi-runtime/extensions/hv-document";
 import {
-  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
+  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getImageModel, setImageModel, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
@@ -83,7 +84,8 @@ import {
   anyProviderConfigured, authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
+import { FEATURED_PROVIDER_IDS, IMAGE_MODELS, PROVIDER_CATALOG } from "./providerCatalog.generated";
+import { parseImageSave, resolveImageModel, takenNameRefusal } from "../../pi-runtime/extensions/hv-images";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { foldWorkflowProgress, twChildStatus, twInspect } from "./twChildren";
@@ -101,8 +103,10 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
+import { clearedTexts, promptOutcome, type PromptDisposition } from "./pi/promptOutcome";
+import { describePromptRefusal } from "./providerError";
 import { copyClaudeMdToAgentsMd, finalTextFromSessionFile, hasClaudeMd, parseAgentsMdOutput, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, writeNewFile, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
@@ -123,7 +127,7 @@ import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessag
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
-  captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
+  captureSnapshot, deleteSessionSnapshots, discardSnapshot, findRestoreTarget, listSnapshots,
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
@@ -1064,6 +1068,8 @@ export function registerIpc(
       memoryWorkspaceDir,
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
+      // §13 round 27: generate_image exists only with the switch on AND an OpenRouter credential.
+      imageModel: builtins.images && openRouterReady() ? resolveImageModel(IMAGE_MODELS, getImageModel()) ?? undefined : undefined,
       skills: entries.map((e) => e.skill.id),
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No
@@ -1089,6 +1095,8 @@ export function registerIpc(
    * supportsVision, same rule).
    */
   let visionModels: Array<{ provider: string; id: string; input?: string[] }> | null = null;
+  /** §13 round 27: OpenRouter is the only provider Pi lists image models under — a key or a sign-in. */
+  const openRouterReady = (): boolean => !!providerKeyStatus().openrouter || authJsonProviders(agentDir()).includes("openrouter");
   const sessionCanSeeImages = async (workspace?: string, sessionId?: string): Promise<boolean> => {
     try {
       const ref = resolveSpawnModel(workspace, sessionId);
@@ -2266,6 +2274,35 @@ export function registerIpc(
       // above. The conversion itself carries the deadline (documents.ts
       // SIGKILLs at 30 s), so this needs no second timer — but the reply stays
       // idempotent, because "always answers" has to survive a throw as well.
+      // §13 round 27: generate_image's file. Main writes, confined and never overwriting, and
+      // ALWAYS answers — or the bridge hangs.
+      const ir = parseImageSave(r as { method?: string; title?: string });
+      if (ir) {
+        let answered = false;
+        const reply = (v: unknown): void => {
+          if (answered) return;
+          answered = true;
+          client.respondUi(r.id, { value: JSON.stringify(v) });
+        };
+        try {
+          const wsId = meta?.workspaceId;
+          if (!wsId) throw new Error("This session has no workspace to save into.");
+          writeNewFile(roots(), wsId, ir.path, Buffer.from(ir.data, "base64"));
+          void log.append({ type: "image.generated", sessionId, workspaceId: wsId, data: { path: ir.path, model: ir.model, bytes: Math.floor((ir.data.length * 3) / 4) } });
+          reply({ ok: true, path: ir.path });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          reply({
+            ok: false,
+            error: /EEXIST/.test(msg)
+              ? takenNameRefusal(ir.path)
+              : msg === "Path escapes workspace"
+                ? `${ir.path} is outside the workspace. Save inside it.`
+                : msg,
+          });
+        }
+        return;
+      }
       const dr = parseDocumentReq(r as { method?: string; title?: string });
       if (dr) {
         void (async () => {
@@ -3245,6 +3282,29 @@ export function registerIpc(
     return exportSessionHtml(piRuntimeDir(), file, r.filePath);
   });
 
+  // §7: any picture's zoom view — Copy puts a real image on the clipboard, Save… writes the file.
+  // Electron 44's clipboard is the W3C shape (`write([ClipboardItem])`). Always PNG: a JPEG or WebP
+  // entry doesn't paste into most apps, and nativeImage re-encodes any raster type.
+  ipcMain.handle("hv:image-copy", async (_e, dataUrl: string) => {
+    const img = parseImageDataUrl(dataUrl);
+    const png = img ? nativeImage.createFromBuffer(img.bytes).toPNG() : null;
+    if (!png?.length) throw new Error("That picture can't be copied.");
+    await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
+  });
+  ipcMain.handle("hv:image-save-as", async (e, dataUrl: string, name?: string) => {
+    const img = parseImageDataUrl(dataUrl);
+    if (!img) throw new Error("That picture can't be saved.");
+    const base = (typeof name === "string" ? name : "image").replace(/[/\\?%*:|"<>]/g, "-").replace(/\.[a-z0-9]+$/i, "").slice(0, 80).trim() || "image";
+    const r = await dialog.showSaveDialog(ownerOf(e), {
+      title: "Save picture",
+      defaultPath: `${base}.${img.ext}`,
+      filters: [{ name: "Image", extensions: [img.ext] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false as const, canceled: true };
+    fs.writeFileSync(r.filePath, img.bytes);
+    return { ok: true as const, path: r.filePath };
+  });
+
   ipcMain.handle("hv:close-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
     await endSession(sessionId, terminals_);
     return { deleted: purgeIfEmpty(sessionId) };
@@ -3558,7 +3618,7 @@ export function registerIpc(
     openFiles?: string[],
     documents?: string[],
     opts: { source?: "user" | "schedule" } = {},
-  ): Promise<{ warnings: string[] }> => {
+  ): Promise<{ warnings: string[]; disposition: PromptDisposition }> => {
     const bySchedule = opts.source === "schedule";
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
@@ -3585,6 +3645,9 @@ export function registerIpc(
       if (!meta) throw new Error("Unknown session");
       client = await startClient(meta, !!meta.piSessionFile);
     }
+    // Round 27: what main knew BEFORE this prompt. agent_start now marks busy too, so a turn Pi
+    // started on its own (an async sub-agent result) counts — the renderer's flag can't see it yet.
+    const wasBusy = activity.isBusy(sessionId);
     activity.prompted(sessionId);
     // The sidebar orders by last use, and prompting IS use. `touch` rather than
     // `update` so `updatedAt` keeps meaning "metadata changed" — see store.ts.
@@ -3699,7 +3762,11 @@ export function registerIpc(
     // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
     // failure must never block the prompt.
     //
-    // Steers get NO snapshot, and NOT as an oversight to fix later: a steer
+    // Round 27: "steer" is now on EVERY send (Pi ignores it when idle), so the
+    // guard reads MAIN's busy knowledge instead of the renderer's guess, and a
+    // snapshot taken for a message Pi then QUEUES is discarded below.
+    //
+    // A message joining a running turn gets NO snapshot, and NOT as an oversight: it
     // means the agent is mid-turn BY DEFINITION, so captureSnapshot would copy
     // files while a write tool is running, record torn content, and a later
     // restore would write that torn content back. Non-steer prompts are safe
@@ -3712,9 +3779,10 @@ export function registerIpc(
     // (restores LESS than asked) or on nothing at all. The confirm dialog
     // reports the "nothing" case and disables Rewind when that is the whole
     // outcome (ChatView rewind confirm).
-    if (behavior !== "steer" && meta?.workspaceId) {
+    let snap: { seq: number } | null = null;
+    if (!wasBusy && meta?.workspaceId) {
       try {
-        captureSnapshot(
+        snap = captureSnapshot(
           snapshotDir(), sessionId, roots(), meta.workspaceId,
           "pre", new Date().toISOString(),
         );
@@ -3732,7 +3800,8 @@ export function registerIpc(
     // schedule run starting is when `session_opened` "scheduled" is counted
     // (new or reused session alike).
     // A steer or follow-up sent mid-turn joins that turn; it never restarts it.
-    if (!turns.isBusy(sessionId) && startsTurn(msg)) turns.start(sessionId, bySchedule);
+    const startedHere = !turns.isBusy(sessionId) && startsTurn(msg);
+    if (startedHere) turns.start(sessionId, bySchedule);
     if (bySchedule) {
       const ws = meta?.workspaceId;
       track("session_opened", { kind: "scheduled", inWorktree: !!ws && worktrees.projectOf(ws) !== ws });
@@ -3747,14 +3816,36 @@ export function registerIpc(
     // and it carries the TYPED text rather than `outgoing`: the user sees what
     // they wrote, exactly as the composer shows it.
     if (bySchedule) send("hv:session-prompted", { sessionId, text: msg });
+    // Round 27: never refused for "already processing" — Pi ignores streamingBehavior when
+    // idle, and its disposition says what it did. A follow-up keeps its own behavior.
+    // §39: a prompt that started no turn of its own must not leave one open.
+    const undo = (): void => {
+      if (startedHere) turns.discard(sessionId);
+      if (snap) discardSnapshot(snapshotDir(), sessionId, snap.seq);
+    };
+    let out;
     try {
-      await client.send(promptCommand(outgoing, behavior, images));
+      out = promptOutcome(await client.send(promptCommand(outgoing, behavior ?? "steer", images)));
     } catch (err) {
-      // §39: a prompt Pi refused never started a turn — do not leave one open.
-      if (!behavior) turns.discard(sessionId);
+      undo();
+      activity.restoreBusy(sessionId, wasBusy);
       throw err;
     }
-    return { warnings };
+    if (!out.ok) {
+      undo();
+      activity.restoreBusy(sessionId, wasBusy);
+      throw new Error(describePromptRefusal(out.error));
+    }
+    // Queued: it joins the running turn — no turn of its own, and its snapshot was mid-turn.
+    if (out.disposition === "queued") undo();
+    // Handled: an extension command took it — no run started, so nothing will clear busy.
+    if (out.disposition === "handled") {
+      undo();
+      activity.restoreBusy(sessionId, wasBusy);
+    }
+    // The composer guessed "busy" and sent a steer, but Pi started a turn: nothing drew the bubble.
+    if (behavior === "steer" && out.disposition === "started" && !bySchedule) send("hv:session-prompted", { sessionId, text: msg });
+    return { warnings, disposition: out.disposition };
   };
 
   ipcMain.handle(
@@ -3781,6 +3872,27 @@ export function registerIpc(
       return result;
     },
   );
+
+  // §13 round 27: the Images row — whether it can work, and the priced models.
+  ipcMain.handle("hv:image-settings", () => ({
+    available: openRouterReady(),
+    model: resolveImageModel(IMAGE_MODELS, getImageModel()),
+    models: IMAGE_MODELS,
+  }));
+  ipcMain.handle("hv:image-model-set", async (_e, id: string) => {
+    if (!IMAGE_MODELS.some((m) => m.id === id)) throw new Error("Not an image model HappyVibe offers");
+    setImageModel(id);
+    scheduleRuntimeReload("tools", "global", null);
+    await restartUtility();
+  });
+
+  // §7 round 27: take every queued message back. Pi's answer names exactly what it cleared,
+  // which is how the renderer tells a cleared text from one Pi delivered at the same moment.
+  ipcMain.handle("hv:clear-queue", async (_e, sessionId: string) => {
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client) return { steering: [], followUp: [] };
+    return clearedTexts(await client.send({ type: "clear_queue" }));
+  });
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
     await (manager.get(sessionId) as PiClient | null)?.send({ type: "abort" });

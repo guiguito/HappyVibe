@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyDelta, updateToolCard, indexTool, mergeIntoLastAssistant } from "../src/renderer/src/streaming";
+import { applyDelta, updateToolCard, indexTool, indexTools, mergeIntoLastAssistant } from "../src/renderer/src/streaming";
 import type { TranscriptItem } from "../src/renderer/src/components/Transcript";
 
 describe("applyDelta", () => {
@@ -87,4 +87,28 @@ test("empty text never mutates the transcript", () => {
 test("merge on an empty transcript starts the bubble", () => {
   const out = mergeIntoLastAssistant([], "hello");
   expect(out).toEqual([{ kind: "assistant", text: "hello" }]);
+});
+
+test("round 27: indexTools maps every tool card to its CURRENT position", () => {
+  const items = [
+    { kind: "user", text: "a" },
+    { kind: "tool", card: { toolCallId: "t1" } },
+    { kind: "assistant", text: "b" },
+    { kind: "tool", card: { toolCallId: "t2" } },
+  ] as never[];
+  expect([...indexTools(items)]).toEqual([["t1", 1], ["t2", 3]]);
+  expect([...indexTools(items.slice(1))]).toEqual([["t1", 0], ["t2", 2]]); // a removed bubble shifts every card
+});
+
+test("round 27 review I1: a STALE index never patches another call's card, and the update still lands", () => {
+  const items = [
+    { kind: "tool", card: { toolCallId: "t1", status: "running" } },
+    { kind: "tool", card: { toolCallId: "t2", status: "running" } },
+  ] as never as TranscriptItem[];
+  // Index taken before a bubble ahead of them was removed: positions are off by one.
+  const stale = new Map([["t1", 1], ["t2", 2]]);
+  const next = updateToolCard(items, stale, "t1", (c) => ({ ...c, status: "done" } as never));
+  expect((next[0] as never as { card: { status: string } }).card.status).toBe("done");
+  expect((next[1] as never as { card: { status: string } }).card.status).toBe("running");
+  expect(stale.get("t1")).toBe(0); // repaired
 });

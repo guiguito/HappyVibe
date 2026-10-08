@@ -1,0 +1,251 @@
+{
+  "probedAt": "2026-10-08",
+  "models": {
+    "black-forest-labs/flux-3-image": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"black-forest-labs/flux-3-image is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "black-forest-labs/flux.2-flex": {
+      "verdict": "ok",
+      "charged": 0.0495
+    },
+    "black-forest-labs/flux.2-klein-4b": {
+      "verdict": "ok",
+      "charged": 0.01386
+    },
+    "black-forest-labs/flux.2-max": {
+      "verdict": "ok",
+      "charged": 0.0693
+    },
+    "black-forest-labs/flux.2-pro": {
+      "verdict": "ok",
+      "charged": 0.0297
+    },
+    "bytedance-seed/seedream-4.5": {
+      "verdict": "ok",
+      "charged": 0.0396
+    },
+    "bytedance-seed/seedream-5-0-flash": {
+      "verdict": "ok",
+      "charged": 0.01782
+    },
+    "bytedance-seed/seedream-5-0-lite": {
+      "verdict": "ok",
+      "charged": 0.03465
+    },
+    "bytedance-seed/seedream-5-0-pro": {
+      "verdict": "ok",
+      "charged": 0.0891
+    },
+    "google/gemini-2.5-flash-image": {
+      "verdict": "ok",
+      "charged": 0.038345373
+    },
+    "google/gemini-3-pro-image": {
+      "verdict": "ok",
+      "charged": 0.13584186
+    },
+    "google/gemini-3-pro-image-preview": {
+      "verdict": "ok",
+      "charged": 0.13375296
+    },
+    "google/gemini-3.1-flash-image": {
+      "verdict": "ok",
+      "charged": 0.066532455
+    },
+    "google/gemini-3.1-flash-image-preview": {
+      "verdict": "ok",
+      "charged": 0.0675873
+    },
+    "google/gemini-3.1-flash-lite-image": {
+      "verdict": "ok",
+      "charged": 0.0332662275
+    },
+    "inclusionai/ming-image-0.1-design": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"inclusionai/ming-image-0.1-design is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "inclusionai/ming-image-0.1-design-layer": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"inclusionai/ming-image-0.1-design-layer is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "krea/krea-2-large": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"krea/krea-2-large is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "krea/krea-2-medium": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"krea/krea-2-medium is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "krea/krea-2-medium-turbo": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"krea/krea-2-medium-turbo is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "meta/muse-image": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"meta/muse-image is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "microsoft/mai-image-2.5": {
+      "verdict": "ok",
+      "charged": 0.04769127
+    },
+    "microsoft/mai-image-2.5-pro": {
+      "verdict": "ok",
+      "charged": 0.10953063
+    },
+    "microsoft/mai-image-2.6": {
+      "verdict": "ok",
+      "charged": 0.03856248
+    },
+    "microsoft/mai-image-2.6-flash": {
+      "verdict": "ok",
+      "charged": 0.0192753
+    },
+    "openai/gpt-5-image": {
+      "verdict": "ok",
+      "charged": 0.19998
+    },
+    "openai/gpt-5-image-mini": {
+      "verdict": "ok",
+      "charged": 0.04227894
+    },
+    "openai/gpt-5.4-image-2": {
+      "verdict": "ok",
+      "charged": 0.22250448
+    },
+    "openai/gpt-image-1": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"openai/gpt-image-1 is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "openai/gpt-image-1-mini": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"openai/gpt-image-1-mini is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "openai/gpt-image-2": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"openai/gpt-image-2 is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "openai/gpt-image-2.5-flare": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"openai/gpt-image-2.5-flare is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "openai/gpt-image-2.5-sunburst": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"openai/gpt-image-2.5-sunburst is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "qwen/qwen-image-3": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"qwen/qwen-image-3 is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "qwen/qwen-image-3-pro": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"qwen/qwen-image-3-pro is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "recraft/recraft-v3": {
+      "verdict": "ok",
+      "charged": 0.0396
+    },
+    "recraft/recraft-v4": {
+      "verdict": "ok",
+      "charged": 0.0396
+    },
+    "recraft/recraft-v4-pro": {
+      "verdict": "ok",
+      "charged": 0.2475
+    },
+    "recraft/recraft-v4-pro-vector": {
+      "verdict": "ok",
+      "charged": 0.297
+    },
+    "recraft/recraft-v4-styles": {
+      "verdict": "failed",
+      "charged": null,
+      "error": "400: {\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\\"code\\\":\\\"invalid_request_parameter\\\",\\\"message\\\":\\\"style references are required for model recraftv4_styles\\\"}\",\"provider_nam"
+    },
+    "recraft/recraft-v4-styles-pro": {
+      "verdict": "failed",
+      "charged": null,
+      "error": "400: {\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\\"code\\\":\\\"invalid_request_parameter\\\",\\\"message\\\":\\\"style references are required for model recraftv4_styles_pro\\\"}\",\"provider"
+    },
+    "recraft/recraft-v4-styles-pro-vector": {
+      "verdict": "failed",
+      "charged": null,
+      "error": "400: {\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\\"code\\\":\\\"invalid_request_parameter\\\",\\\"message\\\":\\\"style references are required for model recraftv4_styles_pro_vector\\\"}\",\"p"
+    },
+    "recraft/recraft-v4-styles-vector": {
+      "verdict": "failed",
+      "charged": null,
+      "error": "400: {\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\\"code\\\":\\\"invalid_request_parameter\\\",\\\"message\\\":\\\"style references are required for model recraftv4_styles_vector\\\"}\",\"provi"
+    },
+    "recraft/recraft-v4-vector": {
+      "verdict": "ok",
+      "charged": 0.0792
+    },
+    "recraft/recraft-v4.1": {
+      "verdict": "ok",
+      "charged": 0.03465
+    },
+    "recraft/recraft-v4.1-flash": {
+      "verdict": "ok",
+      "charged": 0.00693
+    },
+    "recraft/recraft-v4.1-pro": {
+      "verdict": "ok",
+      "charged": 0.2079
+    },
+    "recraft/recraft-v4.1-pro-vector": {
+      "verdict": "ok",
+      "charged": 0.297
+    },
+    "recraft/recraft-v4.1-utility": {
+      "verdict": "ok",
+      "charged": 0.03465
+    },
+    "recraft/recraft-v4.1-utility-pro": {
+      "verdict": "ok",
+      "charged": 0.2079
+    },
+    "recraft/recraft-v4.1-vector": {
+      "verdict": "ok",
+      "charged": 0.0792
+    },
+    "sourceful/riverflow-v2-fast": {
+      "verdict": "ok",
+      "charged": 0.0198
+    },
+    "sourceful/riverflow-v2-pro": {
+      "verdict": "ok",
+      "charged": 0.1485
+    },
+    "sourceful/riverflow-v2.5-fast": {
+      "verdict": "ok",
+      "charged": 0.01884564
+    },
+    "sourceful/riverflow-v2.5-pro": {
+      "verdict": "ok",
+      "charged": 0.24432903
+    },
+    "x-ai/grok-imagine-image-2.0": {
+      "verdict": "ok",
+      "charged": 0.0396
+    },
+    "x-ai/grok-imagine-image-quality": {
+      "verdict": "ok",
+      "charged": 0.0495
+    }
+  }
+}

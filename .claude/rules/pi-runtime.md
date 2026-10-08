@@ -20,8 +20,12 @@ paths:
   order, so the user's words come last and win). Consequence, deliberate: a workspace
   `.pi/APPEND_SYSTEM.md` is never discovered, so a cloned repo can't rewrite the system prompt.
   `tests/identity-prompt.test.ts` pins both cases and the upstream behaviour.
-- **Pi has a `clear_queue` RPC** (`session.clearQueue()`); abort preserves the queue. Nothing in
-  `src/` calls it — exposing it is a product decision.
+- **`clear_queue` backs the composer's *Take back*** (§7 round 27); abort preserves the queue. It
+  announces itself with an ordinary `queue_update`, so the renderer splits "left the queue" into
+  delivered vs cleared with the RPC answer (`takeCleared`, `queue.ts`).
+- **Every composer send carries `streamingBehavior:"steer"`** (Pi ignores it when idle) and main
+  reads `disposition` (`promptOutcome.ts`). `PiClient.send` resolves `success:false` too — a caller
+  that ignores it drops the message silently.
 - **`toolChoice` can't be set from HappyVibe.** Pi's `buildBaseOptions` allowlist omits it, but the
   per-provider `streamSimple` implementations read `options.toolChoice` directly, and our
   OpenRouter/DeepSeek route (`openai-completions`) forwards it to the wire. There is no CLI flag and

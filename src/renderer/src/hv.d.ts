@@ -420,6 +420,8 @@ interface HvApiCall {
   unpriced?: readonly ("input" | "output" | "cacheRead" | "cacheWrite")[];
   /** The sub-agent that made this call; absent for the session's own calls. */
   agent?: string;
+  /** Round 27: absent for a model reply. */
+  kind?: "image" | "cache-refresh" | "compaction" | "tool";
 }
 
 /** Mirrors LedgerTotal in src/main/calls.ts. */
@@ -837,8 +839,16 @@ interface HvApi {
     openFiles?: string[],
     /** §31: absolute paths of attached documents — main converts and injects them. */
     documents?: string[]
-  ): Promise<{ warnings: string[] }>;
+  ): Promise<{ warnings: string[]; disposition: "started" | "queued" | "handled" }>;
   abortSession(sessionId: string): Promise<void>;
+  /** §7 round 27: Take back — the texts Pi removed from the queue. */
+  clearQueue(sessionId: string): Promise<{ steering: string[]; followUp: string[] }>;
+  /** §13 round 27: the Images row — OpenRouter credential present, the chosen and the priced models. */
+  imageSettings(): Promise<{ available: boolean; model: string | null; models: Array<{ id: string; name: string; perImage: number }> }>;
+  imageModelSet(id: string): Promise<void>;
+  /** §7: the zoom view's Copy (a real image on the clipboard) and Save… (a save dialog). */
+  imageCopy(dataUrl: string): Promise<void>;
+  imageSaveAs(dataUrl: string, name?: string): Promise<{ ok: true; path: string } | { ok: false; canceled: true }>;
   // W2.1: per-session model override + image attach
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
   pickImage(): Promise<{ data: string; mimeType: string; name: string } | null>;
@@ -1087,8 +1097,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; skills: boolean; coreOff: string[] }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; images: boolean; skills: boolean; coreOff: string[] }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; images?: boolean; skills?: boolean; coreOff?: string[] }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 

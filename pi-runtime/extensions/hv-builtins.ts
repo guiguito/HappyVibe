@@ -105,7 +105,7 @@ export function offToolRefusal(tool: string, b: Pick<BuiltinToggles, "coreOff">)
 }
 
 export function parseBuiltins(raw: string | undefined): BuiltinToggles {
-  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: true, skills: true, coreOff: [] };
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: false, skills: true, coreOff: [] };
   if (!raw) return out;
   try {
     const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; skills: boolean; coreOff: unknown[] }>;
@@ -120,7 +120,7 @@ export function parseBuiltins(raw: string | undefined): BuiltinToggles {
     if (p.schedules === false) out.schedules = false;
     if (p.mcp === false) out.mcp = false;
     if (p.subagents === false) out.subagents = false;
-    if (p.workflows === false) out.workflows = false;
+    if (p.workflows === true) out.workflows = true; // §13 round 27: off unless chosen
     if (p.skills === false) out.skills = false;
     out.coreOff = normalizeCoreOff(p.coreOff);
     if (typeof p.memoryAppend === "string") out.memoryAppend = p.memoryAppend;

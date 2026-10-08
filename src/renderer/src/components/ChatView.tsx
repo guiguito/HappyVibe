@@ -161,6 +161,7 @@ export function ChatView({
   onTogglePlan,
   onOpenAgentsMd,
   onSend,
+  onTakeBackQueue,
   pageRefs,
   onDropPageRef,
   onClearPageRefs,
@@ -270,6 +271,8 @@ export function ChatView({
    * Only the recording indicator reads it, to choose docked vs viewport-fixed.
    */
   visible?: boolean;
+  /** §7 round 27: Take back — every queued message returns to the message box. */
+  onTakeBackQueue?: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[], documents?: DocumentAttachment[], usage?: UsageParams) => void;
   /**
    * §28: page-element comments the user picked in the embedded browser. They
@@ -1588,26 +1591,34 @@ export function ChatView({
           <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">
             <span
               className="text-[10px] font-bold uppercase tracking-widest text-ink-soft"
-              title="Queued messages are kept even if you press Stop. Pi can't unqueue messages yet."
+              title="Queued messages are kept even if you press Stop."
             >
               queued · kept on stop
             </span>
+            {onTakeBackQueue && (
+              <button
+                type="button"
+                onClick={onTakeBackQueue}
+                title="Puts every queued message back in the message box. Images attached to a queued message aren't kept."
+                className="rounded-full border-2 border-line bg-card px-2.5 py-0.5 text-xs font-bold hover:border-ink cursor-pointer"
+              >Take back</button>
+            )}
             {queue.steering.map((m, i) => (
               <span
                 key={`s-${i}`}
-                title={`Queued — Pi can't unqueue messages yet. Delivered between tool calls: ${m}${hint ? `\n${hint}.` : ""}`}
+                title={`Queued — delivered between tool calls: ${stripInjectedBlocks(m)}${hint ? `\n${hint}.` : ""}`}
                 className="max-w-56 truncate rounded-full border-2 border-honey bg-honey-soft px-2.5 py-0.5 text-xs font-semibold"
               >
-                ↪ {m}
+                ↪ {stripInjectedBlocks(m)}
               </span>
             ))}
             {queue.followUp.map((m, i) => (
               <span
                 key={`f-${i}`}
-                title={`Queued — Pi can't unqueue messages yet. Runs after this turn: ${m}${hint ? `\n${hint}.` : ""}`}
+                title={`Queued — runs after this turn: ${stripInjectedBlocks(m)}${hint ? `\n${hint}.` : ""}`}
                 className="max-w-56 truncate rounded-full border-2 border-sky/50 bg-card px-2.5 py-0.5 text-xs font-semibold"
               >
-                ⏭ {m}
+                ⏭ {stripInjectedBlocks(m)}
               </span>
             ))}
           </div>

@@ -368,3 +368,42 @@ describe("readSessionFile confinement", () => {
     expect(readSessionFile(sessions, undefined)).toBeNull();
   });
 });
+
+describe("round 27 — the three other shapes Pi's getSessionStats sums", () => {
+  const usage = { input: 10, output: 1290, cacheRead: 0, cacheWrite: 0, totalTokens: 1300, cost: { input: 0.0000025, output: 0.001935, cacheRead: 0, cacheWrite: 0, total: 0.0019375 } };
+
+  test("a tool result carrying usage is an Image row, named by its details", () => {
+    const jsonl = [
+      assistant(),
+      line({ type: "message", message: { role: "toolResult", timestamp: 1785395100000, toolName: "generate_image", usage, details: { provider: "openrouter", model: "google/gemini-3.1-flash-lite-image" } } }),
+    ].join("\n");
+    const calls = parseCalls(jsonl);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ provider: "openrouter", model: "google/gemini-3.1-flash-lite-image", output: 1290, cost: 0.0019375, billing: "metered", kind: "image" });
+  });
+
+  test("a tool result WITHOUT usage is still skipped", () => {
+    expect(parseCalls(line({ type: "message", message: { role: "toolResult", timestamp: 2, toolName: "read" } }))).toEqual([]);
+  });
+
+  test("a cache_warm usage entry is a Cache refresh row with an ISO timestamp", () => {
+    const calls = parseCalls(line({ type: "usage", timestamp: "2026-10-08T10:00:00.000Z", kind: "cache_warm", provider: "anthropic", model: "claude-sonnet-4-5", usage }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ ts: "2026-10-08T10:00:00.000Z", provider: "anthropic", kind: "cache-refresh" });
+  });
+
+  test("a compaction entry with usage is a Compaction row, priced under the session's last model", () => {
+    const jsonl = [assistant(), line({ type: "compaction", timestamp: "2026-10-08T11:00:00.000Z", summary: "…", usage })].join("\n");
+    const calls = parseCalls(jsonl);
+    expect(calls[1]).toMatchObject({ provider: "openrouter", model: "z-ai/glm-5.2", kind: "compaction" });
+  });
+
+  test("a pre-1.0 compaction entry (no usage) adds nothing", () => {
+    expect(parseCalls(line({ type: "compaction", timestamp: "2026-07-05T00:00:00.000Z", summary: "…" }))).toEqual([]);
+  });
+
+  test("a plan provider's refresh is plan, not dollars", () => {
+    const calls = parseCalls(line({ type: "usage", timestamp: "2026-10-08T10:00:00.000Z", kind: "cache_warm", provider: "openai-codex", model: "gpt-5.5", usage }));
+    expect(calls[0].billing).toBe("plan");
+  });
+});

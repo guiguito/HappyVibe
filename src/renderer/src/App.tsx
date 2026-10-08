@@ -41,7 +41,7 @@ import {
 } from "./permission";
 import { answersSummary, parseAskUser, type AskAnswer } from "./askUser";
 import { AskUserModal } from "./components/AskUserModal";
-import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
+import { applyQueueUpdate, emptyQueue, takeCleared, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { MemoryView } from "./components/MemoryView";
@@ -60,7 +60,9 @@ import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
-import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
+import { applyDelta, updateToolCard, mergeIntoLastAssistant, indexTools } from "./streaming";
+import { sendOutcome } from "./sendOutcome";
+import { stripInjectedBlocks } from "./mentions";
 import type { Activity, ToolDraft } from "./busyStatus";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
@@ -655,6 +657,16 @@ export default function App(): React.JSX.Element {
   const pendingError = useRef<Record<string, { raw: string; provider?: string; model?: string }>>({});
   const retryNotice = useRef<Record<string, number>>({});
 
+  const sendSeq = useRef(0);
+  /** Round 27: per-session Take back state — see takeBackQueue. */
+  const clearing = useRef<Record<string, { inFlight: boolean; held: string[]; owed: string[] }>>({});
+  /** Round 27: take back the bubble a send drew, and re-index — removal shifts every tool card. */
+  const removeSent = (sid: string, sendId: number): void =>
+    setTranscripts((p) => {
+      const next = (p[sid] ?? []).filter((it) => !(it.kind === "user" && it.sendId === sendId));
+      toolIndex.current[sid] = indexTools(next);
+      return { ...p, [sid]: next };
+    });
   const appendItem = (sid: string, item: TranscriptItem): void =>
     setTranscripts((p) => {
       const items = p[sid] ?? [];
@@ -787,11 +799,7 @@ export default function App(): React.JSX.Element {
       const next = [...restored, { ...items[0], loaded: true }, ...items.slice(1)];
       // Prepending shifts EVERY position, so the whole index is rebuilt — a
       // stale one would make a late tool_execution_end patch the wrong card.
-      const map = new Map<string, number>();
-      next.forEach((it, i) => {
-        if (it.kind === "tool") map.set(it.card.toolCallId, i);
-      });
-      toolIndex.current[sid] = map;
+      toolIndex.current[sid] = indexTools(next);
       return { ...p, [sid]: next };
     });
   };
@@ -1823,7 +1831,19 @@ export default function App(): React.JSX.Element {
         const { queue, delivered } = applyQueueUpdate(queueRef.current[sid] ?? emptyQueue, e);
         queueRef.current[sid] = queue;
         setQueues((p) => ({ ...p, [sid]: queue }));
-        for (const text of delivered) {
+        // Round 27: while a Take back is in flight, a text that left the queue may have been
+        // CLEARED rather than delivered — clear_queue's answer decides (takeBackQueue).
+        const c = clearing.current[sid];
+        let landed = delivered;
+        if (c?.inFlight) {
+          c.held.push(...delivered);
+          landed = [];
+        } else if (c?.owed.length) {
+          const t = takeCleared(delivered, c.owed);
+          c.owed = t.owed;
+          landed = t.delivered;
+        }
+        for (const text of landed) {
           commitStream(sid); // flush any live bubble before the delivered user item
           // A steer delivered mid-turn does NOT restart the clock: the turn
           // the user is waiting on is still the one that began with their
@@ -2748,11 +2768,7 @@ export default function App(): React.JSX.Element {
             : [];
           const merged = [...head, ...items, ...extraPlans];
           // Rebuild the tool index so any late tool_execution_end still matches.
-          const map = new Map<string, number>();
-          merged.forEach((it, i) => {
-            if (it.kind === "tool") map.set(it.card.toolCallId, i);
-          });
-          toolIndex.current[id] = map;
+          toolIndex.current[id] = indexTools(merged);
           return { ...p, [id]: merged };
         });
       }
@@ -2805,18 +2821,20 @@ export default function App(): React.JSX.Element {
     // The message shows as a chip (queue_update) and only joins the
     // transcript when Pi delivers it.
     if (busy[sid]) {
+      // Round 27: if Pi starts it as a turn instead, main's hv:session-prompted draws the bubble.
       try {
         const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles, documentPaths);
         noteWarnings(warnings);
         if (usage) trackUi("prompt_sent", usage);
       } catch (err) {
-        surface(err);
+        refused(sid, msg, err);
       }
       return;
     }
+    const sendId = ++sendSeq.current;
     // Round 15: stamp when it was sent. This is also what starts the turn
     // clock — turnStart below is read at agent_end to fill the duration.
-    appendItem(sid, { kind: "user", text: msg, ts: Date.now(), images: attachments?.map(attachmentUrl), documents: documentChips });
+    appendItem(sid, { kind: "user", text: msg, ts: Date.now(), images: attachments?.map(attachmentUrl), documents: documentChips, sendId });
     turnStart.current[sid] = Date.now();
     streaming.current[sid] = false;
     // A fresh prompt ends any abort window: this turn's text belongs to a new
@@ -2828,13 +2846,48 @@ export default function App(): React.JSX.Element {
     setActivity((p) => ({ ...p, [sid]: activityRef.current[sid] }));
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);
+      const { warnings, disposition } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);
+      // Round 27: Pi says what it did. Queued (a turn the composer hadn't heard of) → the chip and
+      // the delivery draw it; handled (a command) → no run, so the dots stop.
+      const o = sendOutcome(false, { disposition });
+      if (o.removeBubble) removeSent(sid, sendId);
+      if (o.idle) setBusy((p) => ({ ...p, [sid]: false }));
       noteWarnings(warnings);
       if (usage) trackUi("prompt_sent", usage);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
+      refused(sid, msg, err, sendId);
+    }
+  };
+
+  /** §7 round 27: Take back — every queued message returns to the box; a delivered one stays a bubble. */
+  const takeBackQueue = async (sid: string): Promise<void> => {
+    // A second click mid-flight would reset `held` and drop a message Pi delivered meanwhile.
+    if (clearing.current[sid]?.inFlight) return;
+    clearing.current[sid] = { inFlight: true, held: [], owed: clearing.current[sid]?.owed ?? [] };
+    try {
+      const r = await window.hv.clearQueue(sid);
+      const cleared = [...r.steering, ...r.followUp];
+      const prev = clearing.current[sid];
+      const t = takeCleared(prev.held, cleared);
+      clearing.current[sid] = { inFlight: false, held: [], owed: [...prev.owed, ...t.owed] };
+      for (const text of t.delivered) appendItem(sid, { kind: "user", text, ts: Date.now() });
+      if (cleared.length) {
+        setComposerInsert((prev) => ({ sid, text: cleared.map(stripInjectedBlocks).join("\n\n"), nonce: (prev?.nonce ?? 0) + 1 }));
+      }
+    } catch (err) {
+      const held = clearing.current[sid]?.held ?? [];
+      clearing.current[sid] = { inFlight: false, held: [], owed: [] };
+      for (const text of held) appendItem(sid, { kind: "user", text, ts: Date.now() }); // Pi cleared nothing we know of
       surface(err);
     }
+  };
+
+  /** Round 27: Pi (or main) refused the message — say why and give the words back. */
+  const refused = (sid: string, msg: string, err: unknown, sendId?: number): void => {
+    if (sendId !== undefined) removeSent(sid, sendId);
+    appendItem(sid, { kind: "notice", text: ipcMessage(err) });
+    setComposerInsert((prev) => ({ sid, text: stripInjectedBlocks(msg), nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
   // B2: "restart & resend" for a crashed session — restart the agent, then
@@ -4008,6 +4061,7 @@ export default function App(): React.JSX.Element {
             onChip={(text) => setComposerInsert((prev) => ({ sid, text, nonce: (prev?.nonce ?? 0) + 1 }))}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={(msg, behavior, images, mentions, documents, usage) => void send(sid, msg, behavior, images, mentions, documents, usage)}
+            onTakeBackQueue={() => void takeBackQueue(sid)}
             pageRefs={pageRefs[sid]}
             onDropPageRef={(i) =>
               setPageRefs((p) => ({ ...p, [sid]: (p[sid] ?? []).filter((_, j) => j !== i) }))

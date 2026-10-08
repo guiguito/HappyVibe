@@ -370,6 +370,11 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     // §31: the model's own sentence leads, the file name is the fallback. The
     // path rides `path` so the card can offer Reveal in Finder — resolveCardPath
     // returns null for a document, which is what stops it offering the editor.
+    // §13 round 27: the model's sentence leads; the file it makes is the fallback.
+    case "generate_image": {
+      const p = str("path");
+      return { icon: "file-plus", label: intent ?? (p ? `Making ${basename(p)}` : "Making an image"), ...(p ? { path: p } : {}) };
+    }
     case "document_read": {
       const p = str("path");
       return {

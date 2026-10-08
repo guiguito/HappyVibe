@@ -1,5 +1,5 @@
 import { describe, expect, it, test } from "vitest";
-import { describeProviderError, retryNoticeText } from "../src/main/providerError";
+import { describePromptRefusal, describeProviderError, retryNoticeText } from "../src/main/providerError";
 
 /**
  * Provider errors reach the transcript as raw wire text ("529 status code (no
@@ -201,5 +201,27 @@ describe("§39 kind — the only part that leaves the machine", () => {
     expect(k("400 bad request")).toBe("other");
     expect(k("something odd")).toBe("other");
     expect(k("")).toBe("other");
+  });
+});
+
+describe("round 27 — a refused prompt, in the app's words", () => {
+  test("compaction", () => {
+    expect(describePromptRefusal("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."))
+      .toBe("The agent is compacting its context. Send your message again when it finishes.");
+  });
+  test("an expired sign-in never repeats Pi's /login advice", () => {
+    const s = describePromptRefusal(`Authentication failed for "openrouter". Credentials may have expired or network is unavailable. Run '/login openrouter' to re-authenticate.`);
+    expect(s).toBe("Your sign-in for openrouter has expired or can't be reached. Sign in again on Models, then send your message again.");
+    expect(s).not.toContain("/login");
+  });
+  test("a missing key", () => {
+    expect(describePromptRefusal("No API key found for deepseek.\n\nUse /login …")).toBe("There's no key or sign-in for deepseek. Add one on Models, then send your message again.");
+  });
+  test("no model", () => {
+    expect(describePromptRefusal("No model selected.\n\n…\n\nThen use /model to select a model.")).toBe("This session has no model. Pick one in the model menu, then send your message again.");
+  });
+  test("anything else keeps only Pi's first line, and never an empty sentence", () => {
+    expect(describePromptRefusal("Something odd\nRun /foo")).toBe("The agent didn't take your message (Something odd). Send it again.");
+    expect(describePromptRefusal("")).toBe("The agent didn't take your message. Send it again.");
   });
 });

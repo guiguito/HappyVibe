@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import path from "node:path";
 import { PiClient } from "../src/main/pi/PiClient";
 import { promptCommand } from "../src/main/pi/commands";
-import { applyQueueUpdate, emptyQueue } from "../src/renderer/src/queue";
+import { applyQueueUpdate, emptyQueue, takeCleared } from "../src/renderer/src/queue";
 
 test("promptCommand carries streamingBehavior only when given", () => {
   expect(promptCommand("hi")).toEqual({ type: "prompt", message: "hi" });
@@ -50,4 +50,18 @@ test("applyQueueUpdate mirrors chips and reports delivered messages", () => {
   const { queue: q3, delivered: d3 } = applyQueueUpdate(q2, { type: "queue_update" });
   expect(q3).toEqual(emptyQueue);
   expect(d3).toEqual(["b", "c"]);
+});
+
+// Round 27: Pi announces clear_queue with an ordinary queue_update, so a text that left the
+// queue was either DELIVERED (transcript) or CLEARED (back to the box). The clear_queue answer
+// names exactly what it cleared; the event and the answer can arrive in either order.
+test("takeCleared: what Pi cleared is consumed, the rest was delivered", () => {
+  expect(takeCleared(["a", "b"], ["b"])).toEqual({ delivered: ["a"], owed: [] });
+});
+test("takeCleared: the same text queued twice is a multiset, not a set", () => {
+  expect(takeCleared(["a", "a"], ["a"])).toEqual({ delivered: ["a"], owed: [] });
+});
+test("takeCleared: an answer that arrives BEFORE its event leaves the texts owed", () => {
+  expect(takeCleared([], ["a", "b"])).toEqual({ delivered: [], owed: ["a", "b"] });
+  expect(takeCleared(["a", "b"], ["a", "b"])).toEqual({ delivered: [], owed: [] });
 });

@@ -47,6 +47,9 @@ export interface ToolSwitchState {
   subagents: boolean;
   skills: boolean;
   coreOff: string[];
+  /** §13 round 27: generate_image counts only while it can register (an OpenRouter credential). */
+  images?: boolean;
+  imagesAvailable?: boolean;
 }
 
 /** The Core tools row's click: the shell is one switch, so turning it on clears both names. */
@@ -58,6 +61,6 @@ export function toggleCore(off: string[], name: string): string[] {
 
 /** True when the session would start with no tool at all — every family off, every core tool off. */
 export function allToolsOff(b: ToolSwitchState, shell: "bash" | "powershell"): boolean {
-  const families = [b.plan, b.askUser, b.terminal, b.browser, b.web, b.document, b.memory, b.schedules, b.mcp, b.subagents, b.skills];
+  const families = [b.plan, b.askUser, b.terminal, b.browser, b.web, b.document, b.memory, b.schedules, b.mcp, b.subagents, b.skills, !!(b.images && b.imagesAvailable)];
   return families.every((on) => !on) && coreToolNames(shell).every((t) => b.coreOff.includes(t));
 }

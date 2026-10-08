@@ -3,12 +3,15 @@ import path from "node:path";
 import fs from "node:fs";
 import {
   FEATURED_PROVIDER_IDS,
+  IMAGE_MODELS,
   OAUTH_CATALOG,
   OAUTH_NOT_ENABLED,
   PROVIDER_CATALOG,
   REGISTRY_MODELS,
 } from "../src/main/providerCatalog.generated";
 import { KEY_RESOLVED_PLAN_PROVIDERS, PLAN_PROVIDERS } from "../src/main/calls";
+import { offeredImageModels } from "../pi-runtime/extensions/hv-images";
+import imageProbe from "../tools/provider-catalog/image-probe.json";
 
 /**
  * Pin-bump gate for the generated provider catalog (key-free).
@@ -65,6 +68,27 @@ function modelsOf(p: UpstreamProvider): unknown[] {
 }
 
 describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", () => {
+  test("IMAGE_MODELS is exactly the image models the probe saw work through Pi, cheapest first", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string }> };
+    expect(IMAGE_MODELS).toEqual(offeredImageModels(mod.getBuiltinImageModels("openrouter"), imageProbe as never));
+  });
+
+  test("every image model Pi lists has a probe verdict — a bump that adds one fails here: run tools/image-model-probe.mjs --skip-known", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => Array<{ id: string }> };
+    const probed = new Set(Object.keys((imageProbe as { models: Record<string, unknown> }).models));
+    const routers = new Set(["openrouter/auto", "openrouter/auto-beta"]);
+    const missing = mod.getBuiltinImageModels("openrouter").map((x) => x.id).filter((id) => !routers.has(id) && !probed.has(id));
+    expect(missing).toEqual([]);
+  });
+
+  test("only OpenRouter ships image models — a second provider is a product decision, not drift", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => unknown[] };
+    for (const p of await upstream()) {
+      if (p.id === "openrouter") continue;
+      expect(mod.getBuiltinImageModels(p.id), `${p.id} now ships image models`).toHaveLength(0);
+    }
+  });
+
   test("the registry is reachable at the path the generator uses", async () => {
     // The reach itself is the contract: pi-ai is a NESTED scoped dep of
     // pi-coding-agent, not a top-level `pi-ai`. If a bump moves it, the

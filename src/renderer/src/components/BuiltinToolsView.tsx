@@ -33,7 +33,7 @@ export function BuiltinToolsView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Built-in tools</h1>
         <p className="text-sm text-ink-soft mb-8">
-          Abilities HappyVibe gives the agent itself, on by default. Turning one off takes its tools
+          Abilities HappyVibe gives the agent itself, on by default except Workflows. Turning one off takes its tools
           away from every session. To see every tool the agent can call and whether it is allowed,
           open <GoTo view="tools" />.
         </p>

@@ -13,6 +13,8 @@ import { isDelegationTool } from "../../pi-runtime/extensions/hv-rules";
 
 interface Activity {
   busy: boolean;
+  /** Round 27: Pi started a run (agent_start) since the last prompt — restoreBusy must not undo it. */
+  started?: boolean;
   pendingPrompts: number;
   subagents: number;
   /**
@@ -41,14 +43,30 @@ export class SessionActivity {
   prompted(id: string): void {
     const a = this.rec(id);
     a.busy = true;
+    a.started = false;
     a.lastActivityAt = Date.now();
+  }
+
+  /** Pi is mid-run: a prompt was sent or a turn started on its own, and agent_end not seen yet. */
+  isBusy(id: string): boolean {
+    return this.map.get(id)?.busy ?? false;
+  }
+
+  /** Round 27: a prompt Pi refused or handled as a command never started a run — undo `prompted`. */
+  restoreBusy(id: string, busy: boolean): void {
+    const a = this.map.get(id);
+    // A run Pi started since the prompt is real busy — only the prompt's own mark is undone.
+    if (a && !a.started) a.busy = busy;
   }
 
   /** Feed every Pi event; keeps busy/subagent state + last-activity fresh. */
   event(id: string, e: { type?: unknown; toolName?: unknown }): void {
     const a = this.rec(id);
     a.lastActivityAt = Date.now();
-    if (e.type === "agent_end") {
+    if (e.type === "agent_start") {
+      a.busy = true; // round 27: a turn Pi starts itself (an async sub-agent result) is busy too
+      a.started = true;
+    } else if (e.type === "agent_end") {
       a.busy = false;
       a.subagents = 0; // agent_end closes the turn — no dangling subagent counts
     } else if (e.type === "tool_execution_start" && isDelegationTool(e.toolName)) {

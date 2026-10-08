@@ -268,6 +268,14 @@ export function createFile(registeredWorkspaces: string[], workspaceId: string, 
   fs.writeFileSync(abs, "", "utf8");
 }
 
+/** §13 round 27: a new binary file (generate_image). Confined like every writer; `wx` never overwrites. */
+export function writeNewFile(registeredWorkspaces: string[], workspaceId: string, relPath: string, data: Buffer): string {
+  const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, data, { flag: "wx" });
+  return abs;
+}
+
 /** Create a directory (recursive). Refuses if the path already exists. */
 export function createDir(registeredWorkspaces: string[], workspaceId: string, relPath: string): void {
   const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);

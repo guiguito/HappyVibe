@@ -145,7 +145,8 @@ describe("a scheduled run shows the prompt it was given", () => {
 
   it("it is announced BEFORE the send, so it cannot land after the first token", () => {
     const i = ipc.indexOf('send("hv:session-prompted"');
-    const j = ipc.indexOf("await client.send(promptCommand(outgoing, behavior, images))");
+    // Round 27: every send carries "steer if busy" — Pi ignores it when idle.
+    const j = ipc.indexOf('await client.send(promptCommand(outgoing, behavior ?? "steer", images))');
     expect(i).toBeGreaterThan(0);
     expect(i).toBeLessThan(j);
   });

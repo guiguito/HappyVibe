@@ -3,7 +3,7 @@ title: Built-in tools
 description: See the abilities HappyVibe gives the agent and switch off any you don't want.
 ---
 
-Out of the box, the agent can plan, ask you questions, run terminals, drive a browser, read the web, remember, suggest schedules and read documents. It can also use your MCP servers, hand work to subagents, load skills, and use Pi's own tools for files and commands. Each one starts on, and each one has a switch. Turn one off and back on, and its tools come back.
+Out of the box, the agent can plan, ask you questions, run terminals, drive a browser, read the web, remember, suggest schedules, read documents and make images. It can also use your MCP servers, hand work to subagents, load skills, and use Pi's own tools for files and commands. Each one starts on except Workflows, and each one has a switch. Turn one off and back on, and its tools come back.
 
 The one thing here you can't take back is **Clear browsing data**, which signs the agent's browser out of everything.
 
@@ -13,7 +13,7 @@ The one thing here you can't take back is **Clear browsing data**, which signs t
 
 ## What's on the screen
 
-The screen's own intro sums it up: "Abilities HappyVibe gives the agent itself, on by default. Turning one off takes its tools away from every session. To see every tool the agent can call and whether it is allowed, open Agent tools."
+The screen's own intro sums it up: "Abilities HappyVibe gives the agent itself, on by default except Workflows. Turning one off takes its tools away from every session. To see every tool the agent can call and whether it is allowed, open Agent tools."
 
 Below it is one list, under the heading **Built-in Custom Tools**. Each row has a switch on the right. **Core tools** has one switch beside each tool name instead. The switch reads **On** while it's on. Click it to turn it off.
 
@@ -74,6 +74,16 @@ Click its name to read the memory policy the agent follows, and add your own lin
 
 Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB files as Markdown. They're converted on this computer: "nothing is sent anywhere." This row also turns on **Attach document** in the message box. Scanned PDF pages can't be read, and the agent is told which ones they are.
 
+### Images — 1 tool
+
+"Lets the agent make an image and save it as a new file in your project. Each image costs money on your OpenRouter account. The prices below were measured once and are approximate; Session cost shows what OpenRouter actually charged."
+
+Images need an OpenRouter key or sign-in. Without one, the row reads "Needs an OpenRouter key or sign-in. Add one on Models." and the agent doesn't get the tool. Click **Models** in that line to add one.
+
+**Image model** picks the model the agent uses. It lists only the image models HappyVibe has checked work, cheapest first, each with what one test image cost, such as "about $0.007 an image". Your images can cost more or less. The agent can't choose another model. After each image, **Session cost** shows exactly what OpenRouter charged.
+
+Before each image, the approval dialog reads "This makes an image with" the model's name "on your OpenRouter account. It costs money", with the same approximate price, and "It saves a new file:" followed by the file's path in your project. The agent never replaces an existing file. If the name is taken, the agent is asked to pick a new one before any image is made, so nothing is charged. Plan mode and read-only scheduled runs block this tool.
+
 ### Tool intent
 
 "The one-line “why” the model writes for each tool card." Turning it off saves the tokens (the unit models read and bill text in, roughly four characters) that sentence costs. Cards then show a label built from the call itself. Approval dialogs don't change either way: "they always show the factual action, never this sentence."
@@ -88,7 +98,7 @@ Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB fil
 
 ### Workflows — 1 tool
 
-This row sits under **Sub-agents** and switches one of its tools: the one that runs a scripted workflow of several subagents. "It is the heaviest tool the agent carries (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost." While **Sub-agents** is off, this switch is greyed out and reads: "Sub-agents are off, so this is off too."
+This row sits under **Sub-agents** and switches one of its tools: the one that runs a scripted workflow of several subagents. "It is the heaviest tool the agent carries (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost. It is off until you turn it on." While **Sub-agents** is off, this switch is greyed out and reads: "Sub-agents are off, so this is off too."
 
 ### Skills
 

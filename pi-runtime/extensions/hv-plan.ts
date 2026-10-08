@@ -174,7 +174,8 @@ export function planSlug(body: string): string {
 // §12 (2026-09-26): a tintinweb workflow is a SCRIPT that runs inside the app's own Pi process
 // — approving one is approving code — so planning blocks it outright; a single read-only
 // `Agent` delegation stays available below, which is what exploration needs.
-export const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate", "SubagentWorkflow"]);
+// §13 round 27: generate_image writes a file and spends money — blocked while planning (and in read-only runs).
+export const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate", "SubagentWorkflow", "generate_image"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
   // §13 (2026-10-05): read-only MCP discovery — finding a tool or listing resources changes nothing.
