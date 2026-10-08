@@ -13,8 +13,12 @@
  *   {type:"message", message:{role:"assistant", timestamp, provider, model,
  *     usage:{input,output,cacheRead,cacheWrite,cost:{input,output,cacheRead,
  *     cacheWrite,total}}}}
- * Non-message entries (session, model_change, thinking_level_change) and
- * user/toolResult messages are not billed calls and are skipped.
+ * Round 27 (Pi 1.0): getSessionStats also sums three more shapes, and so does
+ * this — a toolResult carrying `usage` (a tool that spends money itself), a
+ * `{type:"usage", kind, provider, model, usage}` entry (cache_warm refreshes),
+ * and a compaction/branch_summary entry carrying `usage` (the summary call).
+ * Everything else — user messages, tool results without `usage`, model_change
+ * and friends — is skipped.
  *
  * The `cost` numbers are Pi's, computed from a price table pinned at the
  * vendored pi-ai version (models.js calculateCost × models.generated.js). They
@@ -61,6 +65,12 @@ export type Billing = "metered" | "plan" | "unknown";
  */
 export const COST_COMPONENTS = ["input", "output", "cacheRead", "cacheWrite"] as const;
 export type CostComponent = (typeof COST_COMPONENTS)[number];
+
+/**
+ * Round 27: what a row is when it is not the model answering. Pi 1.0's getSessionStats sums
+ * these too; the ledger read only assistant messages, so the pill stopped agreeing with Pi.
+ */
+export type CallKind = "image" | "cache-refresh" | "compaction" | "tool";
 
 /**
  * Providers that are ALWAYS a flat subscription, so per-token dollars are
@@ -149,6 +159,8 @@ export interface ApiCall {
    * which is how a reader tells a delegation's row from the session's.
    */
   agent?: string;
+  /** Absent for a model reply. Set for a tool's own spend, a cache refresh or a compaction summary. */
+  kind?: CallKind;
 }
 
 export interface LedgerTotal {
@@ -174,6 +186,42 @@ export interface LedgerTotal {
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
+const tsOf = (v: unknown): number => (typeof v === "string" ? Date.parse(v) || 0 : num(v));
+const strOr = (v: unknown, d: string): string => (typeof v === "string" ? v : d);
+
+/**
+ * The four shapes a Pi 1.0 session file bills in. A compaction entry names no model, so it is
+ * priced under the session's last model — Pi summarises with the session model.
+ * ponytail: an extension-driven compaction on another model would be mislabelled; Pi records
+ * nothing better.
+ */
+function billedOf(
+  entry: Record<string, unknown>,
+  last: { provider: string; model: string },
+): { ts: number; provider: string; model: string; usage: Record<string, unknown>; kind?: CallKind } | null {
+  const m = entry.type === "message" ? (entry.message as Record<string, unknown> | undefined) : undefined;
+  if (m?.role === "assistant") {
+    return { ts: num(m.timestamp), provider: strOr(m.provider, "?"), model: strOr(m.model, "?"), usage: (m.usage ?? {}) as Record<string, unknown> };
+  }
+  if (m?.role === "toolResult" && m.usage) {
+    const d = (m.details ?? {}) as Record<string, unknown>;
+    return {
+      ts: num(m.timestamp), provider: strOr(d.provider, "?"), model: strOr(d.model, strOr(m.toolName, "?")),
+      usage: m.usage as Record<string, unknown>, kind: m.toolName === "generate_image" ? "image" : "tool",
+    };
+  }
+  if (entry.type === "usage" && entry.usage) {
+    return {
+      ts: tsOf(entry.timestamp), provider: strOr(entry.provider, "?"), model: strOr(entry.model, "?"),
+      usage: entry.usage as Record<string, unknown>, kind: entry.kind === "cache_warm" ? "cache-refresh" : "tool",
+    };
+  }
+  if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) {
+    return { ts: tsOf(entry.timestamp), ...last, usage: entry.usage as Record<string, unknown>, kind: "compaction" };
+  }
+  return null;
+}
+
 /**
  * Parse a Pi session file's JSONL into the call ledger. Tolerant by design: the
  * file is appended live, so the last line can be torn mid-write — a bad line is
@@ -186,18 +234,20 @@ export function parseCalls(
 ): ApiCall[] {
   if (!jsonl) return [];
   const calls: ApiCall[] = [];
+  let last = { provider: "?", model: "?" };
   for (const raw of jsonl.split("\n")) {
     if (!raw.trim()) continue;
-    let entry: { type?: string; message?: Record<string, unknown> };
+    let entry: Record<string, unknown>;
     try {
       entry = JSON.parse(raw);
     } catch {
       continue; // torn tail or a line Pi wrote in a shape we don't know
     }
-    const m = entry.type === "message" ? entry.message : undefined;
-    if (!m || m.role !== "assistant") continue;
+    const b = billedOf(entry, last);
+    if (!b) continue;
+    if (!b.kind) last = { provider: b.provider, model: b.model };
 
-    const usage = (m.usage ?? {}) as Record<string, unknown>;
+    const usage = b.usage;
     const input = num(usage.input);
     const output = num(usage.output);
     const cacheRead = num(usage.cacheRead);
@@ -205,7 +255,7 @@ export function parseCalls(
     const costs = (usage.cost ?? {}) as Record<string, unknown>;
     const cost = num(costs.total);
     const tokens = input + output + cacheRead + cacheWrite;
-    const provider = typeof m.provider === "string" ? m.provider : "?";
+    const provider = b.provider;
     const burned: Record<CostComponent, number> = { input, output, cacheRead, cacheWrite };
     // Plan wins over everything: a subscription call's dollars are wrong
     // whether Pi computed them (openai-codex, API rates) or zeroed them
@@ -228,9 +278,9 @@ export function parseCalls(
         ? COST_COMPONENTS.filter((k) => burned[k] > 0 && typeof costs[k] === "number" && costs[k] === 0)
         : [];
     calls.push({
-      ts: new Date(num(m.timestamp)).toISOString(),
+      ts: new Date(b.ts).toISOString(),
       provider,
-      model: typeof m.model === "string" ? m.model : "?",
+      model: b.model,
       input,
       output,
       cacheRead,
@@ -239,6 +289,7 @@ export function parseCalls(
       billing,
       ...(unpriced.length ? { unpriced } : {}),
       ...(agent ? { agent } : {}),
+      ...(b.kind ? { kind: b.kind } : {}),
     });
   }
   return calls;

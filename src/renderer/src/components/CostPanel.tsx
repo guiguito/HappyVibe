@@ -47,6 +47,11 @@ export function unpricedNote(unpriced: readonly (keyof typeof UNPRICED_LABEL)[])
  * the browser's, so this adds no floating surface to fight the z-index scale or
  * the browser-pane coverage hit-test.
  */
+/** Round 27: a row that is not the model answering says what it is (§19). */
+export const CALL_KIND_LABEL: Record<NonNullable<HvApiCall["kind"]>, string> = {
+  image: "Image", "cache-refresh": "Cache refresh", compaction: "Compaction", tool: "Tool",
+};
+
 function InfoDot({ text }: { text: string }): React.JSX.Element {
   return (
     <svg
@@ -262,6 +267,7 @@ export function CostPanel({
                       {c.agent && (
                         <span className="block truncate text-[10px] text-tangerine-deep">↳ {c.agent}</span>
                       )}
+                      {c.kind && <span className="block truncate text-[10px] text-ink-soft">{CALL_KIND_LABEL[c.kind]}</span>}
                     </td>
                     <td className="px-2 py-1.5 font-mono text-right">{fmtNum(c.input)}</td>
                     <td className="px-2 py-1.5 font-mono text-right">{fmtNum(c.output)}</td>

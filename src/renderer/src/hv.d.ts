@@ -420,6 +420,8 @@ interface HvApiCall {
   unpriced?: readonly ("input" | "output" | "cacheRead" | "cacheWrite")[];
   /** The sub-agent that made this call; absent for the session's own calls. */
   agent?: string;
+  /** Round 27: absent for a model reply. */
+  kind?: "image" | "cache-refresh" | "compaction" | "tool";
 }
 
 /** Mirrors LedgerTotal in src/main/calls.ts. */
