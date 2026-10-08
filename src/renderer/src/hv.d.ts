@@ -841,6 +841,8 @@ interface HvApi {
     documents?: string[]
   ): Promise<{ warnings: string[]; disposition: "started" | "queued" | "handled" }>;
   abortSession(sessionId: string): Promise<void>;
+  /** §7 round 27: Take back — the texts Pi removed from the queue. */
+  clearQueue(sessionId: string): Promise<{ steering: string[]; followUp: string[] }>;
   // W2.1: per-session model override + image attach
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
   pickImage(): Promise<{ data: string; mimeType: string; name: string } | null>;

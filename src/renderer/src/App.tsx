@@ -41,7 +41,7 @@ import {
 } from "./permission";
 import { answersSummary, parseAskUser, type AskAnswer } from "./askUser";
 import { AskUserModal } from "./components/AskUserModal";
-import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
+import { applyQueueUpdate, emptyQueue, takeCleared, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { MemoryView } from "./components/MemoryView";
@@ -658,6 +658,8 @@ export default function App(): React.JSX.Element {
   const retryNotice = useRef<Record<string, number>>({});
 
   const sendSeq = useRef(0);
+  /** Round 27: per-session Take back state — see takeBackQueue. */
+  const clearing = useRef<Record<string, { inFlight: boolean; held: string[]; owed: string[] }>>({});
   /** Round 27: take back the bubble a send drew, and re-index — removal shifts every tool card. */
   const removeSent = (sid: string, sendId: number): void =>
     setTranscripts((p) => {
@@ -1829,7 +1831,19 @@ export default function App(): React.JSX.Element {
         const { queue, delivered } = applyQueueUpdate(queueRef.current[sid] ?? emptyQueue, e);
         queueRef.current[sid] = queue;
         setQueues((p) => ({ ...p, [sid]: queue }));
-        for (const text of delivered) {
+        // Round 27: while a Take back is in flight, a text that left the queue may have been
+        // CLEARED rather than delivered — clear_queue's answer decides (takeBackQueue).
+        const c = clearing.current[sid];
+        let landed = delivered;
+        if (c?.inFlight) {
+          c.held.push(...delivered);
+          landed = [];
+        } else if (c?.owed.length) {
+          const t = takeCleared(delivered, c.owed);
+          c.owed = t.owed;
+          landed = t.delivered;
+        }
+        for (const text of landed) {
           commitStream(sid); // flush any live bubble before the delivered user item
           // A steer delivered mid-turn does NOT restart the clock: the turn
           // the user is waiting on is still the one that began with their
@@ -2843,6 +2857,26 @@ export default function App(): React.JSX.Element {
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
       refused(sid, msg, err, sendId);
+    }
+  };
+
+  /** §7 round 27: Take back — every queued message returns to the box; a delivered one stays a bubble. */
+  const takeBackQueue = async (sid: string): Promise<void> => {
+    clearing.current[sid] = { inFlight: true, held: [], owed: [] };
+    try {
+      const r = await window.hv.clearQueue(sid);
+      const cleared = [...r.steering, ...r.followUp];
+      const t = takeCleared(clearing.current[sid].held, cleared);
+      clearing.current[sid] = { inFlight: false, held: [], owed: t.owed };
+      for (const text of t.delivered) appendItem(sid, { kind: "user", text, ts: Date.now() });
+      if (cleared.length) {
+        setComposerInsert((prev) => ({ sid, text: cleared.map(stripInjectedBlocks).join("\n\n"), nonce: (prev?.nonce ?? 0) + 1 }));
+      }
+    } catch (err) {
+      const held = clearing.current[sid]?.held ?? [];
+      clearing.current[sid] = { inFlight: false, held: [], owed: [] };
+      for (const text of held) appendItem(sid, { kind: "user", text, ts: Date.now() }); // Pi cleared nothing we know of
+      surface(err);
     }
   };
 
@@ -4024,6 +4058,7 @@ export default function App(): React.JSX.Element {
             onChip={(text) => setComposerInsert((prev) => ({ sid, text, nonce: (prev?.nonce ?? 0) + 1 }))}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={(msg, behavior, images, mentions, documents, usage) => void send(sid, msg, behavior, images, mentions, documents, usage)}
+            onTakeBackQueue={() => void takeBackQueue(sid)}
             pageRefs={pageRefs[sid]}
             onDropPageRef={(i) =>
               setPageRefs((p) => ({ ...p, [sid]: (p[sid] ?? []).filter((_, j) => j !== i) }))

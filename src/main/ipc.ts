@@ -101,7 +101,7 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
-import { promptOutcome, type PromptDisposition } from "./pi/promptOutcome";
+import { clearedTexts, promptOutcome, type PromptDisposition } from "./pi/promptOutcome";
 import { describePromptRefusal } from "./providerError";
 import { copyClaudeMdToAgentsMd, finalTextFromSessionFile, hasClaudeMd, parseAgentsMdOutput, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
@@ -3814,6 +3814,14 @@ export function registerIpc(
       return result;
     },
   );
+
+  // §7 round 27: take every queued message back. Pi's answer names exactly what it cleared,
+  // which is how the renderer tells a cleared text from one Pi delivered at the same moment.
+  ipcMain.handle("hv:clear-queue", async (_e, sessionId: string) => {
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client) return { steering: [], followUp: [] };
+    return clearedTexts(await client.send({ type: "clear_queue" }));
+  });
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
     await (manager.get(sessionId) as PiClient | null)?.send({ type: "abort" });

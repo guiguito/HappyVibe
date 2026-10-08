@@ -69,6 +69,8 @@ You don't have to wait for the agent to finish. While it works, the message box 
 1. Type a correction or an extra detail.
 2. Press **Enter**. Your message waits, marked "queued · kept on stop", until the agent's next step.
 
+Changed your mind? Click **Take back** beside "queued · kept on stop": every queued message goes back into the message box. Images attached to a queued message aren't kept.
+
 To stop the agent, click the stop button beside the message box. Its tooltip reads "Stop the agent". Anything you queued stays queued.
 
 ## Context: what the agent can see

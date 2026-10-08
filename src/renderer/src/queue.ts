@@ -35,3 +35,19 @@ export function applyQueueUpdate(
   };
   return { queue, delivered: [...gone(prev.steering, queue.steering), ...gone(prev.followUp, queue.followUp)] };
 }
+
+/**
+ * Round 27 — split the texts that left the queue into delivered and cleared. `owed` is what
+ * clear_queue said it removed and has not been matched to a queue_update yet. Multiset: the
+ * same message can be queued twice.
+ */
+export function takeCleared(left: string[], owed: string[]): { delivered: string[]; owed: string[] } {
+  const rest = [...owed];
+  const delivered = left.filter((t) => {
+    const i = rest.indexOf(t);
+    if (i < 0) return true;
+    rest.splice(i, 1);
+    return false;
+  });
+  return { delivered, owed: rest };
+}

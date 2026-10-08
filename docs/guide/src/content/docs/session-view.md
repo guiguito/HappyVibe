@@ -133,7 +133,7 @@ Pasting more than 100,000 characters asks first: "That's a large amount of text 
 Above the box, you may also see:
 
 - the first-prompt suggestions, in the session the setup window opened for you;
-- your queued messages, marked "queued · kept on stop", while the agent works (see [Steer, or stop](/docs/first-session/#steer-or-stop));
+- your queued messages, marked "queued · kept on stop", while the agent works, with **Take back** to put them all back in the message box (see [Steer, or stop](/docs/first-session/#steer-or-stop));
 - "Model saved — applies when this session restarts.", after a change that couldn't reach the running session;
 - "No model configured — set one up on the Models page to start chatting.", when no model is set. Click **Models** in it to go there. You can't send until a model is set;
 - an update line, when a new version of HappyVibe is ready, for example "HappyVibe … is ready" with **Restart to update**. **✕** hides it until the next launch.

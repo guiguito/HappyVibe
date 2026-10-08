@@ -14,3 +14,10 @@ export function promptOutcome(res: PiResponse): PromptOutcome {
   const d = (res.data as { disposition?: unknown } | undefined)?.disposition;
   return { ok: true, disposition: d === "queued" || d === "handled" ? d : "started" };
 }
+
+/** Pi's clear_queue answer: exactly the texts it removed. Anything else is not ours to return. */
+export function clearedTexts(res: PiResponse): { steering: string[]; followUp: string[] } {
+  const d = (res.success === false ? {} : res.data ?? {}) as { steering?: unknown; followUp?: unknown };
+  const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return { steering: strs(d.steering), followUp: strs(d.followUp) };
+}
