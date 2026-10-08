@@ -4,6 +4,8 @@ import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
 import { HowItWorks } from "./HowItWorks";
 import { useWebDefaultPaused } from "../remoteConfig";
+import { usePrivacy } from "../privacy";
+import { LockLine } from "./LockLine";
 import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE, toggleCore } from "../toolSwitches";
 import { FamilySwitchRow } from "./FamilySwitch";
 import { coreToolNames } from "../../../../pi-runtime/extensions/hv-builtins";
@@ -444,6 +446,9 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
   // §39: remote config can pause the default box; the row explains itself
   // rather than greying the radio out — "Your own" is the way forward.
   const paused = useWebDefaultPaused();
+  // Privacy round: an env lock keeps the default box out of reach; shown locked, never hidden.
+  const [privacy] = usePrivacy();
+  const defaultLocked = !!privacy?.locked.includes("defaultWeb");
 
   useEffect(() => {
     void window.hv.webServiceGet().then((s) => {
@@ -517,10 +522,15 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
         </summary>
         <div className="mt-2 space-y-2 text-xs">
           <label className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" checked={mode === "default"} onChange={() => setMode("default")} />
+            <input type="radio" checked={mode === "default"} disabled={defaultLocked} onChange={() => setMode("default")} />
             {paused ? <>HappyVibe&apos;s service — paused</> : <>HappyVibe&apos;s service (free for now)</>}
           </label>
-          {paused && mode === "default" && (
+          {defaultLocked && (
+            <div className="pl-5">
+              <LockLine />
+            </div>
+          )}
+          {paused && !defaultLocked && mode === "default" && (
             <p className="pl-5 text-ink-soft">The free service is paused. Choose Your own to keep using web tools.</p>
           )}
           <label className="flex items-center gap-2 cursor-pointer">
