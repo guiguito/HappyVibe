@@ -99,3 +99,16 @@ test("round 27: indexTools maps every tool card to its CURRENT position", () => 
   expect([...indexTools(items)]).toEqual([["t1", 1], ["t2", 3]]);
   expect([...indexTools(items.slice(1))]).toEqual([["t1", 0], ["t2", 2]]); // a removed bubble shifts every card
 });
+
+test("round 27 review I1: a STALE index never patches another call's card, and the update still lands", () => {
+  const items = [
+    { kind: "tool", card: { toolCallId: "t1", status: "running" } },
+    { kind: "tool", card: { toolCallId: "t2", status: "running" } },
+  ] as never as TranscriptItem[];
+  // Index taken before a bubble ahead of them was removed: positions are off by one.
+  const stale = new Map([["t1", 1], ["t2", 2]]);
+  const next = updateToolCard(items, stale, "t1", (c) => ({ ...c, status: "done" } as never));
+  expect((next[0] as never as { card: { status: string } }).card.status).toBe("done");
+  expect((next[1] as never as { card: { status: string } }).card.status).toBe("running");
+  expect(stale.get("t1")).toBe(0); // repaired
+});

@@ -2862,12 +2862,15 @@ export default function App(): React.JSX.Element {
 
   /** §7 round 27: Take back — every queued message returns to the box; a delivered one stays a bubble. */
   const takeBackQueue = async (sid: string): Promise<void> => {
-    clearing.current[sid] = { inFlight: true, held: [], owed: [] };
+    // A second click mid-flight would reset `held` and drop a message Pi delivered meanwhile.
+    if (clearing.current[sid]?.inFlight) return;
+    clearing.current[sid] = { inFlight: true, held: [], owed: clearing.current[sid]?.owed ?? [] };
     try {
       const r = await window.hv.clearQueue(sid);
       const cleared = [...r.steering, ...r.followUp];
-      const t = takeCleared(clearing.current[sid].held, cleared);
-      clearing.current[sid] = { inFlight: false, held: [], owed: t.owed };
+      const prev = clearing.current[sid];
+      const t = takeCleared(prev.held, cleared);
+      clearing.current[sid] = { inFlight: false, held: [], owed: [...prev.owed, ...t.owed] };
       for (const text of t.delivered) appendItem(sid, { kind: "user", text, ts: Date.now() });
       if (cleared.length) {
         setComposerInsert((prev) => ({ sid, text: cleared.map(stripInjectedBlocks).join("\n\n"), nonce: (prev?.nonce ?? 0) + 1 }));

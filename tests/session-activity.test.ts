@@ -123,3 +123,12 @@ test("round 27: restoreBusy undoes prompted() for a prompt Pi refused or handled
   a.restoreBusy("s", false);
   expect(a.isBusy("s")).toBe(false);
 });
+
+test("round 27 review I2: undoing a refused prompt never clears a turn Pi started meanwhile", () => {
+  const a = new SessionActivity();
+  a.prompted("s");                      // main sends; wasBusy was false
+  a.event("s", { type: "agent_start" }); // an async sub-agent result starts a turn
+  a.restoreBusy("s", false);            // the prompt comes back refused
+  expect(a.isBusy("s")).toBe(true);
+  expect(a.isIdle("s")).toBe(false);
+});
