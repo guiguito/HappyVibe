@@ -36,6 +36,15 @@ describe("resolveFeedbackConfig", () => {
     expect(resolveFeedbackConfig({ HV_FEEDBACK_PUBLISHABLE_KEY: "" }, false)).toBeNull();
   });
 
+  /** One switch for every Inlet surface: feedback, crash, usage and remote config all read this. */
+  it("HV_NO_PHONE_HOME=1 resolves to null on both channels, whatever else is set", () => {
+    for (const isDev of [true, false]) {
+      expect(resolveFeedbackConfig({ HV_NO_PHONE_HOME: "1" }, isDev)).toBeNull();
+      expect(resolveFeedbackConfig({ HV_NO_PHONE_HOME: "1", HV_FEEDBACK_CHANNEL: "prod", HV_FEEDBACK_PUBLISHABLE_KEY: "ipk_x" }, isDev)).toBeNull();
+    }
+    expect(resolveFeedbackConfig({ HV_NO_PHONE_HOME: "0" }, false)).not.toBeNull();
+  });
+
   it("prod databases are the prod project's, never the dev ones", () => {
     expect(FEEDBACK_CHANNELS.prod.databases).toEqual({ general: "fdb_gk46pdxj0d7b", session: "fdb_ma2pqzg46cj5" });
   });

@@ -61,4 +61,21 @@ describe("§39 the renderer half", () => {
     expect(row).toContain("HappyVibe&apos;s service — paused");
     expect(row).toContain("The free service is paused. Choose Your own to keep using web tools.");
   });
+  it("Privacy round: the switch gates install, stop closes, start never runs twice (Review Focus 3)", () => {
+    const idx = strip("src/main/remoteConfig/index.ts");
+    expect(idx).toMatch(/getSwitch\("remoteConfig"\)/);
+    expect(idx).toMatch(/setRemoteConfigSwitchHandler\(/);
+    expect(idx).toMatch(/\.uninstall\(\)/);
+    expect(idx).toMatch(/\.close\(\)/);
+    expect(idx).toMatch(/starting \?\?=/);
+    expect(idx).toMatch(/if \(!getSwitch\("remoteConfig"\)\) stop\(\)/);
+  });
+  it("Privacy round: usage and crash refuse to install, or to switch, under their lock", () => {
+    for (const [f, key] of [["src/main/usage/index.ts", "usageStats"], ["src/main/crash/index.ts", "crashReports"]] as const) {
+      expect(strip(f).match(new RegExp(`lockedByEnv\\("${key}", process\\.env\\)`, "g"))?.length, f).toBeGreaterThanOrEqual(2);
+    }
+  });
+  it("Privacy round: the renderer's paused row yields to remote settings off", () => {
+    expect(strip("src/renderer/src/remoteConfig.ts")).toMatch(/privacy\?\.on\.remoteConfig !== false/);
+  });
 });

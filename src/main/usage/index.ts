@@ -13,6 +13,7 @@ import { existingUserAttribution, hasPriorUse } from "./attribution";
 import { usageBeforeSend } from "./guard";
 import { setUsageSink } from "./client";
 import { forgetLastCrashReport } from "../crash";
+import { lockedByEnv } from "../privacySwitches";
 
 let setEnabled: ((on: boolean, opts?: { forget?: boolean }) => Promise<void> | void) | null = null;
 let setAttribution: ((value: string) => void) | null = null;
@@ -20,6 +21,7 @@ let setAttribution: ((value: string) => void) | null = null;
 function registerUsageIpc(): void {
   ipcMain.handle("hv:get-usage-stats", () => getUsageStats());
   ipcMain.handle("hv:set-usage-stats", async (_e, on: boolean) => {
+    if (lockedByEnv("usageStats", process.env)) return; // an env lock: the switch is held off
     setUsageStats(!!on);
     // D16: opting back in starts a NEW installation, and forget cleared the
     // attribution — so it would count as a new install. Whoever flips this
@@ -37,7 +39,7 @@ function registerUsageIpc(): void {
 export async function installUsage(): Promise<void> {
   registerUsageIpc(); // before every gate: the Privacy page must always be able to turn it back on
   const cfg = resolveFeedbackConfig(process.env, is.dev);
-  if (!cfg) return;
+  if (!cfg || lockedByEnv("usageStats", process.env)) return; // the env lock: no client, no ID on disk
   const userData = app.getPath("userData");
   const attribution = existingUserAttribution(path.join(userData, "inlet"), hasPriorUse(userData, agentDir()));
   try {

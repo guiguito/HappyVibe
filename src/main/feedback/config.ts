@@ -22,6 +22,7 @@
  * Electron-free on purpose — vitest imports it directly, and `is.dev` is passed
  * in rather than read, so both channels are testable in one process.
  */
+import { MASTER_ENV } from "../privacySwitches";
 export type FeedbackChannel = "dev" | "prod";
 
 export interface FeedbackConfig {
@@ -69,6 +70,9 @@ export function resolveFeedbackConfig(
   env: Record<string, string | undefined>,
   isDev: boolean,
 ): FeedbackConfig | null {
+  // HV_NO_PHONE_HOME=1: the machine's owner wants nothing sent to Inlet. Null is
+  // the keyless path above, so feedback, crash, usage and remote config all stay off.
+  if (env[MASTER_ENV] === "1") return null;
   const forced = env.HV_FEEDBACK_CHANNEL;
   const channel: FeedbackChannel = forced === "dev" || forced === "prod" ? forced : isDev ? "dev" : "prod";
   const base = FEEDBACK_CHANNELS[channel];

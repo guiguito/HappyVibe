@@ -14,6 +14,7 @@ import type { CrashEnvelope, CrashReportInput, DropReason, SentReport } from "in
 import { setEnabled } from "inlet-sdk/crash";
 import { resolveFeedbackConfig } from "../feedback/config";
 import { getCrashReports, setCrashReports } from "../config";
+import { lockedByEnv } from "../privacySwitches";
 import { TAG_ALLOW, redactMessage, scrubEnvelope } from "./policy";
 import { captureCrash, clearLastReport, readLastReport, recordCrashSent, setCrashCapture, writeLastReport, type CrashRow } from "./client";
 
@@ -79,6 +80,7 @@ export async function setCrashEnabled(on: boolean): Promise<void> {
 function registerCrashIpc(): void {
   ipcMain.handle("hv:get-crash-reports", () => getCrashReports());
   ipcMain.handle("hv:set-crash-reports", async (_e, on: boolean) => {
+    if (lockedByEnv("crashReports", process.env)) return; // an env lock: the switch is held off
     setCrashReports(!!on);
     await setCrashEnabled(!!on);
   });
@@ -125,7 +127,7 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
   if (is.dev && process.env.HV_CRASH_DEV !== "1") return;
 
   const cfg = resolveFeedbackConfig(process.env, is.dev);
-  if (!cfg) return; // no publishable key for this channel — §20, don't show what cannot work
+  if (!cfg || lockedByEnv("crashReports", process.env)) return; // the env lock, or no publishable key for this channel — §20, don't show what cannot work
 
   queueDir = join(app.getPath("userData"), "inlet-crash");
 
