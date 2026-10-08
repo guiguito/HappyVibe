@@ -128,6 +128,8 @@ Type here, press **Enter** to send, **Shift+Enter** for a new line. It reads "As
 
 You can also paste or drop an image straight into the box, and, while **Documents** is on, drop a document on it. Each attachment waits above the box as a chip, with **×** to remove it, until you send. A document can go on its own, with nothing typed. A document's chip shows its size as Markdown and roughly how many tokens it will take, so you know what it costs before you send it.
 
+Click any picture in the conversation, such as an image you attached, a screenshot the agent took or an image it made, to see it full size. There, **Copy** puts it on your clipboard, ready to paste anywhere, and **Save…** saves it where you choose. Click outside the picture or press **Esc** to close it.
+
 Pasting more than 100,000 characters asks first: "That's a large amount of text to add to the composer. Insert it anyway?" (the composer is the message box).
 
 Above the box, you may also see:

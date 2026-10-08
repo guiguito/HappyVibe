@@ -167,6 +167,9 @@ contextBridge.exposeInMainWorld("hv", {
   // §13 round 27: the Images row.
   imageSettings: () => ipcRenderer.invoke("hv:image-settings"),
   imageModelSet: (id: string) => ipcRenderer.invoke("hv:image-model-set", id),
+  // §7: any picture's zoom view.
+  imageCopy: (dataUrl: string) => ipcRenderer.invoke("hv:image-copy", dataUrl),
+  imageSaveAs: (dataUrl: string, name?: string) => ipcRenderer.invoke("hv:image-save-as", dataUrl, name),
 
   // ── W2.1: per-session model override + image attach (additive) ──
   setSessionModel: (sessionId: string, m: { provider: string; modelId: string } | null) =>

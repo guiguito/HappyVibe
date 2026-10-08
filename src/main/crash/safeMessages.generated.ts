@@ -51,6 +51,8 @@ export const SAFE_MESSAGES: ReadonlySet<string> = new Set([
   "Session is not active",
   "Session is not live",
   "That name won't work — try a word or two.",
+  "That picture can't be copied.",
+  "That picture can't be saved.",
   "That repeat is not one HappyVibe can run.",
   "That schedule no longer exists.",
   "This session has no workspace to save into.",

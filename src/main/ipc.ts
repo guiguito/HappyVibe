@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { parseImageDataUrl } from "./imageData";
 import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
 import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
@@ -3279,6 +3280,29 @@ export function registerIpc(
     });
     if (r.canceled || !r.filePath) return { ok: false as const, canceled: true };
     return exportSessionHtml(piRuntimeDir(), file, r.filePath);
+  });
+
+  // §7: any picture's zoom view — Copy puts a real image on the clipboard, Save… writes the file.
+  // Electron 44's clipboard is the W3C shape (`write([ClipboardItem])`). Always PNG: a JPEG or WebP
+  // entry doesn't paste into most apps, and nativeImage re-encodes any raster type.
+  ipcMain.handle("hv:image-copy", async (_e, dataUrl: string) => {
+    const img = parseImageDataUrl(dataUrl);
+    const png = img ? nativeImage.createFromBuffer(img.bytes).toPNG() : null;
+    if (!png?.length) throw new Error("That picture can't be copied.");
+    await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
+  });
+  ipcMain.handle("hv:image-save-as", async (e, dataUrl: string, name?: string) => {
+    const img = parseImageDataUrl(dataUrl);
+    if (!img) throw new Error("That picture can't be saved.");
+    const base = (typeof name === "string" ? name : "image").replace(/[/\\?%*:|"<>]/g, "-").replace(/\.[a-z0-9]+$/i, "").slice(0, 80).trim() || "image";
+    const r = await dialog.showSaveDialog(ownerOf(e), {
+      title: "Save picture",
+      defaultPath: `${base}.${img.ext}`,
+      filters: [{ name: "Image", extensions: [img.ext] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false as const, canceled: true };
+    fs.writeFileSync(r.filePath, img.bytes);
+    return { ok: true as const, path: r.filePath };
   });
 
   ipcMain.handle("hv:close-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
