@@ -53,6 +53,16 @@ function DownloadGlyph(): React.JSX.Element {
   );
 }
 
+/** §17 round 28: Duplicate — two stacked sheets. */
+function DuplicateGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+    </svg>
+  );
+}
+
 const menuItem =
   "w-full flex items-center gap-2 text-left px-3 py-1 hover:bg-paper-deep/40 cursor-pointer " +
   "disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent";
@@ -115,6 +125,8 @@ export function TabStrip({
   onRename,
   onRepeatOnSchedule,
   onExportHtml,
+  onDuplicate,
+  canDuplicate,
   onMoveToWindow,
   canMoveToWindow,
   otherWindows,
@@ -151,6 +163,10 @@ export function TabStrip({
   /** §17 round 24: export this session's transcript as a standalone HTML page.
       Absent for terminals, browsers and files — there is no transcript. */
   onExportHtml?: (sessionId: string) => void;
+  /** §17 round 28: copy this session into a new one, in a new tab. */
+  onDuplicate?: (sessionId: string) => void;
+  /** False while the session is working — a mid-turn copy would be half a turn (main refuses too). */
+  canDuplicate?: (sessionId: string) => boolean;
   /** §7 round 23: hand this tab to a brand-new window, or to a named one. */
   onMoveToWindow: (tab: TabId, target: "new" | number) => void;
   /** The OTHER windows, so moving between two open ones needs no drag. */
@@ -475,6 +491,24 @@ export function TabStrip({
               >
                 <DownloadGlyph />
                 Export as HTML…
+              </button>
+            )}
+            {/* §17 round 28. Same onMouseDown rule as its neighbours; a disabled
+                button gets no mouse events, so the guard is the attribute. */}
+            {onDuplicate && sessionOf(menu.tab) && (
+              <button
+                type="button"
+                disabled={!canDuplicate?.(sessionOf(menu.tab)!)}
+                title={canDuplicate?.(sessionOf(menu.tab)!) ? undefined : "Wait for the turn to finish"}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onDuplicate(sessionOf(menu.tab)!);
+                  setMenu(null);
+                }}
+                className={menuItem}
+              >
+                <DuplicateGlyph />
+                Duplicate
               </button>
             )}
             {/* §7 round 23. onMouseDown + preventDefault, not onClick: pressing

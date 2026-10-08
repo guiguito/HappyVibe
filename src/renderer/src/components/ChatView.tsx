@@ -4,7 +4,7 @@ import { basename } from "../basename";
 import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
 import { usePresence } from "../usePresence";
 import { Unfold } from "./Unfold";
-import { Transcript, type TranscriptItem } from "./Transcript";
+import { Transcript, type ForkOrigin, type TranscriptItem } from "./Transcript";
 import { hasRestorable, rewindDialogBody, tailToolCallIds, type RewindScope } from "../rewind";
 import { FORK_DIALOG, forkScopes } from "../fork";
 import { formatBinding, matchesBinding } from "../shortcuts";
@@ -179,6 +179,7 @@ export function ChatView({
   onRewind,
   onFork,
   onLoadEarlier,
+  forkOrigin,
   activePlan,
   composerInsert,
   visible = true,
@@ -308,6 +309,8 @@ export function ChatView({
   onFork?: (it: TranscriptItem, scope: RewindScope) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
+  /** §17 round 28: the original this session was forked or duplicated from. */
+  forkOrigin?: ForkOrigin;
   /** §23 round 9: the session's active plan — the pill's data, null when none. */
   activePlan?: PlanCardData | null;
 }): React.JSX.Element {
@@ -1535,6 +1538,7 @@ export function ChatView({
           onRewind={onRewind && !busy ? openRewind : undefined}
           onFork={onFork ? openFork : undefined}
           onLoadEarlier={onLoadEarlier}
+          forkOrigin={forkOrigin}
           searchQuery={searchOpen ? searchQuery : ""}
           searchActiveIndex={searchActive}
           onSearchTotal={onSearchTotal}

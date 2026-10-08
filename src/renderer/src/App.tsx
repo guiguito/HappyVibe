@@ -14,12 +14,12 @@ import { DashboardView } from "./components/DashboardView";
 import { AuditView } from "./components/AuditView";
 import { ChangelogView } from "./components/ChangelogView";
 import { PrivacyView } from "./components/PrivacyView";
-import { type TranscriptItem } from "./components/Transcript";
+import { type ForkOrigin, type TranscriptItem } from "./components/Transcript";
 import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
-import { stampPiTs } from "./fork";
+import { forkMarkerIndex, stampPiTs } from "./fork";
 import { reloadNotice } from "./reloadNotice";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
@@ -2746,6 +2746,18 @@ export default function App(): React.JSX.Element {
           { sessionId: id, workspaceId: meta.workspaceId },
           () => idCounter.current++,
         );
+        // §17 round 28: a fork or duplicate marks where its own history starts. Everything
+        // above is the original's, so a sub-agent card there cannot inspect its children
+        // (they belong to the original session) — `preFork` is set here, after restoreMap,
+        // which keeps only the fields it names.
+        if (meta.forkedFrom) {
+          const at = forkMarkerIndex(items.map((x) => ({ ts: "ts" in x ? x.ts : undefined })), Date.parse(meta.forkedFrom.at));
+          for (let k = 0; k < at; k++) {
+            const x = items[k];
+            if (x.kind === "tool") items[k] = { ...x, card: { ...x.card, preFork: true } };
+          }
+          items.splice(at, 0, { kind: "forkMarker", fromId: meta.forkedFrom.sessionId, id: idCounter.current++ });
+        }
         // §14 round 6: the skills chip's "used" marks came only from live hv.skill
         // notifies, so a REOPENED session reported "0 used" while its own restored
         // transcript listed use_skill cards. The session file is the source of
@@ -3020,6 +3032,37 @@ export default function App(): React.JSX.Element {
     void window.hv.contextSnapshot(sid);
   };
 
+  // §17 round 28: open a just-made fork or duplicate of `fromSid`. It inherits the original's
+  // workspace, so its tab is opened HERE, as newSession does: selectSession looks the id up
+  // in `sessions`, which this render's closure may not have received yet, and would add no tab.
+  const openCopyOf = async (fromSid: string, newSid: string): Promise<void> => {
+    const ws = sessions.find((s) => s.id === fromSid)?.workspaceId;
+    if (ws) {
+      setActiveWs(ws);
+      setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, newSid) }));
+    }
+    await openSessionRef.current?.(newSid);
+  };
+
+  // §17 round 28: Duplicate (tab menu) — the whole conversation, as a new session in a new
+  // tab. Offered only while idle (canDuplicate); main refuses mid-turn too.
+  const duplicateSession = async (sid: string): Promise<void> => {
+    try {
+      const r = await window.hv.duplicateSession(sid);
+      await openCopyOf(sid, r.sessionId);
+    } catch (err) {
+      appendItem(sid, { kind: "notice", text: ipcMessage(err) });
+    }
+  };
+
+  // §17 round 28: the "Forked from" marker names the original's CURRENT title, or none when it is gone.
+  const forkOriginOf = (sid: string): ForkOrigin | undefined => {
+    const from = sessions.find((x) => x.id === sid)?.forkedFrom?.sessionId;
+    if (!from) return undefined;
+    const orig = sessions.find((x) => x.id === from);
+    return { title: orig?.title ?? null, onOpen: orig ? () => void selectSession(from) : undefined };
+  };
+
   // §17 round 28: Fork from a message — a NEW session holding everything before `it`,
   // opened with `it` back in its composer. The original's conversation is never
   // touched; with "both" its workspace files roll back first (they are shared).
@@ -3047,15 +3090,7 @@ export default function App(): React.JSX.Element {
         }
       }
       const r = await window.hv.forkSession(sid, it.piTs);
-      // The fork inherits the original's workspace. Open its tab HERE, as newSession
-      // does: selectSession looks the id up in `sessions`, which this render's closure
-      // may not have received yet, and would then add no tab.
-      const ws = sessions.find((s) => s.id === sid)?.workspaceId;
-      if (ws) {
-        setActiveWs(ws);
-        setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, r.sessionId) }));
-      }
-      await openSessionRef.current?.(r.sessionId);
+      await openCopyOf(sid, r.sessionId);
       // §31: the documents ride along, as Rewind re-attaches them, or edit-and-resend drops them.
       const docs = parseDocumentChips(it.text).map((d) => d.path);
       setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), docs, nonce: (prev?.nonce ?? 0) + 1 }));
@@ -3796,6 +3831,8 @@ export default function App(): React.JSX.Element {
                     }}
                     onRepeatOnSchedule={repeatOnSchedule}
                     onExportHtml={exportSessionHtml}
+                    onDuplicate={(sid) => void duplicateSession(sid)}
+                    canDuplicate={(sid) => !busy[sid]}
                     onRename={(tab, title) => {
                       // §7 round 12: a chat tab renames the SESSION — the
                       // sidebar row changes with it, because it is the
@@ -4159,6 +4196,7 @@ export default function App(): React.JSX.Element {
                 onRewind={rewindTo}
                 onFork={(it, scope) => void forkFrom(it, scope)}
                 onLoadEarlier={() => void loadEarlier(sid)}
+                forkOrigin={forkOriginOf(sid)}
                 activePlan={activePlan[sid] ?? null}
               />
             </div>

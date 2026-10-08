@@ -10,6 +10,7 @@ import { isDocumentPath } from "../../../../pi-runtime/extensions/hv-document";
 import { delegationAgent } from "../../../../pi-runtime/extensions/hv-rules";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { ZoomableImage } from "./ZoomableImage";
+import { PRE_FORK_CARD_COPY } from "../fork";
 
 export interface ToolCardData {
   toolCallId: string;
@@ -58,6 +59,12 @@ export interface ToolCardData {
    * made that expansion an empty panel.
    */
   asyncId?: string;
+  /**
+   * §17 round 28: a card from BEFORE this session was forked or duplicated (App sets it on
+   * reopen, after restoreMap). A sub-agent run's children belong to the original session, so
+   * the card says so and does not expand.
+   */
+  preFork?: boolean;
 }
 
 const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
@@ -608,6 +615,7 @@ export function delegationSummary(card: ToolCardData): string {
 function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: string | null }): React.JSX.Element {
   const running = card.status === "running";
   const [open, setOpen] = useState(false);
+  const preFork = !!card.preFork;
   const req = card.args as { agent?: string; task?: string; prompt?: string } | undefined;
   // Either stack's args: nicobailon `agent`/`task`, tintinweb `subagent_type`/`prompt`.
   const reqAgent = delegationAgent(card.args);
@@ -690,8 +698,8 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
     >
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full text-left cursor-pointer hover:bg-paper-deep/40 transition-colors px-3.5 py-2.5"
+        onClick={() => !preFork && setOpen(!open)}
+        className={`w-full text-left px-3.5 py-2.5 ${preFork ? "cursor-default" : "cursor-pointer hover:bg-paper-deep/40 transition-colors"}`}
       >
         {/* v5: intent wraps (break-words) instead of clipping to one ellipsized line. */}
         <span className="flex items-start gap-2.5">
@@ -725,15 +733,18 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
               cannot separate — dispatched from done, both leaf — is spelled out
               in words on the summary line right below ("running in the
               background — result arrives when it finishes"). */}
-          <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
-            {open ? "▾" : "▸"}
-          </span>
+          {!preFork && (
+            <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
+              {open ? "▾" : "▸"}
+            </span>
+          )}
         </span>
         {!open && summary && (
           <span className="block mt-1 pl-5 text-xs text-ink-soft truncate" title={summary}>
             {summary}
           </span>
         )}
+        {preFork && <span className="block mt-1 pl-5 text-xs text-ink-soft italic">{PRE_FORK_CARD_COPY}</span>}
       </button>
       {/* B1 (Animations round, 2026-09-10): the body UNFOLDS. A card that grows
           by its own height in one frame shoves every message below it, which is

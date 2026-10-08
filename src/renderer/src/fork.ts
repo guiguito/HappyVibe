@@ -35,3 +35,18 @@ export const FORK_DIALOG = {
   confirm: "Fork",
   bothHint: "Also roll the workspace back to before this message. This session shares those files.",
 } as const;
+
+/** §17 round 28: where a fork's "Forked from" marker goes — before the first item newer than
+    the fork. Unstamped items (tool cards) never decide it; a duplicate lands at the end. */
+export function forkMarkerIndex(items: Array<{ ts?: number }>, atMs: number): number {
+  const i = items.findIndex((x) => x.ts != null && x.ts > atMs);
+  return i < 0 ? items.length : i;
+}
+
+/** `null` = the original no longer exists. */
+export function forkMarkerCopy(originalTitle: string | null): string {
+  return originalTitle == null ? "Forked from a deleted session" : `Forked from ${originalTitle}`;
+}
+
+/** A sub-agent run from before the fork: its children belong to the original, so the card cannot expand. */
+export const PRE_FORK_CARD_COPY = "From the original session";

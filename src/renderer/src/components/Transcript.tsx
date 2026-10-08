@@ -13,6 +13,7 @@ import { formatDuration, timeagoLong } from "../timeago";
 import { thinkingLabel } from "../thinkingLabel";
 import { busyStatus, type Activity, type ToolDraft } from "../busyStatus";
 import { toolLabel } from "../toolLabel";
+import { forkMarkerCopy } from "../fork";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -139,7 +140,14 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
   // agent's context; `loaded` flips once the user pulls that history in.
   | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
+  // §17 round 28: where a forked or duplicated session's own history starts. Built on
+  // reopen from `meta.forkedFrom`; the original's title is resolved at render (it can be
+  // renamed or deleted after the fork).
+  | { kind: "forkMarker"; fromId: string }
 );
+
+/** §17 round 28: the original of a forked session — its CURRENT title (null = deleted) and how to open it. */
+export type ForkOrigin = { title: string | null; onOpen?: () => void };
 
 /**
  * What the boundary bubble says. The reason matters because Pi's
@@ -262,6 +270,7 @@ const MessageItem = memo(function MessageItem({
   onRewind,
   onFork,
   onLoadEarlier,
+  forkOrigin,
 }: {
   it: TranscriptItem;
   onRetry?: () => void;
@@ -280,7 +289,27 @@ const MessageItem = memo(function MessageItem({
   onFork?: (it: TranscriptItem) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
+  forkOrigin?: ForkOrigin;
 }): React.JSX.Element {
+  if (it.kind === "forkMarker") {
+    // Same pill as the compaction boundary: both say "the history above came from elsewhere".
+    const title = forkOrigin?.title ?? null;
+    return (
+      <div className="flex items-center gap-2.5 self-center rounded-full border-2 border-plum/50 bg-plum-soft px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker">
+        <span className="size-2 rounded-full bg-plum shrink-0" />
+        {title != null && forkOrigin?.onOpen ? (
+          <span className="text-center">
+            Forked from{" "}
+            <button type="button" onClick={forkOrigin.onOpen} className="underline underline-offset-2 hover:text-ink cursor-pointer">
+              {title}
+            </button>
+          </span>
+        ) : (
+          <span className="text-center">{forkMarkerCopy(title)}</span>
+        )}
+      </div>
+    );
+  }
   if (it.kind === "boundary") {
     return (
       <div className="flex flex-col items-center gap-2 self-center">
@@ -607,6 +636,7 @@ export function Transcript({
   searchActiveIndex,
   onSearchTotal,
   onLoadEarlier,
+  forkOrigin,
   scrollNonce,
   collapseNonce,
   thinking,
@@ -641,6 +671,8 @@ export function Transcript({
   onSearchTotal?: (n: number) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
+  /** §17 round 28: what the "Forked from" marker names and opens. */
+  forkOrigin?: ForkOrigin;
   /**
    * Round 15: bumped by the composer on send. A send is the user SAYING they
    * are at the end, so it scrolls unconditionally — unlike the stream, which
@@ -856,6 +888,7 @@ export function Transcript({
                 onRewind={onRewind}
                 onFork={onFork}
                 onLoadEarlier={onLoadEarlier}
+                forkOrigin={it.kind === "forkMarker" ? forkOrigin : undefined}
               />
             );
             // Dimmed items get a wrapper; everything else stays a direct flex
