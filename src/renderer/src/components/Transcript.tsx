@@ -127,7 +127,7 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // B2: provider errors / session crashes as first-class transcript items.
   // `detail` is verbatim machine output (a dead child's stderr tail) — shown
   // monospace with its newlines, where `hint` is prose we wrote.
-  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string; doc?: { slug: string; anchor?: string } }
+  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string; doc?: { slug: string; anchor?: string }; action?: "compact" }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   // `title` is hover-only detail that must NOT widen the pill — round 16: the
@@ -264,6 +264,7 @@ const MessageItem = memo(function MessageItem({
   it,
   onRetry,
   onOpenDoc,
+  onCompactAction,
   workspace,
   sessionId,
   onOpenFile,
@@ -276,6 +277,8 @@ const MessageItem = memo(function MessageItem({
   onRetry?: () => void;
   /** Docs in the app (2026-09-29): opens a guide page from an error card that carries a `doc`. */
   onOpenDoc?: (url: string) => void;
+  /** An error card's "Compact now…" — opens the same confirm the context panel uses. */
+  onCompactAction?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
@@ -363,6 +366,15 @@ const MessageItem = memo(function MessageItem({
             </pre>
           )}
         </div>
+        {it.action === "compact" && onCompactAction && (
+          <button
+            type="button"
+            onClick={onCompactAction}
+            className="shrink-0 rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
+          >
+            Compact now…
+          </button>
+        )}
         {it.retriable && onRetry && (
           <button
             type="button"
@@ -628,6 +640,7 @@ export function Transcript({
   header,
   onRetry,
   onOpenDoc,
+  onCompactAction,
   workspace,
   sessionId,
   onOpenFile,
@@ -655,6 +668,8 @@ export function Transcript({
   onRetry?: () => void;
   /** Docs in the app (2026-09-29): opens a guide page from an error card that carries a `doc`. */
   onOpenDoc?: (url: string) => void;
+  /** An error card's "Compact now…" — opens the same confirm the context panel uses. */
+  onCompactAction?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
@@ -883,6 +898,7 @@ export function Transcript({
                 it={it}
                 onRetry={onRetry}
                 onOpenDoc={onOpenDoc}
+                onCompactAction={onCompactAction}
                 workspace={workspace}
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}

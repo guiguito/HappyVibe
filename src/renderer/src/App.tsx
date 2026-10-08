@@ -655,6 +655,15 @@ export default function App(): React.JSX.Element {
   // error card (pendingError) so a retried-and-recovered error shows only a
   // transient "Retrying…" notice; a real error card lands only on the final,
   // non-retried failure. retryNotice tracks the in-place notice id per session.
+  // Global auto-compaction switch, for the overflow card's wording. A ref: it is only read when
+  // a turn ends. The Models row announces changes with a window event.
+  const autoCompaction = useRef(true);
+  useEffect(() => {
+    void window.hv.getAutoCompaction().then((on) => { autoCompaction.current = on; });
+    const onChange = (e: Event): void => { autoCompaction.current = (e as CustomEvent<boolean>).detail; };
+    window.addEventListener("hv:auto-compaction", onChange);
+    return () => window.removeEventListener("hv:auto-compaction", onChange);
+  }, []);
   const pendingError = useRef<Record<string, { raw: string; provider?: string; model?: string }>>({});
   const retryNotice = useRef<Record<string, number>>({});
 
@@ -1768,7 +1777,7 @@ export default function App(): React.JSX.Element {
           // nothing about whether to wait, fix a key, or fix a setting. Map it,
           // and offer a plain resend for the transient classes — Pi's own retry
           // list omits 529, so this button is the only way out of one.
-          const info = describeProviderError(err.raw, { provider: err.provider, model: err.model });
+          const info = describeProviderError(err.raw, { provider: err.provider, model: err.model, autoCompaction: autoCompaction.current });
           appendItem(sid, {
             kind: "error",
             text: info.headline,
@@ -1776,6 +1785,7 @@ export default function App(): React.JSX.Element {
             retriable: info.retriable,
             retryLabel: info.retriable ? "Retry" : undefined,
             doc: info.doc,
+            action: info.action,
           });
         }
         setBusy((p) => ({ ...p, [sid]: false }));

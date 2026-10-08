@@ -19,6 +19,8 @@
 export interface ProviderErrorContext {
   provider?: string;
   model?: string;
+  /** The global auto-compaction switch; `false` changes what an overflow card says. */
+  autoCompaction?: boolean;
 }
 
 export interface ProviderErrorInfo {
@@ -34,6 +36,8 @@ export interface ProviderErrorInfo {
   kind: ErrorKind;
   /** Docs in the app (2026-09-29): a guide page that explains the fix — set only where one does. */
   doc?: { slug: string; anchor?: string };
+  /** An in-app button the card offers beside (or instead of) Retry. */
+  action?: "compact";
 }
 
 export type ErrorKind = "auth" | "balance" | "rate_limit" | "overloaded" | "server" | "network" | "context_overflow" | "model_not_found" | "other";
@@ -65,6 +69,17 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   // generic 400. For a custom endpoint this usually means the context window
   // entered in Settings is larger than the server really allows.
   if (has(t, /context length|context window|too many tokens|maximum context|token limit/i)) {
+    // Compaction switched off: the overflow is the user's own setting, not the endpoint's.
+    if (ctx.autoCompaction === false) {
+      return { kind: "context_overflow",
+        doc: { slug: "first-session", anchor: "context-what-the-agent-can-see" },
+        headline: "The conversation is longer than this model's context window.",
+        hint: "Automatic compaction is off. Compact now, or fork from an earlier message (hover it, then Fork).",
+        action: "compact",
+        retriable: false,
+        raw,
+      };
+    }
     return { kind: "context_overflow",
       doc: DOC_ENDPOINT,
       headline: "The conversation is longer than this model's context window.",
