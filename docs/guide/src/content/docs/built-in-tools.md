@@ -161,6 +161,8 @@ If you pick **Your own** and leave the address empty, **Save** and **Test** both
 
 Your web service choice applies from the next call, so nothing restarts.
 
+On a computer where an administrator turned HappyVibe's service off, **HappyVibe's service** can't be picked and says "Turned off on this computer by an environment setting.", with a **Learn more** link. If it was your choice, the web tools stop until you pick **Your own**. Your own service still works. [Privacy](/docs/privacy/#on-a-managed-computer) explains how that's set.
+
 ## During a session
 
 - **Plan mode** adds the **🧭 Plan** button to the message box, and **🧭 Plan mode** to the top bar while it's on. See [Start plan mode](#start-plan-mode).

@@ -19,13 +19,17 @@ The heading is "HappyVibe" and the number of the version you're running. The lin
 
 Under the version, one line says when the app last looked for an update: "Not checked yet", "Last checked just now" or "Last checked 12 min ago", for example. Next to it, **Check now** looks straight away. While it looks, the line reads "Checking…". If you're up to date, it says "You're on the latest version." If a check you asked for fails, the error shows here, word for word.
 
-You don't have to remember to check: the app looks on its own shortly after it starts, then every few hours.
+You don't have to remember to check: the app looks on its own shortly after it starts, then every few hours, while **Check for updates automatically** is on.
 
-Below that, the **Download updates automatically** switch. It starts on: a new version downloads in the background, and you choose when to restart into it. Turn it off, and the app only tells you a new version is out, then waits for you to click **Download**.
+Below that, the **Check for updates automatically** switch. It starts on. Turn it off and the app stops looking on its own; **Check now** still works whenever you click it.
+
+Then the **Download updates automatically** switch. It starts on: a new version downloads in the background, and you choose when to restart into it. Turn it off, and the app only tells you a new version is out, then waits for you to click **Download**.
 
 On Linux, a copy installed from a `.deb` package can't replace itself, so this switch isn't shown. When an update is out, **Download** opens the release page instead.
 
 In a development build, the controls are replaced by one line: "Updates are off in development builds." That build never checks and never installs over itself.
+
+On a computer where an administrator turned updates off, **Check for updates automatically** is off and greyed out, and says "Turned off on this computer by an environment setting." with a **Learn more** link. The "Last checked" line, **Check now** and **Download updates automatically** aren't there. [Privacy](/docs/privacy/#on-a-managed-computer) explains how that's set.
 
 ### The notes
 
