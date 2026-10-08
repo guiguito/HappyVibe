@@ -241,6 +241,8 @@ contextBridge.exposeInMainWorld("hv", {
   gitDraftMessage: (workspaceId: string, stagedOnly: boolean) =>
     ipcRenderer.invoke("hv:git-draft-message", workspaceId, stagedOnly),
   gitInstallPrompt: () => ipcRenderer.invoke("hv:git-install-prompt"),
+  forkSession: (sessionId: string, piTs: number) => ipcRenderer.invoke("hv:session-fork", sessionId, piTs),
+  duplicateSession: (sessionId: string) => ipcRenderer.invoke("hv:session-duplicate", sessionId),
   exportSessionHtml: (sessionId: string) => ipcRenderer.invoke("hv:session-export-html", sessionId),
   gitPrUrl: (workspaceId: string, draft?: boolean) => ipcRenderer.invoke("hv:git-pr-url", workspaceId, draft),
   onGitChanged: (cb: (p: { workspaceId: string }) => void): (() => void) => {

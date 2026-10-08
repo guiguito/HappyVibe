@@ -30,6 +30,12 @@ export interface SessionMeta {
   /** Who last set the title. "user" is never overwritten by generation. */
   titleSource: "fallback" | "model" | "user";
   /**
+   * §17 round 28: this session was forked or duplicated from another. `at` is the cut:
+   * entries copied from the original keep their timestamps, so anything after `at` is this
+   * session's own (the cost ledger, the "Forked from" marker, pre-fork run cards). Additive.
+   */
+  forkedFrom?: { sessionId: string; at: string };
+  /**
    * When the user last OPENED or PROMPTED this session — what the sidebar
    * orders by, and the age its row shows.
    *

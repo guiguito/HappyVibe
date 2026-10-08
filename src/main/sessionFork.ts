@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PiClient } from "./pi/PiClient";
+import type { SessionMeta } from "./store";
 
 type SpawnSpec = ConstructorParameters<typeof PiClient>[0];
 type ClientLike = Pick<PiClient, "start" | "stop" | "send">;
@@ -36,4 +37,15 @@ export async function forkSessionFile(
     // The intermediate copy goes on every path but the duplicate (where it IS the result).
     if (entryId && copy && result !== copy && path.resolve(copy).startsWith(path.resolve(sessionDirPath) + path.sep)) fs.rmSync(copy, { force: true });
   }
+}
+
+/** The new session's fields — pure. Never a schedule (a fork of a run is the user's now), never `hibernated`. */
+export function forkMeta(o: SessionMeta, kind: "fork" | "duplicate", at: string): Partial<SessionMeta> {
+  return {
+    title: `${o.title} (${kind === "fork" ? "fork" : "copy"})`,
+    titleSource: o.titleSource,
+    ...(o.model ? { model: o.model } : {}),
+    ...(o.thinking ? { thinking: o.thinking } : {}),
+    forkedFrom: { sessionId: o.id, at },
+  };
 }

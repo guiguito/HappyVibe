@@ -18,7 +18,8 @@ import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UN
 import { crawl as webCrawl, mapSite as webMapSite, probe as webProbe, scrape as webScrape, search as webSearch, WebServiceError } from "./webService";
 import { PiClient } from "./pi/PiClient";
 import { spawn } from "node:child_process";
-import { resolvePiSpawn } from "./pi/spawn";
+import { resolvePiSpawn, resolveForkSpawn } from "./pi/spawn";
+import { forkSessionFile, forkMeta } from "./sessionFork";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
@@ -136,7 +137,7 @@ import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
 import { buildMemoryPrompt } from "../../pi-runtime/extensions/hv-memory";
 import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
-import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
+import { compactionInfo, compactionReason, contextItems, earlierItems, userEntryAt } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { isMcpServerOff, readMcpFile, withoutOffFlag, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { coalescer, configErrorFor, piMcpList, piMcpLogin, piMcpLogout, removeServerInOrder, statusFromList, type PiCliOpts } from "./mcpPi";
@@ -3263,6 +3264,33 @@ export function registerIpc(
    * write to their disk unasked, and the default name is the session's own
    * title. A cancel is not a failure and the renderer says nothing about it.
    */
+  // §17 round 28: fork / duplicate make a NEW session. The original's file is only read and its
+  // process never touched; hv:open-session then paints the new one from its file and resumes it.
+  const forkInto = async (meta: SessionMeta, kind: "fork" | "duplicate", entryId?: string, fresh = false): Promise<{ sessionId: string }> => {
+    const src = sessionFilePath(sessionDir(), meta.piSessionFile);
+    if (!src && !fresh) throw new Error("This session has nothing to copy yet.");
+    const at = new Date().toISOString();
+    const file = fresh || !src
+      ? undefined
+      : await forkSessionFile(resolveForkSpawn(meta.workspaceId, sessionDir(), piRuntimeDir(), src, agentDir()), sessionDir(), entryId);
+    const next = index.create(meta.workspaceId);
+    index.update(next.id, { ...forkMeta(meta, kind, at), ...(file ? { piSessionFile: file } : {}) });
+    sessionsChanged();
+    return { sessionId: next.id };
+  };
+  ipcMain.handle("hv:session-fork", async (_e, sessionId: string, piTs: number) => {
+    const meta = index.get(sessionId);
+    if (!meta) throw new Error("Unknown session");
+    const hit = userEntryAt(readSessionFile(sessionDir(), meta.piSessionFile), Number(piTs));
+    if (!hit) throw new Error("That message is no longer in this conversation.");
+    return forkInto(meta, "fork", hit.entryId, hit.first);
+  });
+  ipcMain.handle("hv:session-duplicate", async (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta) throw new Error("Unknown session");
+    if (activity.isBusy(sessionId)) throw new Error("Wait for the turn to finish, then duplicate.");
+    return forkInto(meta, "duplicate");
+  });
   ipcMain.handle("hv:session-export-html", async (e, sessionId: string) => {
     const meta = index.get(sessionId);
     if (!meta) return { ok: false as const, error: "That session is gone." };
