@@ -90,7 +90,8 @@ import { basename as tabBasename } from "./tabs";
 import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
-import { DocsLink } from "./components/DocsLink";
+import { DocsLink, OpenDocsContext } from "./components/DocsLink";
+import { usePrivacy } from "./privacy";
 import { GuideView } from "./components/GuideView";
 import { docUrl, docsIndexUrl } from "./docsLinks";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
@@ -213,6 +214,9 @@ export default function App(): React.JSX.Element {
    * change while the app runs.
    */
   const [feedbackInfo, setFeedbackInfo] = useState<{ available: boolean; fastPulse: boolean }>({ available: false, fastPulse: false });
+  // Privacy round: the megaphone and the pulse also need their switch. Null until main
+  // answers, which hides both, so a surface the user turned off never flashes at boot.
+  const [privacy] = usePrivacy();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   /**
    * §34: when each session was opened IN THIS APP RUN, plus its one random
@@ -3144,7 +3148,7 @@ export default function App(): React.JSX.Element {
    * background pane is not accruing a sitting.
    */
   useEffect(() => {
-    if (!feedbackInfo.available) return;
+    if (!(feedbackInfo.available && !!privacy?.on.sessionPulse)) return;
     const ws = activeWs ?? sessions.find((x) => x.id === selectedId)?.workspaceId ?? null;
     const tabs = (ws ? tabsByWs[ws] : undefined) ?? emptyTabs;
     const tab = activeTabOf(tabs);
@@ -3166,12 +3170,12 @@ export default function App(): React.JSX.Element {
         // re-checks that at render — the pulse yields to both.
         bannerShowing: statuses[sid] === "crashed",
         focused: true,
-        available: feedbackInfo.available,
+        available: feedbackInfo.available && !!privacy?.on.sessionPulse,
       },
       timing,
     );
     if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
-  }, [activeWs, selectedId, tabsByWs, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
+  }, [activeWs, selectedId, tabsByWs, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, privacy, pulseShow]);
 
   /**
    * Animations round (2026-09-10) — the right drawer's exit.
@@ -3399,6 +3403,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <NavContext.Provider value={navigate}>
+    <OpenDocsContext.Provider value={openDocs}>
       {/* §35: one dialog for every missed schedule, not one per schedule. Its
           rows come from the LIST rather than from the push that opened it, so
           answering one makes it leave and the last answer closes the dialog. */}
@@ -3422,7 +3427,7 @@ export default function App(): React.JSX.Element {
         openSessionIds={openSessionIds}
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
-        feedbackAvailable={feedbackInfo.available}
+        feedbackAvailable={feedbackInfo.available && !!privacy?.on.feedback}
         onFeedback={() => setFeedbackOpen(true)}
         onAddWorkspace={addWorkspace}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
@@ -3965,7 +3970,7 @@ export default function App(): React.JSX.Element {
             /* §34: `show` drops while the agent streams and comes back at idle;
                the component stays mounted, so `onAsked` still fires exactly once. */
             pulse={
-              feedbackInfo.available
+              feedbackInfo.available && !!privacy?.on.sessionPulse
                 ? {
                     // Mounting is sticky; `hidden` is what the stream toggles.
                     show: !!pulseShow[sid] && !pulseDone[sid],
@@ -4321,6 +4326,7 @@ export default function App(): React.JSX.Element {
         />
       )}
     </div>
+    </OpenDocsContext.Provider>
     </NavContext.Provider>
   );
 }
