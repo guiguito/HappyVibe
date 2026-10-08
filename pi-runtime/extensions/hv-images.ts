@@ -33,6 +33,15 @@ export function resolveImageModel(models: readonly ImageModelInfo[], stored: str
   return [...models].sort((a, b) => a.perImage - b.perImage)[0]?.id ?? null;
 }
 
+/**
+ * A taken file name, refused. Told only "pick a new name", the agent `rm`'d the user's image and
+ * retried (GUI pass, 2026-10-08) — so the sentence forbids the work-around. One copy, two senders:
+ * the pre-check below and main's `wx` write guard (ipc.ts).
+ */
+export function takenNameRefusal(path: string): string {
+  return `A file already exists at ${path}. Pick a new name. Don't delete, move or rename the existing file — it's the user's.`;
+}
+
 export const IMAGE_TOOL_DESCRIPTION =
   "Generate one image from a text prompt and save it as a new file in the workspace. It costs money on the user's OpenRouter account; the user picked the model.";
 
@@ -86,7 +95,7 @@ export async function runImageTool(d: {
 }): Promise<ImageToolResult> {
   const details = { provider: "openrouter", model: d.modelId, path: d.path };
   const say = (text: string, usage?: Usage): ImageToolResult => ({ content: [{ type: "text", text }], details, ...(usage ? { usage } : {}) });
-  if (d.exists?.(d.path)) return say(`A file already exists at ${d.path}. Pick a new name.`);
+  if (d.exists?.(d.path)) return say(takenNameRefusal(d.path));
   const r = await d.generate(d.prompt);
   if ("error" in r) return say(r.error);
   const usage = withCharge(r.usage, r.charged);

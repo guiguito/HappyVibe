@@ -84,7 +84,7 @@ import {
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, IMAGE_MODELS, PROVIDER_CATALOG } from "./providerCatalog.generated";
-import { parseImageSave, resolveImageModel } from "../../pi-runtime/extensions/hv-images";
+import { parseImageSave, resolveImageModel, takenNameRefusal } from "../../pi-runtime/extensions/hv-images";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { foldWorkflowProgress, twChildStatus, twInspect } from "./twChildren";
@@ -2294,7 +2294,7 @@ export function registerIpc(
           reply({
             ok: false,
             error: /EEXIST/.test(msg)
-              ? `A file already exists at ${ir.path}. Pick a new name.`
+              ? takenNameRefusal(ir.path)
               : msg === "Path escapes workspace"
                 ? `${ir.path} is outside the workspace. Save inside it.`
                 : msg,

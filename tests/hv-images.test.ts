@@ -32,7 +32,7 @@ test("the stored model wins only while it is still offered; otherwise the cheape
   expect(resolveImageModel([], "pro")).toBeNull();
 });
 
-import { parseImageSave, runImageTool, withCharge } from "../pi-runtime/extensions/hv-images";
+import { parseImageSave, runImageTool, takenNameRefusal, withCharge } from "../pi-runtime/extensions/hv-images";
 
 const usage = { input: 12, output: 1120, cacheRead: 0, cacheWrite: 0, totalTokens: 1132, cost: { input: 0.000003, output: 0.00168, cacheRead: 0, cacheWrite: 0, total: 0.001683 } };
 const okImages = { stopReason: "stop", output: [{ type: "image", data: "QUJD", mimeType: "image/png" }], usage };
@@ -68,9 +68,9 @@ test("a refused save (the file exists) keeps the usage — the image was still p
   const r = await runImageTool({
     modelId: "google/x", prompt: "a sun", path: "assets/sun.png",
     generate: async () => ({ ...okImages, charged: 0.033 }),
-    save: async () => JSON.stringify({ ok: false, error: "A file already exists at assets/sun.png. Pick a new name." }),
+    save: async () => JSON.stringify({ ok: false, error: takenNameRefusal("assets/sun.png") }),
   });
-  expect(r.content).toEqual([{ type: "text", text: "A file already exists at assets/sun.png. Pick a new name." }]);
+  expect(r.content).toEqual([{ type: "text", text: takenNameRefusal("assets/sun.png") }]);
   expect(r.usage?.cost.total).toBeCloseTo(0.033, 10);
 });
 
@@ -111,6 +111,20 @@ test("a taken name is refused BEFORE the image is generated — nothing is paid 
     save: async () => "",
   });
   expect(generated).toBe(false);
-  expect(r.content[0]).toEqual({ type: "text", text: "A file already exists at assets/sun.png. Pick a new name." });
+  expect(r.content[0]).toEqual({ type: "text", text: takenNameRefusal("assets/sun.png") });
   expect(r.usage).toBeUndefined();
+});
+
+test("GUI pass: a taken name tells the agent not to delete, move or rename the user's file", () => {
+  // Seen 2026-10-08: told only "pick a new name", the agent ran `rm` on the existing image and retried.
+  expect(takenNameRefusal("assets/sun.png")).toBe(
+    "A file already exists at assets/sun.png. Pick a new name. Don't delete, move or rename the existing file — it's the user's.",
+  );
+});
+
+test("both senders use the one sentence (the pre-check here, main's write guard in ipc.ts)", async () => {
+  const fs = await import("node:fs");
+  expect(fs.readFileSync("src/main/ipc.ts", "utf8")).toContain("takenNameRefusal(ir.path)");
+  const r = await runImageTool({ modelId: "m", prompt: "p", path: "a.png", exists: () => true, generate: async () => okImages, save: async () => "" });
+  expect(r.content[0]).toEqual({ type: "text", text: takenNameRefusal("a.png") });
 });
