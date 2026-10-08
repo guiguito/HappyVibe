@@ -13,7 +13,7 @@ The one thing here you can't take back is **Clear browsing data**, which signs t
 
 ## What's on the screen
 
-The screen's own intro sums it up: "Abilities HappyVibe gives the agent itself, on by default. Turning one off takes its tools away from every session. To see every tool the agent can call and whether it is allowed, open Agent tools."
+The screen's own intro sums it up: "Abilities HappyVibe gives the agent itself, on by default except Workflows. Turning one off takes its tools away from every session. To see every tool the agent can call and whether it is allowed, open Agent tools."
 
 Below it is one list, under the heading **Built-in Custom Tools**. Each row has a switch on the right. **Core tools** has one switch beside each tool name instead. The switch reads **On** while it's on. Click it to turn it off.
 
@@ -88,7 +88,7 @@ Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB fil
 
 ### Workflows — 1 tool
 
-This row sits under **Sub-agents** and switches one of its tools: the one that runs a scripted workflow of several subagents. "It is the heaviest tool the agent carries (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost." While **Sub-agents** is off, this switch is greyed out and reads: "Sub-agents are off, so this is off too."
+This row sits under **Sub-agents** and switches one of its tools: the one that runs a scripted workflow of several subagents. "It is the heaviest tool the agent carries (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost. It is off until you turn it on." While **Sub-agents** is off, this switch is greyed out and reads: "Sub-agents are off, so this is off too."
 
 ### Skills
 

@@ -49,7 +49,7 @@ function WorkflowsRow({ on, parentOn, onChange }: { on: boolean; parentOn: boole
         <span className="font-bold block">Workflows — 1 tool</span>
         <span className="text-xs text-ink-soft">
           Lets the agent run a scripted workflow of several sub-agents. It is the heaviest tool the agent carries
-          (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost.
+          (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost. It is off until you turn it on.
           {!parentOn && " Sub-agents are off, so this is off too."}
         </span>
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
@@ -644,7 +644,7 @@ export function BuiltinToolsBlock({
       icon="tools"
       title="Built-in Custom Tools"
       // "Both" was written when there were two entries; §26 made it three.
-      subtitle="App-provided tools implemented as ordinary tool calls, then Pi's own core tools at the bottom. All are on by default — turn any of them off if you don't want the agent to have it."
+      subtitle="App-provided tools implemented as ordinary tool calls, then Pi's own core tools at the bottom. All are on by default except Workflows — turn any of them off if you don't want the agent to have it."
     >
       {allToolsOff(builtins, shell) && <p className="mb-3 text-sm font-semibold">{ALL_OFF_COPY}</p>}
       <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">

@@ -417,7 +417,8 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §31's Documents is one tool, so it has no coupling either.
   // §33's Memory is three tools over one store, coupled to each other and to nothing else —
   // same grouping argument as the terminal, so one entry.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? true, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
+  // §13 round 27: Workflows ships off (≈5.5k tok/request); an absent key is a user who never chose.
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? false, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
 }
 
 export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] }): void {
