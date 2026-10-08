@@ -22,18 +22,21 @@ import type { PromptTemplateProvenance, PromptTemplateRegistry } from "./registr
 export type PromptTemplateStatus = "active" | "disabled" | "needs-review" | "shadowed";
 
 /**
- * Command names the bridge registers as extension commands. Pi matches
- * extension commands and RETURNS before it ever looks at prompt templates
- * (`core/agent-session.js:799-806`), so a `.md` named after one of these is
- * dead on disk while still appearing in `get_commands` as `source:"prompt"` —
- * silently, which is why we surface it as its own status instead.
+ * Every command a chat session registers: the bridge's `/hv-*`, tintinweb's
+ * `/agents`, Pi's built-in `/mcp`. Pi matches extension commands and RETURNS
+ * before it ever looks at prompt templates (`core/agent-session.js:799-806`),
+ * so a `.md` named after one of these is dead on disk while still appearing in
+ * `get_commands` as `source:"prompt"` — silently, which is why we surface it
+ * as its own status instead. PRD §10 round 28 also uses this list as the slash
+ * guard (`slashGuard.ts`).
  *
- * Do not hand-edit this to match a hunch: `tests/commands-reserved.test.ts`
- * re-derives it by scanning every `pi.registerCommand("…")` in
- * `pi-runtime/extensions/happyvibe-bridge.ts`. If that test just went red, you
- * added (or renamed) an `/hv-*` command — add it here too.
+ * Do not hand-edit this to match a hunch: `tests/prompt-templates-reserved.test.ts`
+ * re-derives it by scanning every `registerCommand("…")` the session loads. If
+ * that test just went red, a command was added or renamed — add it here too.
  */
 export const RESERVED_SLASH_COMMANDS: ReadonlySet<string> = new Set([
+  "agents",
+  "mcp",
   "hv-agents",
   "hv-auth-status",
   "hv-context",
