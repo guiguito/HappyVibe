@@ -8,7 +8,7 @@ import { EMPTY_RULES, evaluate, isResultWait, isShellTool, parseRulesFile, type 
 import {
   createChildOutputStore, rememberTwResult, substituteDeliveries,
 } from "./hv-subagent-delivery";
-import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
+import { checkCommand, hasBackgroundAmpersand, terminalSteerFor, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
@@ -32,7 +32,7 @@ import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
 import { boundaryRuleName, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
 import {
-  findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
+  ensureSkillsBlock, findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
 import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
 
@@ -830,7 +830,11 @@ export default function (pi: ExtensionAPI) {
     const base = (event.systemPrompt ?? "") as string;
     // A4: swap Pi's "use the read tool to load a skill's file" for ours, in the
     // one hook that already owns this prompt. No-op when no skills are loaded.
-    const sp = replaceSkillsSentence(base);
+    // §13 round 26: with `read` and the shell both switched off Pi drops its skills block; supply one.
+    const sp = ensureSkillsBlock(
+      replaceSkillsSentence(base),
+      builtins.skills ? ((event as { systemPromptOptions?: { skills?: Array<{ name: string; description: string; filePath: string; disableModelInvocation?: boolean }> } }).systemPromptOptions?.skills ?? []) : [],
+    );
     // W2.3: nested AGENTS.md injection — content re-read at injection time so
     // it's always current. Returning systemPrompt replaces it for THIS TURN
     // ONLY (agent-session.js resets to the base prompt when we return nothing).
@@ -838,7 +842,8 @@ export default function (pi: ExtensionAPI) {
     // Discoverability: inject the delegable-subagent roster (same per-turn
     // replacement mechanism as the nested section). enumerateAgents is a hoisted
     // function declaration below in this closure.
-    const agents = await enumerateAgents();
+    // §13 round 26: Sub-agents off ⇒ no Agent tool, so no roster (and none in the snapshot).
+    const agents = builtins.subagents ? await enumerateAgents() : [];
     const agentsSection = renderSubagentSection(agents, { tool: "Agent" });
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
@@ -853,7 +858,8 @@ export default function (pi: ExtensionAPI) {
     // §35: a scheduled read-only run gets its own directive instead of the
     // planning one — it reports in chat and writes no plan file.
     const readonlySection = readonly ? "\n\n" + buildReadonlyPrompt(pi.getAllTools().map((t) => t.name)) : "";
-    const terminalSection = builtins.terminal ? "\n\n" + TERMINAL_STEER_LINE : "";
+    const steer = terminalSteerFor(builtins.terminal, builtins.coreOff);
+    const terminalSection = steer ? "\n\n" + steer : "";
     // §32: steer web reading to the web tools rather than `bash curl`, which
     // returns raw HTML, runs through the terminal gate as an arbitrary command
     // and never tells the user which page was read. Only while the group is
@@ -1063,7 +1069,7 @@ export default function (pi: ExtensionAPI) {
     // a boundary rather than a verb. Side-effect-free.
     // The boundary comes from tintinweb's discovery + the agent file (hv-tw-gate.ts).
     const boundary = subagentName
-      ? twBoundary(subagentName, await twAgentInfo(subagentName), input)
+      ? twBoundary(subagentName, await twAgentInfo(subagentName), input, new Set(builtins.coreOff))
       : undefined;
     if (subagentName) {
       if (twDisabledAgents().has(subagentName)) {
@@ -1222,7 +1228,7 @@ export default function (pi: ExtensionAPI) {
       }
       const parsed = workflowAgents(src.script);
       const agents = await Promise.all(parsed.types.map(async (type) => {
-        const b = twBoundary(type, await twAgentInfo(type), {});
+        const b = twBoundary(type, await twAgentInfo(type), {}, new Set(builtins.coreOff));
         return { type, known: !!b, tools: b?.tools ?? [], writeCapable: b?.writeCapable ?? [] };
       }));
       const approve = (): void => { for (const a of agents) if (a.known) approvedBoundaries.set(a.type, [...a.tools]); };
@@ -1653,7 +1659,8 @@ export default function (pi: ExtensionAPI) {
   // load surfaces as a transcript card with a model-authored "why", and each
   // invocation is auditable (hv.skill notify). Prompting is steered here via the
   // skills sentence (replaceSkillsSentence); a raw read is caught by the fallback above.
-  pi.registerTool({
+  // §13 round 26: the Skills switch off ⇒ no use_skill at all (main also passes no --skill).
+  if (builtins.skills) pi.registerTool({
     name: "use_skill",
     label: "Use skill",
     description:

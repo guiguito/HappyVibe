@@ -34,7 +34,7 @@ let client: PiClient;
 afterEach(() => client?.stop());
 
 /** Spawn the bridge with a given HV_BUILTINS and report what it registered. */
-async function probe(builtins: string | undefined, extraEnv: Record<string, string> = {}): Promise<{ tools: string[]; commands: string[] }> {
+async function probe(builtins: string | undefined, extraEnv: Record<string, string> = {}, extraArgs: string[] = []): Promise<{ tools: string[]; commands: string[] }> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-builtins-"));
   const home = path.join(tmp, "home");
   const work = path.join(tmp, "work");
@@ -45,6 +45,8 @@ async function probe(builtins: string | undefined, extraEnv: Record<string, stri
     execPath: process.execPath,
     args: [
       CLI, "--mode", "rpc", "--no-session",
+      // Before the bridge: it must stay the LAST -e (spawn.ts load-order rule).
+      ...extraArgs,
       "-e", BRIDGE,
       "--provider", "deepseek", "--model", "deepseek-v4-flash",
     ],
@@ -183,3 +185,30 @@ test.skipIf(!fs.existsSync(CLI))("no memory scope named by main ⇒ no memory to
   const { tools } = await probe(undefined);
   for (const t of MEMORY_TOOLS_EXPECTED) expect(tools).not.toContain(t);
 });
+
+/**
+ * §13 round 26 — every tool can be switched off. Two halves, both at startup with no key:
+ * the bridge's own `use_skill` follows the Skills switch, and Pi's `--exclude-tools` removes a
+ * name from what the bridge reports. The second half is what the Agent tools page relies on
+ * (it renders /hv-tools): if a pin bump made getAllTools() return excluded tools again, the
+ * page would list a tool the user switched off — and this test is the only thing that can see it.
+ */
+const TW = path.join(runtime, "node_modules/@tintinweb/pi-subagents/src/index.ts");
+
+test.skipIf(!fs.existsSync(CLI))('HV_BUILTINS {"skills":false} ⇒ no use_skill; the default registers it', async () => {
+  const off = await probe(JSON.stringify({ skills: false }));
+  expect(off.tools.length).toBeGreaterThan(0);
+  expect(off.tools).not.toContain("use_skill");
+  const on = await probe(undefined);
+  expect(on.tools).toContain("use_skill");
+}, 30_000);
+
+test.skipIf(!fs.existsSync(CLI))("--exclude-tools removes core and extension tools from /hv-tools", async () => {
+  const { tools } = await probe(undefined, {}, ["-e", TW, "--exclude-tools", "bash,SubagentWorkflow"]);
+  expect(tools.length).toBeGreaterThan(0);
+  expect(tools).not.toContain("bash");
+  expect(tools).not.toContain("SubagentWorkflow");
+  // Exclusion is by name, not by family: the neighbours stay.
+  expect(tools).toContain("read");
+  expect(tools).toContain("Agent");
+}, 30_000);

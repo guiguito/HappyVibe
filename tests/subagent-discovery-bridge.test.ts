@@ -126,3 +126,33 @@ test.skipIf(!KEY)(
   },
   180_000,
 );
+
+// §13 round 26: Sub-agents switched off ⇒ main loads no tintinweb, so there is no `Agent` tool,
+// and a roster telling the model to delegate would name a tool it lacks (§26). The agent FILE
+// still exists on disk — that is exactly the case the switch has to beat.
+test.skipIf(!KEY)(
+  "Sub-agents switched off ⇒ no roster in the system prompt or the context snapshot",
+  async () => {
+    const cwd = cwdWithAgent();
+    const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-disc-sess-"));
+    const h = makeClient(cwd, sessionDir, { ...PROVIDER_ENV, HV_BUILTINS: JSON.stringify({ subagents: false }) });
+    try {
+      await h.client.start();
+      const b1 = h.events.length;
+      await h.client.send({ type: "prompt", message: "Reply with exactly: OK" });
+      await h.agentEndAfter(b1);
+
+      await h.client.send({ type: "prompt", message: "/hv-sysprompt" });
+      const sys = await h.nextRequest((r) => payload(r).kind === "hv.sysprompt");
+      expect(payload(sys).text as string).not.toContain("<happyvibe_subagents>");
+
+      await h.client.send({ type: "prompt", message: "/hv-context" });
+      const snap = await h.nextRequest((r) => payload(r).kind === "hv.context" && payload(r).stage === "snapshot");
+      const system = payload(snap).system as { agents?: Array<{ name: string }> };
+      expect(system.agents ?? []).toEqual([]);
+    } finally {
+      h.client.stop();
+    }
+  },
+  180_000,
+);

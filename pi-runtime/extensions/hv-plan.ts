@@ -223,6 +223,7 @@ const PLAN_PASS_TOOLS = new Set([
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
 import { isDelegationTool, isShellTool } from "./hv-rules";
+import { AGENT_SHELL } from "./hv-terminal";
 
 export type PlanGate =
   | { kind: "block"; reason: string }
@@ -333,7 +334,7 @@ export function gatePlanCall(toolName: string, input: unknown, opts?: { mcpReadO
 
 const PLAN_PROMPT_MARKER = "[HAPPYVIBE PLAN MODE ACTIVE]";
 
-export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>): string {
+export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>, agentShell: string = AGENT_SHELL): string {
   // A3 (Improve-prompts round, 2026-09-10) — the blocked list is DERIVED, and
   // filtered to tools that exist this session.
   //
@@ -346,15 +347,23 @@ export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>)
   // the full set is shown, because that page is about what the mode does.
   const have = registeredTools ? new Set(registeredTools) : null;
   const blocked = [...BLOCKED_PLAN_TOOLS].filter((t) => !have || have.has(t));
+  // §13 round 26: the shell and sub-agents can be switched off, so their clauses follow the
+  // tools too. With no list (settings panel) both show, as the blocked list does.
+  // The session's OWN shell: on macOS Pi registers an inactive powershell too, so "whichever
+  // shell is registered" would name a tool the model cannot call.
+  const shell = !have || have.has(agentShell) ? agentShell : undefined;
+  const shellClause = shell ? `; ${shell} is limited to a\nread-only allowlist` : "";
+  const delegateClause = !have || have.has("Agent")
+    ? ` Delegating to a sub-agent works — the user approves its
+boundary first, and a read-only explorer is the most useful thing a planning
+session can do.`
+    : "";
   const body = `${PLAN_PROMPT_MARKER}
 # Plan Mode (read-only)
 
 You are in Plan Mode: explore, ask, and produce a decision-complete
 implementation plan the user will approve. The user implements it later, not
-you. Blocked while planning: ${blocked.join(", ")}; bash is limited to a
-read-only allowlist. Delegating to a sub-agent works — the user approves its
-boundary first, and a read-only explorer is the most useful thing a planning
-session can do.
+you. Blocked while planning: ${blocked.join(", ")}${shellClause}.${delegateClause}
 
 ## Phase 1 — Ground in the repository
 - Explore first. Read files, search, inspect config, run read-only checks to

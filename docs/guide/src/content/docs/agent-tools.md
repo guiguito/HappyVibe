@@ -32,7 +32,7 @@ A few tools are checked under another name on a real call. Each MCP server tool 
 
 ### Where the list comes from
 
-The list is read from the agent itself, so it shows what the agent really has. While the app asks, you'll see "Loading…". If it comes back empty, the page reads "No tools yet — Start a session and this fills in from the live agent."
+The list is read from the agent itself, so it shows what the agent really has. A tool you switched off on [Built-in tools](/docs/built-in-tools/) isn't in it. While the app asks, you'll see "Loading…". If it comes back empty, the page reads "No tools yet — Start a session and this fills in from the live agent."
 
 ## Check a tool before you rely on it
 

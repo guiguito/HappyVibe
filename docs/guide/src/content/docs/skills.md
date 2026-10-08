@@ -11,6 +11,8 @@ A skill teaches the agent how to do one job your way. It's know-how the agent pi
 
 ## What's on the screen
 
+At the top, one switch turns skills on or off for the whole app. It's the same switch as the **Skills** row on [Built-in tools](/docs/built-in-tools/#skills). While it's off, it says "Skills are off — no skill loads in any session." Your conversation stays: open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
+
 ### Global skills
 
 Global means in every workspace. The section says: "Reviewed and gated. Workspace-specific skills are managed in each workspace's settings." A workspace's own skills are in its [workspace settings](/docs/first-session/#workspace-settings), not on this screen.

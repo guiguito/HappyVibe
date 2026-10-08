@@ -52,6 +52,20 @@ describe("guardDecision", () => {
     expect(guardDecision({ ...base, rulesReadable: false, tool: "bash", input: { command: "ls" }, boundary: ["bash"] }).action).toBe("deny");
   });
 
+  // §13 round 26: a core tool the user switched off is absent from the parent (--exclude-tools),
+  // but a child is its own session and an agent file with no tools: line gets every core tool.
+  // So the guard refuses it — before the boundary, under bypass too, and never as an ask.
+  it("a switched-off core tool is refused even inside the boundary and under bypass, with no ask", () => {
+    const d = guardDecision({ ...base, bypass: true, rules: allow("bash"), tool: "bash", input: { command: "ls" }, boundary: ["bash"], off: ["bash"] });
+    expect(d.action).toBe("deny");
+    expect(d.reason).toMatch(/switched off 'bash'/);
+    expect(d.askable).toBeUndefined();
+  });
+
+  it("switching one core tool off leaves the others alone", () => {
+    expect(guardDecision({ ...base, tool: "read", input: { path: "a.txt" }, boundary: READ_ONLY, off: ["bash"] }).action).toBe("allow");
+  });
+
   it("safe reads inside the boundary need no rule", () => {
     expect(guardDecision({ ...base, tool: "read", input: { path: "a.txt" }, boundary: READ_ONLY }).action).toBe("allow");
   });

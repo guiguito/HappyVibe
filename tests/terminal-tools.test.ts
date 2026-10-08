@@ -4,6 +4,8 @@ import {
   checkCommand,
   hasBackgroundAmpersand,
   TERMINAL_STEER_LINE,
+  TERMINAL_TOOL_DESCRIPTIONS,
+  terminalSteerFor,
 } from "../pi-runtime/extensions/hv-terminal";
 import { SAFE_TOOLS, evaluate, EMPTY_RULES } from "../pi-runtime/extensions/hv-rules";
 import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
@@ -129,5 +131,20 @@ describe("builtins.terminal", () => {
     const b = parseBuiltins(JSON.stringify({ terminal: false, plan: true, askUser: false }));
     expect(b.askUser).toBe(true);
     expect(b.plan).toBe(true);
+  });
+});
+
+// §13 round 26: the shell can be switched off. The steer line exists only to steer AWAY from
+// the shell, so with the shell off it goes; and the tool descriptions never name the shell
+// tool, so they stay true whether it is on or off (and on Windows, where it is powershell).
+describe("§13 round 26 — the terminal copy with the shell switched off", () => {
+  it("drops the steer line when the group or the shell is off", () => {
+    expect(terminalSteerFor(true, [], "bash")).toContain("terminal_run");
+    expect(terminalSteerFor(true, ["bash"], "bash")).toBe("");
+    expect(terminalSteerFor(false, [], "bash")).toBe("");
+    expect(terminalSteerFor(true, ["bash"], "powershell")).toContain("`powershell`");
+  });
+  it("no tool description names the shell tool", () => {
+    for (const d of Object.values(TERMINAL_TOOL_DESCRIPTIONS)) expect(d).not.toMatch(/\bbash\b|powershell/);
   });
 });

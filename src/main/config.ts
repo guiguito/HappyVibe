@@ -1,3 +1,6 @@
+// §13 round 26: coreOff becomes `--exclude-tools` args — only real core names survive a
+// hand-edited config or a bad IPC payload, and a non-array never throws.
+import { normalizeCoreOff } from "../../pi-runtime/extensions/hv-builtins";
 import { app, safeStorage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
@@ -61,7 +64,7 @@ interface ConfigFile {
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
       and §26's grouped Terminal entry). Global only — no per-workspace tier.
       Absent key = on (fail-open default). */
-  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean };
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] };
   /** §32: the web service main calls for the web tools. Absent = HappyVibe's
       default. Global only, like builtinTools, and read PER CALL rather than at
       spawn — the Pi child never sees the URL or the key, so a change needs no
@@ -395,7 +398,7 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
-export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean } {
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; skills: boolean; coreOff: string[] } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
   // Plan mode's prompt tells the model to resolve decisions with ask_user, so
@@ -414,10 +417,10 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §31's Documents is one tool, so it has no coupling either.
   // §33's Memory is three tools over one store, coupled to each other and to nothing else —
   // same grouping argument as the terminal, so one entry.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true };
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? true, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
 }
 
-export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean }): void {
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);

@@ -40,6 +40,11 @@ describe("twBoundary", () => {
     expect(b.tools).toEqual(["find", "grep", "ls", "read"]);
   });
 
+  it("§13 round 26: a switched-off core tool is not promised on the boundary", () => {
+    expect(twBoundary("worker", { builtinToolNames: ["read", "bash", "write"], declared: true }, {}, new Set(["bash"]))!.tools).toEqual(["read", "write"]);
+    expect(twBoundary("vague", { builtinToolNames: ALL_BUILTINS, declared: false }, {}, new Set(["read"]))!.tools).toEqual(["find", "grep", "ls"]);
+  });
+
   it("inherit_context is shown, not clamped", () => {
     expect(twBoundary("code-explorer", { builtinToolNames: ["read"], declared: true }, { inherit_context: true })!.context).toBe("fork");
   });

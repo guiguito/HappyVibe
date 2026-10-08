@@ -4,11 +4,10 @@ import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
 import { HowItWorks } from "./HowItWorks";
 import { useWebDefaultPaused } from "../remoteConfig";
+import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE, toggleCore } from "../toolSwitches";
+import { FamilySwitchRow } from "./FamilySwitch";
+import { coreToolNames } from "../../../../pi-runtime/extensions/hv-builtins";
 
-/** Minor 3: same phrase used in the Plan-off confirm modal and in the live
-    hv:session-reloading notice (App.tsx) — reused verbatim so every control
-    that triggers the respawn discloses it the same way, not a bespoke one-off. */
-const RESPAWN_NOTE = "Live sessions respawn to apply this — permission grants and dangerous mode reset to safe defaults for those sessions.";
 
 /** §13 round 6: the App Tools page's top block — global on/off for the two
     built-in custom tools (plan mode, ask_user). Kept in its own file/component
@@ -34,6 +33,55 @@ interface Builtins {
   schedules: boolean;
   /** §33: the user's append to the memory policy (never an override — PromptRow's rule). */
   memoryAppend: string;
+  /** §13 round 26: the family switches and Pi's core tools switched off one by one. */
+  mcp: boolean;
+  subagents: boolean;
+  workflows: boolean;
+  skills: boolean;
+  coreOff: string[];
+}
+
+/** §13 round 26: SubagentWorkflow alone, nested under Sub-agents and meaningless without it. */
+function WorkflowsRow({ on, parentOn, onChange }: { on: boolean; parentOn: boolean; onChange: (on: boolean) => void }): React.JSX.Element {
+  return (
+    <div className="border-b border-line last:border-b-0 pl-10 pr-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <span className="font-bold block">Workflows — 1 tool</span>
+        <span className="text-xs text-ink-soft">
+          Lets the agent run a scripted workflow of several sub-agents. It is the heaviest tool the agent carries
+          (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost.
+          {!parentOn && " Sub-agents are off, so this is off too."}
+        </span>
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+      </div>
+      <TogglePill on={on && parentOn} disabled={!parentOn} onClick={() => onChange(!on)} />
+    </div>
+  );
+}
+
+/** §13 round 26: Pi's own tools, one switch each (`--exclude-tools`). Off reaches sub-agents too. */
+function CoreToolsRow({ names, off, onChange }: { names: string[]; off: string[]; onChange: (off: string[]) => void }): React.JSX.Element {
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3">
+      <span className="font-bold block">Core tools — {names.length} tools</span>
+      <span className="text-xs text-ink-soft">
+        Pi&apos;s own tools for reading, searching and changing files and running commands. A tool you turn off is
+        gone from the agent and from every sub-agent it starts.
+      </span>
+      <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {names.map((n) => {
+          const on = !off.includes(n);
+          return (
+            <span key={n} className="flex items-center gap-2 rounded-full border-2 border-line pl-3 pr-1 py-0.5">
+              <span className="font-mono text-xs">{n}</span>
+              <TogglePill on={on} onClick={() => onChange(toggleCore(off, n))} />
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /** Plan mode's row. The prompt panel and the append box are PromptRow's, shared
@@ -566,9 +614,11 @@ export function BuiltinToolsBlock({
 } = {}): React.JSX.Element | null {
   const [builtins, setBuiltins] = useState<Builtins | null>(null);
   const [askUserError, setAskUserError] = useState<string | null>(null);
+  const [shell, setShell] = useState<"bash" | "powershell">("bash");
 
   useEffect(() => {
     void window.hv.builtinsGet().then(setBuiltins);
+    void window.hv.agentShell().then((s) => setShell(s.shell));
   }, []);
 
   useEffect(() => {
@@ -579,14 +629,24 @@ export function BuiltinToolsBlock({
   if (!builtins) return null;
 
   const patch = (p: Partial<Builtins>): void => setBuiltins((b) => (b ? { ...b, ...p } : b));
+  // §13 round 26: the family rows are the same switches as the MCP, Agents and Skills pages
+  // (one source, two surfaces), then Pi's own tools one by one.
+  const save = (p: Partial<Builtins>): void => {
+    setAskUserError(null);
+    void window.hv.builtinsSet(p).then(
+      () => patch(p),
+      (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+    );
+  };
 
   return (
     <Section
       icon="tools"
       title="Built-in Custom Tools"
       // "Both" was written when there were two entries; §26 made it three.
-      subtitle="App-provided tools implemented as ordinary tool calls, not part of Pi core. All are on by default — turn any of them off if you don't want the agent to have it."
+      subtitle="App-provided tools implemented as ordinary tool calls, then Pi's own core tools at the bottom. All are on by default — turn any of them off if you don't want the agent to have it."
     >
+      {allToolsOff(builtins, shell) && <p className="mb-3 text-sm font-semibold">{ALL_OFF_COPY}</p>}
       <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
         <PlanModeRow builtins={builtins} onChange={patch} />
         <AskUserRow
@@ -676,6 +736,11 @@ export function BuiltinToolsBlock({
             );
           }}
         />
+        <FamilySwitchRow family="mcp" on={builtins.mcp} onChange={(on) => save({ mcp: on })} />
+        <FamilySwitchRow family="subagents" on={builtins.subagents} onChange={(on) => save({ subagents: on })} />
+        <WorkflowsRow on={builtins.workflows} parentOn={builtins.subagents} onChange={(on) => save({ workflows: on })} />
+        <FamilySwitchRow family="skills" on={builtins.skills} onChange={(on) => save({ skills: on })} />
+        <CoreToolsRow names={coreToolNames(shell)} off={builtins.coreOff} onChange={(coreOff) => save({ coreOff })} />
       </div>
     </Section>
   );

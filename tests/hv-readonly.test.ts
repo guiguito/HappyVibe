@@ -62,6 +62,11 @@ describe("readonlyFromEnv / buildReadonlyPrompt", () => {
     expect(p).toMatch(/report/i);
   });
 
+  it("§13 round 26: names the shell only when the session has it", () => {
+    expect(buildReadonlyPrompt(["read", "bash"], "bash")).toMatch(/bash is limited/);
+    expect(buildReadonlyPrompt(["read", "powershell"], "bash")).not.toMatch(/\bbash\b|powershell is limited/);
+  });
+
   it("says something sensible when the session registered nothing blockable", () => {
     expect(buildReadonlyPrompt(["read"])).toContain("file edits and shell writes");
   });

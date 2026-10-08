@@ -1,4 +1,5 @@
 import { Section } from "./Section";
+import { FamilySwitch } from "./FamilySwitch";
 import { SkillsSection } from "./SkillsSection";
 
 /** Global skills page (split out of the old combined Skills/MCP/Agents/Tools view). */
@@ -17,6 +18,7 @@ export function SkillsView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Skills</h1>
         <p className="text-sm text-ink-soft mb-8">Skills the agent can load.</p>
+        <FamilySwitch family="skills" />
 
         {/* Skills — global only (workspace skills are managed in each workspace's settings) */}
         <Section

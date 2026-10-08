@@ -51,6 +51,9 @@ paths:
 - An `Agent` call gates as `subagent:<type>`. Declared tools come from the agent FILE's frontmatter
   (`hv-tw-gate.ts`), because tintinweb hands an agent with no `tools:` EVERY builtin — an undeclared
   agent is shown, approved and held as the read-only floor.
+- A core tool switched off on Built-in tools (`HV_BUILTINS` `coreOff`) is refused by `guardDecision`
+  FIRST — before the boundary, under bypass too, never as an ask — and `twBoundary` doesn't list it.
+  The Sub-agents switch off means tintinweb isn't loaded and the bridge injects no roster.
 - Discovery: `<agentDir>/agents`, `.pi/agents`, `.agents/agents` only. Upstream defaults are off:
   `disableDefaultAgents`, `fallbackSubagent: "none"` (an unknown type FAILS). Locked settings:
   `TINTINWEB_SETTINGS` (`subagentSettings.ts` → `<agentDir>/subagents.json`). The per-agent switch is

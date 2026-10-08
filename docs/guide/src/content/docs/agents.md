@@ -11,6 +11,8 @@ Your agent doesn't have to do everything itself. It can hand part of a job to a 
 
 ## What's on the screen
 
+At the top, one switch turns subagents on or off for the whole app. It's the same switch as the **Sub-agents — 4 tools** row on [Built-in tools](/docs/built-in-tools/#sub-agents--4-tools). While it's off, it says "Sub-agents are off — the agent can't delegate." Your conversation stays: open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
+
 ### The context line
 
 Under the **Agents** heading, one line tells you what your roster costs, for example "4 on · about 180 tokens of context every turn. Switch off the ones you do not use."

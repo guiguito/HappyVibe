@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  ensureSkillsBlock,
   HV_SKILLS_SENTENCE,
   PI_SKILLS_SENTENCE,
+  PI_SKILLS_SENTENCE_BASH,
   replaceSkillsSentence,
 } from "../pi-runtime/extensions/hv-skills";
 
@@ -35,10 +37,22 @@ describe("A4 — Pi's skills sentence is replaced, and the literal is pinned to 
     expect(skillsJs).toContain(JSON.stringify(PI_SKILLS_SENTENCE));
   });
 
-  it("Pi's other branch is the no-`read` one, which never applies to us", () => {
-    // formatSkillsForPrompt picks by fileReadTool; HappyVibe always ships `read`,
-    // so there is exactly one literal to replace, not two.
-    expect(skillsJs).toContain("Use bash to load a skill's file when the task matches its description.");
+  it("Pi's other branch is the no-`read` one, which round 26 makes reachable", () => {
+    // `read` can be switched off (§13 round 26), so Pi then says "Use bash…" — replaced too.
+    expect(skillsJs).toContain(JSON.stringify(PI_SKILLS_SENTENCE_BASH));
+    expect(replaceSkillsSentence(`a\n${PI_SKILLS_SENTENCE_BASH}\nb`)).toBe(`a\n${HV_SKILLS_SENTENCE}\nb`);
+  });
+
+  it("with neither read nor bash Pi drops the skills block, so the bridge supplies one", () => {
+    const skills = [{ name: "pdf", description: "Read <PDFs>", filePath: "/s/pdf/SKILL.md" }, { name: "hidden", description: "x", filePath: "/h", disableModelInvocation: true }];
+    const sp = ensureSkillsBlock("base prompt", skills);
+    expect(sp).toContain(HV_SKILLS_SENTENCE);
+    expect(sp).toContain("<name>pdf</name>");
+    expect(sp).toContain("Read &lt;PDFs&gt;");
+    expect(sp).not.toContain("hidden");
+    // Pi already rendered one: untouched. No visible skills: untouched.
+    expect(ensureSkillsBlock("x <available_skills>y</available_skills>", skills)).toBe("x <available_skills>y</available_skills>");
+    expect(ensureSkillsBlock("base", [])).toBe("base");
   });
 
   it("replaces it, and leaves a prompt without it untouched", () => {

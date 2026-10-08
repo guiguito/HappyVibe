@@ -453,8 +453,10 @@ export function ChatView({
   };
 
   // §12 (2026-08-29): the agent rows shown above the file rows in the `@` menu.
+  // §13 round 26: the header chips and the @ menu count a family only while its switch is on.
+  const [families, setFamilies] = useState({ skills: true, subagents: true, mcp: true });
   const delegatable = delegatableAgents(agents ?? []);
-  const mentionAgents = mention ? agentMentionItems(delegatable, mention.query) : [];
+  const mentionAgents = mention && families.subagents ? agentMentionItems(delegatable, mention.query) : [];
 
   // The run the user PICKED from the `@` menu. A prompt reaches it only while it still
   // starts with that run's `@agent ` token (steerTarget) — typed text is never an address.
@@ -747,10 +749,16 @@ export function ChatView({
    * round trip and never changes at runtime.
    */
   const refreshDocumentAvailability = (): void => {
-    void window.hv.builtinsGet().then((b) => setDocumentsOn(b.document));
+    void window.hv.builtinsGet().then((b) => {
+      setDocumentsOn(b.document);
+      setFamilies({ skills: b.skills, subagents: b.subagents, mcp: b.mcp });
+    });
     void window.hv.documentsAvailable().then(setDocumentsHere);
   };
   useEffect(refreshDocumentAvailability, []);
+  // A switch change respawns live sessions (hv:session-reloading); re-read so an open chat's
+  // chips and attach row never describe the old switches.
+  useEffect(() => window.hv.onSessionReloading(() => refreshDocumentAvailability()), []);
 
   const attachDocument = async (): Promise<void> => {
     if (sessionId) window.hv.usageFeature(sessionId, "document");
@@ -1057,9 +1065,9 @@ export function ChatView({
               }}
             />
           )}
-        {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
-        {delegatable.length > 0 && <AgentsChip agents={delegatable} onPick={(name) => insertText(`Ask ${name} to `)} />}
-        {mcpRows && mcpRows.length > 0 && <McpChip rows={mcpRows} onManage={onOpenMcp} />}
+        {families.skills && sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
+        {families.subagents && delegatable.length > 0 && <AgentsChip agents={delegatable} onPick={(name) => insertText(`Ask ${name} to `)} />}
+        {families.mcp && mcpRows && mcpRows.length > 0 && <McpChip rows={mcpRows} onManage={onOpenMcp} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that
             position would otherwise leave an implementable plan with no way to
