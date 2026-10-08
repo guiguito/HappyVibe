@@ -3261,19 +3261,11 @@ export function registerIpc(
     return true;
   };
 
-  /**
-   * §17 round 24 — export a session as HTML.
-   *
-   * Reads the session FILE, so a live, hibernated, archived and closed session
-   * all export identically. The user picks where it lands: the app does not
-   * write to their disk unasked, and the default name is the session's own
-   * title. A cancel is not a failure and the renderer says nothing about it.
-   */
   // §17 round 28: fork / duplicate make a NEW session. The original's file is only read and its
   // process never touched; hv:open-session then paints the new one from its file and resumes it.
   const forkInto = async (meta: SessionMeta, kind: "fork" | "duplicate", entryId?: string, fresh = false): Promise<{ sessionId: string }> => {
     const src = sessionFilePath(sessionDir(), meta.piSessionFile);
-    if (!src && !fresh) throw new Error("This session has nothing to copy yet.");
+    if (!fresh && (!src || !fs.existsSync(src))) throw new Error("This session has nothing to copy yet.");
     const at = new Date().toISOString();
     const file = fresh || !src
       ? undefined
@@ -3296,6 +3288,14 @@ export function registerIpc(
     if (activity.isBusy(sessionId)) throw new Error("Wait for the turn to finish, then duplicate.");
     return forkInto(meta, "duplicate");
   });
+  /**
+   * §17 round 24 — export a session as HTML.
+   *
+   * Reads the session FILE, so a live, hibernated, archived and closed session
+   * all export identically. The user picks where it lands: the app does not
+   * write to their disk unasked, and the default name is the session's own
+   * title. A cancel is not a failure and the renderer says nothing about it.
+   */
   ipcMain.handle("hv:session-export-html", async (e, sessionId: string) => {
     const meta = index.get(sessionId);
     if (!meta) return { ok: false as const, error: "That session is gone." };
@@ -4453,7 +4453,11 @@ export function registerIpc(
   ipcMain.handle("hv:get-auto-compaction", () => getAutoCompaction());
   ipcMain.handle("hv:set-auto-compaction", (_e, on: boolean) => {
     setAutoCompaction(!!on);
-    writePiCompactionSetting();
+    try {
+      writePiCompactionSetting();
+    } catch (e) {
+      console.warn("[hv] compaction setting write failed:", e);
+    }
     for (const id of manager.activeIds()) void (manager.get(id) as PiClient | null)?.send({ type: "set_auto_compaction", enabled: !!on }).catch(() => {});
   });
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());

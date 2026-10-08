@@ -16,12 +16,14 @@ export async function forkSessionFile(
   sessionDirPath: string,
   entryId?: string,
   make: (s: SpawnSpec) => ClientLike = (s) => new PiClient(s),
+  timeoutMs = 30_000,
 ): Promise<string> {
   const c = make(spec);
-  await c.start();
   let copy: string | undefined;
   let result: string | undefined;
-  try {
+  let timer: NodeJS.Timeout | undefined;
+  const run = async (): Promise<string> => {
+    await c.start();
     const fileOf = async (): Promise<string | undefined> =>
       ((await c.send({ type: "get_state" })).data as { sessionFile?: string } | undefined)?.sessionFile;
     copy = await fileOf();
@@ -32,7 +34,16 @@ export async function forkSessionFile(
     const forked = await fileOf();
     if (!forked || forked === copy || !fs.existsSync(forked)) throw new Error("Pi did not write the forked session.");
     return (result = forked);
+  };
+  const timeout = new Promise<never>((_, rej) => {
+    timer = setTimeout(() => rej(new Error("Pi took too long to copy the session.")), timeoutMs);
+  });
+  try {
+    const p = run();
+    p.catch(() => {}); // a run that loses the race to the timeout must not surface as unhandled
+    return await Promise.race([p, timeout]);
   } finally {
+    clearTimeout(timer);
     c.stop();
     // The intermediate copy goes on every path but the duplicate (where it IS the result).
     if (entryId && copy && result !== copy && path.resolve(copy).startsWith(path.resolve(sessionDirPath) + path.sep)) fs.rmSync(copy, { force: true });

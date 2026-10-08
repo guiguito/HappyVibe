@@ -3075,7 +3075,7 @@ export default function App(): React.JSX.Element {
 
   // §17 round 28: Fork from a message — a NEW session holding everything before `it`,
   // opened with `it` back in its composer. The original's conversation is never
-  // touched; with "both" its workspace files roll back first (they are shared).
+  // touched; with "both" its workspace files roll back after the fork exists (they are shared).
   const forkFrom = async (it: TranscriptItem, scope: RewindScope): Promise<void> => {
     if (it.id == null || it.kind !== "user" || it.piTs == null) return;
     // Same owner lookup as rewindTo: ids are globally unique.
@@ -3087,10 +3087,21 @@ export default function App(): React.JSX.Element {
     const idx = items.findIndex((x) => x.id === it.id);
     if (idx < 0) return;
     try {
-      // A running turn may be writing those files right now — never roll them back
-      // under it. ChatView already hides "both" while busy; this is the backstop.
+      const r = await window.hv.forkSession(sid, it.piTs);
+      await openCopyOf(sid, r.sessionId);
+      // §31: the documents ride along, as Rewind re-attaches them, or edit-and-resend drops them.
+      const docs = parseDocumentChips(it.text).map((d) => d.path);
+      setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), docs, nonce: (prev?.nonce ?? 0) + 1 }));
+      // The fork exists now, so a failed restore can no longer cost the user the fork. A running
+      // turn may be writing those files right now — never roll them back under it. ChatView
+      // already hides "both" while busy; this is the backstop.
       if (scope === "both" && !busy[sid]) {
-        const res = await window.hv.rewindRestore(sid, tailToolCallIds(items, idx));
+        let res: Awaited<ReturnType<typeof window.hv.rewindRestore>> = null;
+        try {
+          res = await window.hv.rewindRestore(sid, tailToolCallIds(items, idx));
+        } catch {
+          /* falls through to the no-files-changed notice */
+        }
         if (!res) {
           appendItem(sid, { kind: "notice", text: "No snapshot for that message — no files were changed." });
         } else {
@@ -3099,11 +3110,6 @@ export default function App(): React.JSX.Element {
           appendItem(sid, { kind: "notice", text: `Files rewound — ${parts.join(", ")}.` });
         }
       }
-      const r = await window.hv.forkSession(sid, it.piTs);
-      await openCopyOf(sid, r.sessionId);
-      // §31: the documents ride along, as Rewind re-attaches them, or edit-and-resend drops them.
-      const docs = parseDocumentChips(it.text).map((d) => d.path);
-      setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), docs, nonce: (prev?.nonce ?? 0) + 1 }));
     } catch (err) {
       appendItem(sid, { kind: "notice", text: ipcMessage(err) });
     }

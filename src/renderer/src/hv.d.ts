@@ -916,10 +916,10 @@ interface HvApi {
    * the default branch, or nothing pushed yet. `drafted` is false when the model
    * was unavailable and the commit list was used instead.
    */
-  /** §17 round 24: writes a self-contained HTML page wherever the user picks.
-      `canceled` is a dismissed save dialog — not a failure, and says nothing. */
   forkSession(sessionId: string, piTs: number): Promise<{ sessionId: string }>;
   duplicateSession(sessionId: string): Promise<{ sessionId: string }>;
+  /** §17 round 24: writes a self-contained HTML page wherever the user picks.
+      `canceled` is a dismissed save dialog — not a failure, and says nothing. */
   exportSessionHtml(sessionId: string): Promise<{ ok: true; path: string } | { ok: false; error?: string; canceled?: boolean }>;
   gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
@@ -1037,9 +1037,9 @@ interface HvApi {
   setRules(rules: HvRulesFile): Promise<HvRulesFile>;
   /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
   addPermissionRule(workspace: string | null, tool: string): Promise<HvRulesFile>;
-  /** Round 3 #14: persistent "bypass all permissions". */
   getAutoCompaction(): Promise<boolean>;
   setAutoCompaction(on: boolean): Promise<void>;
+  /** Round 3 #14: persistent "bypass all permissions". */
   getGlobalBypass(): Promise<boolean>;
   setGlobalBypass(on: boolean): Promise<void>;
   /** null = unset (inherit global). */

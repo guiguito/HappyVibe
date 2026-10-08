@@ -549,8 +549,8 @@ export function ChatView({
   // plans get a pill — an implemented or cancelled plan needs no CTA, and the
   // file stays in the tree either way.
   const [planOpen, setPlanOpen] = useState(false);
-// The overflow card's "Compact now…" — the same confirm the context panel opens.
-const [compactAsk, setCompactAsk] = useState(false);
+  // The overflow card's "Compact now…" — the same confirm the context panel opens.
+  const [compactAsk, setCompactAsk] = useState(false);
   // Round 15: bumped on send; Transcript scrolls to the bottom unconditionally
   // when it changes. Starts at 0, whose initial effect run is what makes a
   // freshly opened session land at the bottom rather than at the top.

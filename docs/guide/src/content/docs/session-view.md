@@ -165,7 +165,7 @@ Want to try a different approach without losing this one? Fork it. The new sessi
 
 The new session opens in a new tab, titled with "(fork)" after the original's name. Your message waits in its composer, with any documents you'd attached, ready to edit and send.
 
-- Because both sessions use the same project folder, **Conversation and files** changes this session's files too. Before the fork starts, this session posts a notice like "Files rewound — 2 restored, 0 removed." If the fork then fails, a second notice gives the error, and the files stay rolled back.
+- Because both sessions use the same project folder, **Conversation and files** changes this session's files too. The fork is made first, then this session's files roll back and it posts a notice like "Files rewound — 2 restored, 0 removed." If the restore can't run, the fork still exists and the notice says no files were changed.
 - A fork's cost pill counts only what it spends after the fork.
 - A "Forked from" line with the original's name (a link you can click) sits where the fork's own messages begin, above everything you send there. It reads "Forked from a deleted session" once the original is gone.
 - Run cards from before the fork read "From the original session". They link to the original (plain text if it's deleted), and they don't expand.
@@ -221,7 +221,7 @@ You always know when the agent is busy:
 - the rewind icon hides until the turn ends;
 - the fork icon stays, but **Conversation and files** hides in its dialog.
 
-Typing a command that HappyVibe runs for you is refused with a short note, such as "/mcp is managed from the MCP page.", "/agents is managed from the Agents page." or "Sign-ins are managed from Models." Turning off bypass is the one exception: **Turn off** on the red banner does it.
+A few slash commands belong to HappyVibe's own screens, so typing one gets a short note instead, such as "/mcp is managed from the MCP page.", "/agents is managed from the Agents page." or "Sign-ins are managed from Models." To turn off bypass, click **Turn off** on the red banner.
 
 While subagents work, the message box says so instead: "Subagents are working in the background — keep chatting; results drop in when they finish", or, while one subagent holds the turn, "Type away — messages will be answered when *name* finishes".
 

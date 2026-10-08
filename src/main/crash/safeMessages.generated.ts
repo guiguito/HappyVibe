@@ -43,6 +43,7 @@ export const SAFE_MESSAGES: ReadonlySet<string> = new Set([
   "Path escapes workspace",
   "Pi cancelled the fork.",
   "Pi did not write the forked session.",
+  "Pi took too long to copy the session.",
   "Pick a mode: read-only or full.",
   "Pick a workspace HappyVibe still knows about.",
   "Pick an end in the future, or leave it with no end.",

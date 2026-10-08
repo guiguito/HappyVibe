@@ -28,3 +28,17 @@ test("duplicate keeps the copy it returns", async () => {
   expect(fs.existsSync(copy)).toBe(true);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("a hung Pi: rejects with the timeout message and stop() still runs", async () => {
+  let stopped = false;
+  const hung = () => ({ start: async () => {}, stop: () => { stopped = true; }, send: () => new Promise(() => {}) }) as never;
+  await expect(forkSessionFile({} as never, os.tmpdir(), "e1", hung, 20)).rejects.toThrow("Pi took too long to copy the session.");
+  expect(stopped).toBe(true);
+});
+
+test("a start() that throws still stops the client", async () => {
+  let stopped = false;
+  const bad = () => ({ start: async () => { throw new Error("boom"); }, stop: () => { stopped = true; }, send: async () => ({}) }) as never;
+  await expect(forkSessionFile({} as never, os.tmpdir(), "e1", bad)).rejects.toThrow("boom");
+  expect(stopped).toBe(true);
+});

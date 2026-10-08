@@ -15,12 +15,6 @@ import { keyRejectedNote } from "../onboarding";
  */
 
 
-/**
- * The "More providers…" search (2026-08-29). Rows that already have a card
- * above the box — the featured five, plus anything with a key configured — are
- * excluded, or the same key input would be offered twice. An empty query lists
- * NOTHING: the point of the box is that 29 providers do not become 29 inputs.
- */
 /** Confirm copy for turning automatic compaction off (pinned by tests/provider-error-compaction.test.ts). */
 export const COMPACTION_OFF_CONFIRM = {
   title: "Turn off automatic compaction?",
@@ -29,6 +23,12 @@ export const COMPACTION_OFF_CONFIRM = {
   cancel: "Keep it on",
 } as const;
 
+/**
+ * The "More providers…" search (2026-08-29). Rows that already have a card
+ * above the box — the featured five, plus anything with a key configured — are
+ * excluded, or the same key input would be offered twice. An empty query lists
+ * NOTHING: the point of the box is that 29 providers do not become 29 inputs.
+ */
 export function filterCatalog<T extends { id: string; label: string; source: unknown; featured: boolean }>(
   rows: T[],
   query: string,
