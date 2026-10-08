@@ -1038,6 +1038,8 @@ interface HvApi {
   /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
   addPermissionRule(workspace: string | null, tool: string): Promise<HvRulesFile>;
   /** Round 3 #14: persistent "bypass all permissions". */
+  getAutoCompaction(): Promise<boolean>;
+  setAutoCompaction(on: boolean): Promise<void>;
   getGlobalBypass(): Promise<boolean>;
   setGlobalBypass(on: boolean): Promise<void>;
   /** null = unset (inherit global). */

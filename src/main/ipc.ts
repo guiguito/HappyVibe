@@ -27,7 +27,7 @@ import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, d
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getImageModel, setImageModel, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts, getMcpRulesMigrated, setMcpRulesMigrated,
@@ -879,6 +879,11 @@ export function registerIpc(
     writeSubagentSettings();
   } catch (e) {
     console.warn("[hv] subagent settings write failed:", e);
+  }
+  try {
+    writePiCompactionSetting();
+  } catch (e) {
+    console.warn("[hv] compaction setting write failed:", e);
   }
 
   // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before
@@ -4443,6 +4448,14 @@ export function registerIpc(
     sessionBypass.set(id, on); // §39: what the session now runs, so its next "Turn off" is measured against it
     void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: `/hv-dangerous ${on ? "on" : "off"}` }).catch(() => {});
   };
+  // §9 round 28: one global switch. Written to Pi's settings.json for every later spawn, and sent
+  // live (Pi persists the same key itself, so the two can't disagree).
+  ipcMain.handle("hv:get-auto-compaction", () => getAutoCompaction());
+  ipcMain.handle("hv:set-auto-compaction", (_e, on: boolean) => {
+    setAutoCompaction(!!on);
+    writePiCompactionSetting();
+    for (const id of manager.activeIds()) void (manager.get(id) as PiClient | null)?.send({ type: "set_auto_compaction", enabled: !!on }).catch(() => {});
+  });
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
   ipcMain.handle("hv:set-global-bypass", (_e, on: boolean) => {
     setGlobalBypass(on);

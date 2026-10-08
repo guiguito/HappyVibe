@@ -13,6 +13,15 @@
  * `agentDir()`, so vitest cannot import it.
  */
 
+/**
+ * §9 round 28 — Pi reads `compaction.enabled` (default true) from <agentDir>/settings.json, and its
+ * own `set_auto_compaction` writes the same global key, so the switch is global by Pi's design.
+ */
+export function withCompaction(settings: Record<string, unknown>, on: boolean): Record<string, unknown> {
+  const prev = (settings.compaction ?? {}) as Record<string, unknown>;
+  return { ...settings, compaction: { ...prev, enabled: on } };
+}
+
 /** The key the bridge reads user-disabled agents from (kept from the pre-tintinweb file). */
 const OVERRIDES_KEY = "agentOverrides";
 

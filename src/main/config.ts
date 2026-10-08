@@ -13,7 +13,7 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
-import { disabledAgentOverrides, tintinwebSettings } from "./subagentSettings";
+import { disabledAgentOverrides, tintinwebSettings, withCompaction } from "./subagentSettings";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
 import { webDefaultServiceAllowed } from "./remoteConfig/client";
 
@@ -74,6 +74,8 @@ interface ConfigFile {
       absent = off — the default is cheaper for short-gap sessions, see
       getLongCache. */
   longCache?: boolean;
+  /** §9 round 28: global auto-compaction switch; absent = ON (Pi's own default). */
+  autoCompaction?: boolean;
   /** §13 round 27: the user's image model. Absent ⇒ the cheapest priced one (resolveImageModel). */
   imageModel?: string;
   /** §13 round 8: safeStorage-encrypted secrets for catalog-installed MCP
@@ -867,6 +869,32 @@ export function writeSubagentSettings(): void {
     /* absent or corrupt — start fresh */
   }
   fs.writeFileSync(file, `${JSON.stringify(disabledAgentOverrides(settings, load().agentsEnabled ?? {}), null, 2)}\n`);
+}
+
+export function getAutoCompaction(): boolean {
+  return load().autoCompaction ?? true;
+}
+
+export function setAutoCompaction(on: boolean): void {
+  const cfg = load();
+  cfg.autoCompaction = on;
+  save(cfg);
+}
+
+/**
+ * §9 round 28: the auto-compaction switch as Pi's `compaction.enabled`, read by every later spawn.
+ * Same read-merge-write as writeSubagentSettings (both synchronous, so the startup calls in
+ * sequence each see the other's keys).
+ */
+export function writePiCompactionSetting(): void {
+  const file = path.join(agentDir(), "settings.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  fs.writeFileSync(file, `${JSON.stringify(withCompaction(settings, getAutoCompaction()), null, 2)}\n`);
 }
 
 /**
