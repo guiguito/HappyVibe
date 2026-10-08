@@ -101,6 +101,8 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
+import { promptOutcome, type PromptDisposition } from "./pi/promptOutcome";
+import { describePromptRefusal } from "./providerError";
 import { copyClaudeMdToAgentsMd, finalTextFromSessionFile, hasClaudeMd, parseAgentsMdOutput, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
@@ -123,7 +125,7 @@ import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessag
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
-  captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
+  captureSnapshot, deleteSessionSnapshots, discardSnapshot, findRestoreTarget, listSnapshots,
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
@@ -3558,7 +3560,7 @@ export function registerIpc(
     openFiles?: string[],
     documents?: string[],
     opts: { source?: "user" | "schedule" } = {},
-  ): Promise<{ warnings: string[] }> => {
+  ): Promise<{ warnings: string[]; disposition: PromptDisposition }> => {
     const bySchedule = opts.source === "schedule";
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
@@ -3585,6 +3587,9 @@ export function registerIpc(
       if (!meta) throw new Error("Unknown session");
       client = await startClient(meta, !!meta.piSessionFile);
     }
+    // Round 27: what main knew BEFORE this prompt. agent_start now marks busy too, so a turn Pi
+    // started on its own (an async sub-agent result) counts — the renderer's flag can't see it yet.
+    const wasBusy = activity.isBusy(sessionId);
     activity.prompted(sessionId);
     // The sidebar orders by last use, and prompting IS use. `touch` rather than
     // `update` so `updatedAt` keeps meaning "metadata changed" — see store.ts.
@@ -3699,7 +3704,11 @@ export function registerIpc(
     // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
     // failure must never block the prompt.
     //
-    // Steers get NO snapshot, and NOT as an oversight to fix later: a steer
+    // Round 27: "steer" is now on EVERY send (Pi ignores it when idle), so the
+    // guard reads MAIN's busy knowledge instead of the renderer's guess, and a
+    // snapshot taken for a message Pi then QUEUES is discarded below.
+    //
+    // A message joining a running turn gets NO snapshot, and NOT as an oversight: it
     // means the agent is mid-turn BY DEFINITION, so captureSnapshot would copy
     // files while a write tool is running, record torn content, and a later
     // restore would write that torn content back. Non-steer prompts are safe
@@ -3712,9 +3721,10 @@ export function registerIpc(
     // (restores LESS than asked) or on nothing at all. The confirm dialog
     // reports the "nothing" case and disables Rewind when that is the whole
     // outcome (ChatView rewind confirm).
-    if (behavior !== "steer" && meta?.workspaceId) {
+    let snap: { seq: number } | null = null;
+    if (!wasBusy && meta?.workspaceId) {
       try {
-        captureSnapshot(
+        snap = captureSnapshot(
           snapshotDir(), sessionId, roots(), meta.workspaceId,
           "pre", new Date().toISOString(),
         );
@@ -3732,7 +3742,8 @@ export function registerIpc(
     // schedule run starting is when `session_opened` "scheduled" is counted
     // (new or reused session alike).
     // A steer or follow-up sent mid-turn joins that turn; it never restarts it.
-    if (!turns.isBusy(sessionId) && startsTurn(msg)) turns.start(sessionId, bySchedule);
+    const startedHere = !turns.isBusy(sessionId) && startsTurn(msg);
+    if (startedHere) turns.start(sessionId, bySchedule);
     if (bySchedule) {
       const ws = meta?.workspaceId;
       track("session_opened", { kind: "scheduled", inWorktree: !!ws && worktrees.projectOf(ws) !== ws });
@@ -3747,14 +3758,36 @@ export function registerIpc(
     // and it carries the TYPED text rather than `outgoing`: the user sees what
     // they wrote, exactly as the composer shows it.
     if (bySchedule) send("hv:session-prompted", { sessionId, text: msg });
+    // Round 27: never refused for "already processing" — Pi ignores streamingBehavior when
+    // idle, and its disposition says what it did. A follow-up keeps its own behavior.
+    // §39: a prompt that started no turn of its own must not leave one open.
+    const undo = (): void => {
+      if (startedHere) turns.discard(sessionId);
+      if (snap) discardSnapshot(snapshotDir(), sessionId, snap.seq);
+    };
+    let out;
     try {
-      await client.send(promptCommand(outgoing, behavior, images));
+      out = promptOutcome(await client.send(promptCommand(outgoing, behavior ?? "steer", images)));
     } catch (err) {
-      // §39: a prompt Pi refused never started a turn — do not leave one open.
-      if (!behavior) turns.discard(sessionId);
+      undo();
+      activity.restoreBusy(sessionId, wasBusy);
       throw err;
     }
-    return { warnings };
+    if (!out.ok) {
+      undo();
+      activity.restoreBusy(sessionId, wasBusy);
+      throw new Error(describePromptRefusal(out.error));
+    }
+    // Queued: it joins the running turn — no turn of its own, and its snapshot was mid-turn.
+    if (out.disposition === "queued") undo();
+    // Handled: an extension command took it — no run started, so nothing will clear busy.
+    if (out.disposition === "handled") {
+      undo();
+      activity.restoreBusy(sessionId, wasBusy);
+    }
+    // The composer guessed "busy" and sent a steer, but Pi started a turn: nothing drew the bubble.
+    if (behavior === "steer" && out.disposition === "started" && !bySchedule) send("hv:session-prompted", { sessionId, text: msg });
+    return { warnings, disposition: out.disposition };
   };
 
   ipcMain.handle(

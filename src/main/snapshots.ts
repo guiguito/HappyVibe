@@ -222,6 +222,18 @@ export function stampSnapshot(root: string, sessionId: string, toolCallId: strin
   writeRecords(root, sessionId, records);
 }
 
+/**
+ * Round 27: drop one record by seq. A "pre" captured for a message Pi then QUEUED was taken
+ * mid-turn — left in place, the running turn's next tool call would stamp it as its anchor,
+ * and a rewind would restore torn content. Blobs are left to pruneSnapshots.
+ */
+export function discardSnapshot(root: string, sessionId: string, seq: number): void {
+  assertSessionId(sessionId);
+  const records = listSnapshots(root, sessionId);
+  const kept = records.filter((r) => r.seq !== seq);
+  if (kept.length !== records.length) writeRecords(root, sessionId, kept);
+}
+
 export interface RestorePreview { willRestore: string[]; willDelete: string[]; stale: string[] }
 
 export interface RestoreResult {

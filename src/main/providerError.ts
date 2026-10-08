@@ -214,3 +214,20 @@ export function retryNoticeText(r: { attempt?: number; maxAttempts?: number; del
   const secs = Math.round((r.delayMs ?? 0) / 1000);
   return `Retrying ${r.attempt ?? 1}/${r.maxAttempts ?? 3}${secs ? ` · ${secs}s` : ""}`;
 }
+
+/**
+ * §7 round 27 — Pi's refusal of a prompt, in the app's words. Pi writes for its terminal
+ * ("Run '/login x'"), and a HappyVibe user has no such command, so only the first line of
+ * an unknown refusal is kept.
+ */
+export function describePromptRefusal(raw: string): string {
+  const t = raw.trim();
+  if (/compaction is in progress/i.test(t)) return "The agent is compacting its context. Send your message again when it finishes.";
+  const auth = /^Authentication failed for "([^"]+)"/i.exec(t);
+  if (auth) return `Your sign-in for ${auth[1]} has expired or can't be reached. Sign in again on Models, then send your message again.`;
+  const key = /^No API key found for ([^.\n]+)\./i.exec(t);
+  if (key) return `There's no key or sign-in for ${key[1]}. Add one on Models, then send your message again.`;
+  if (/^No model selected/i.test(t)) return "This session has no model. Pick one in the model menu, then send your message again.";
+  const first = t.split("\n")[0]?.trim();
+  return first ? `The agent didn't take your message (${first}). Send it again.` : "The agent didn't take your message. Send it again.";
+}

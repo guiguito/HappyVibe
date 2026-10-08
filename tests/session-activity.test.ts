@@ -107,3 +107,19 @@ test("asyncSet resyncs the run set authoritatively (respawn)", () => {
   a.asyncSet("s1", []);
   expect(a.isIdle("s1")).toBe(true);
 });
+
+test("round 27: a turn Pi starts on its own (async sub-agent result) is busy until agent_end", () => {
+  const a = new SessionActivity();
+  a.event("s", { type: "agent_start" });
+  expect(a.isBusy("s")).toBe(true);
+  expect(a.isIdle("s")).toBe(false);
+  a.event("s", { type: "agent_end" });
+  expect(a.isBusy("s")).toBe(false);
+});
+
+test("round 27: restoreBusy undoes prompted() for a prompt Pi refused or handled", () => {
+  const a = new SessionActivity();
+  a.prompted("s");
+  a.restoreBusy("s", false);
+  expect(a.isBusy("s")).toBe(false);
+});
