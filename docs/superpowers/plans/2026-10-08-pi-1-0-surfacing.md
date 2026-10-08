@@ -68,10 +68,9 @@
 
 ### Task 0: Worktree setup
 
-- [ ] **Step 1: Install both trees and link the key file**
+- [ ] **Step 1: Install both trees and link the key file** (from the worktree root)
 
 ```bash
-cd /Users/guilhemduche/orca/workspaces/HappyVibe/surface_more
 npm install && (cd pi-runtime && npm ci)
 ln -s ~/Documents/Github/HappyVibe/.env .env
 node -e "console.log(require('./pi-runtime/node_modules/@earendil-works/pi-coding-agent/package.json').version)"
