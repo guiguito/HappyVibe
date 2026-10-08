@@ -52,3 +52,19 @@ describe("§13 round 26 — the shell switch on the Core tools row", () => {
     expect(toggleCore(["ls"], "ls")).toEqual([]);
   });
 });
+
+// GUI pass, round 26: the session header's Skills / Agents / MCP chips kept counting a family
+// that was switched off ("3/3 MCP" with MCP off). Each chip follows its switch, and the switches
+// are re-read when a change respawns the session, so a chat that stays open doesn't go stale.
+describe("§13 round 26 — the session header chips follow the family switches", () => {
+  const chat = src("ChatView.tsx");
+  test("each chip is gated on its switch", () => {
+    expect(chat).toMatch(/families\.skills && sessionSkills/);
+    expect(chat).toMatch(/families\.subagents && delegatable/);
+    expect(chat).toMatch(/mention && families\.subagents \? agentMentionItems/);
+    expect(chat).toMatch(/families\.mcp && mcpRows/);
+  });
+  test("the switches are re-read when a session respawns", () => {
+    expect(chat).toMatch(/onSessionReloading\([\s\S]{0,200}refreshDocumentAvailability/);
+  });
+});
