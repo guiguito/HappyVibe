@@ -10,7 +10,8 @@ import {
   REGISTRY_MODELS,
 } from "../src/main/providerCatalog.generated";
 import { KEY_RESOLVED_PLAN_PROVIDERS, PLAN_PROVIDERS } from "../src/main/calls";
-import { byPrice, isPricedImageModel } from "../pi-runtime/extensions/hv-images";
+import { offeredImageModels } from "../pi-runtime/extensions/hv-images";
+import imageProbe from "../tools/provider-catalog/image-probe.json";
 
 /**
  * Pin-bump gate for the generated provider catalog (key-free).
@@ -67,11 +68,17 @@ function modelsOf(p: UpstreamProvider): unknown[] {
 }
 
 describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", () => {
-  test("IMAGE_MODELS is exactly the OpenRouter image models Pi fully prices, cheapest first", async () => {
-    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string; cost?: { input?: number; output?: number } }> };
-    const want = mod.getBuiltinImageModels("openrouter").filter(isPricedImageModel)
-      .map((x) => ({ id: x.id, name: x.name ?? x.id, input: x.cost!.input!, output: x.cost!.output! })).sort(byPrice);
-    expect(IMAGE_MODELS).toEqual(want);
+  test("IMAGE_MODELS is exactly the image models the probe saw work through Pi, cheapest first", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string }> };
+    expect(IMAGE_MODELS).toEqual(offeredImageModels(mod.getBuiltinImageModels("openrouter"), imageProbe as never));
+  });
+
+  test("every image model Pi lists has a probe verdict — a bump that adds one fails here: run tools/image-model-probe.mjs --skip-known", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => Array<{ id: string }> };
+    const probed = new Set(Object.keys((imageProbe as { models: Record<string, unknown> }).models));
+    const routers = new Set(["openrouter/auto", "openrouter/auto-beta"]);
+    const missing = mod.getBuiltinImageModels("openrouter").map((x) => x.id).filter((id) => !routers.has(id) && !probed.has(id));
+    expect(missing).toEqual([]);
   });
 
   test("only OpenRouter ships image models — a second provider is a product decision, not drift", async () => {

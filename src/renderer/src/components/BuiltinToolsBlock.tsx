@@ -8,7 +8,7 @@ import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE, toggleCore } from "../toolSwit
 import { FamilySwitchRow } from "./FamilySwitch";
 import { coreToolNames } from "../../../../pi-runtime/extensions/hv-builtins";
 import { GoTo } from "./GoTo";
-import { IMAGES_ROW_COPY } from "../imagePrompt";
+import { IMAGES_ROW_COPY, fmtPerImage } from "../imagePrompt";
 
 
 /** §13 round 6: the App Tools page's top block — global on/off for the two
@@ -45,11 +45,11 @@ interface Builtins {
   coreOff: string[];
 }
 
-type ImageSettings = { available: boolean; model: string | null; models: { id: string; name: string }[] };
+type ImageSettings = { available: boolean; model: string | null; models: { id: string; name: string; perImage: number }[] };
 
 /** §13 round 27 — generate_image. Registered only with an OpenRouter credential; the picker lists
-    only models Pi prices, by name — no rates, because Pi's are text rates, 12–20× under what
-    OpenRouter bills (docs/validation/im1.md). Session cost shows OpenRouter's real charge. */
+    only models the paid probe saw work through Pi, with what one test image cost (Pi's own rates
+    are text rates, 12–20× under — docs/validation/im1.md). Session cost shows the real charge. */
 function ImagesRow({ on, settings, onChange, onModel }: { on: boolean; settings: ImageSettings | null; onChange: (on: boolean) => void; onModel: (id: string) => void }): React.JSX.Element {
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-start gap-3">
@@ -67,7 +67,7 @@ function ImagesRow({ on, settings, onChange, onModel }: { on: boolean; settings:
               onChange={(e) => onModel(e.target.value)}
               className="rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
             >
-              {settings.models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {settings.models.map((m) => <option key={m.id} value={m.id}>{m.name} — {fmtPerImage(m.perImage)}</option>)}
             </select>
           </label>
         )}

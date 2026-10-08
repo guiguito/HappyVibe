@@ -3856,7 +3856,7 @@ export function registerIpc(
     models: IMAGE_MODELS,
   }));
   ipcMain.handle("hv:image-model-set", async (_e, id: string) => {
-    if (!IMAGE_MODELS.some((m) => m.id === id)) throw new Error("Not a priced image model");
+    if (!IMAGE_MODELS.some((m) => m.id === id)) throw new Error("Not an image model HappyVibe offers");
     setImageModel(id);
     scheduleRuntimeReload("tools", "global", null);
     await restartUtility();

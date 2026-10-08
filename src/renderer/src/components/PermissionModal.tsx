@@ -135,7 +135,7 @@ export function PermissionModal({
   }, [fact?.name, fact?.scope, info.tool, workspaceId]);
   // §13 round 27: an image costs money — the model and the new file are the question.
   const imageArgs = info.tool === "generate_image" ? (argsFromSummary(info.tool, info.summary) as { model?: string; path?: string } | undefined) : undefined;
-  const [imageModels, setImageModels] = useState<{ id: string; name: string }[]>([]);
+  const [imageModels, setImageModels] = useState<{ id: string; name: string; perImage: number }[]>([]);
   useEffect(() => {
     if (info.tool !== "generate_image") return;
     let live = true;

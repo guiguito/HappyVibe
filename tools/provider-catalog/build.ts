@@ -33,7 +33,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { byPrice, isPricedImageModel } from "../../pi-runtime/extensions/hv-images.ts";
+import { offeredImageModels } from "../../pi-runtime/extensions/hv-images.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -125,12 +125,12 @@ async function main(): Promise<void> {
   }
 
   const { getBuiltinImageModels } = (await import(PI_AI_PROVIDERS)) as {
-    getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string; cost?: { input?: number; output?: number } }>;
+    getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string }>;
   };
-  // §13 round 27: Pi lists image models only under OpenRouter (the contract test fails if that changes).
-  const imageModels = getBuiltinImageModels("openrouter").filter(isPricedImageModel)
-    .map((m) => ({ id: m.id, name: m.name ?? m.id, input: m.cost!.input!, output: m.cost!.output! }))
-    .sort(byPrice);
+  // §13 round 27: only what the paid probe saw work through Pi (tools/image-model-probe.mjs).
+  // Pi lists image models only under OpenRouter (the contract test fails if that changes).
+  const probe = JSON.parse(fs.readFileSync(path.join(ROOT, "tools/provider-catalog/image-probe.json"), "utf8"));
+  const imageModels = offeredImageModels(getBuiltinImageModels("openrouter"), probe);
 
   const { builtinProviders } = (await import(PI_AI_PROVIDERS)) as {
     builtinProviders: () => Array<Record<string, never>>;
@@ -295,7 +295,7 @@ export const OAUTH_NOT_ENABLED: Readonly<Record<string, string>> = ${JSON.string
 /** §39: Pi's registry model ids per provider. A usage event names a model only if it is here. */
 export const REGISTRY_MODELS: Readonly<Record<string, readonly string[]>> = ${JSON.stringify(registryModels)};
 
-/** §13 round 27: OpenRouter image models Pi fully prices (hv-images.ts isPricedImageModel), cheapest first. */
+/** §13 round 27: OpenRouter image models the paid probe saw work through Pi (hv-images.ts offeredImageModels), cheapest first. perImage = one test image's charge. */
 export const IMAGE_MODELS: readonly ImageModelInfo[] = ${JSON.stringify(imageModels, null, 2)};
 
 /** The cards that stay above the "More providers…" search. */
@@ -306,7 +306,7 @@ export const FEATURED_PROVIDER_IDS = ["deepseek", "anthropic", "openai", "google
   fs.writeFileSync(dest, out);
 
   console.log(`\n${rows.length} key providers, ${oauth.length} OAuth providers → ${path.relative(ROOT, dest)}`);
-  console.log(`priced image models: ${imageModels.length}`);
+  console.log(`image models that work through Pi: ${imageModels.length}`);
   console.log(`total models offered: ${rows.reduce((n, r) => n + r.modelCount, 0)}`);
   if (refusedOAuth.length) console.log(`OAuth refused (product decision): ${refusedOAuth.join(", ")}`);
   console.log(`\nrejected (${Object.values(rejected).flat().length}):`);

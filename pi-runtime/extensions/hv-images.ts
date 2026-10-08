@@ -4,28 +4,33 @@
  */
 export const IMAGE_TOOL = "generate_image";
 
-export interface ImageModelInfo { id: string; name: string; input: number; output: number }
+/** `perImage` is what OpenRouter charged for one test image (tools/image-model-probe.mjs) — a guide, not a quote. */
+export interface ImageModelInfo { id: string; name: string; perImage: number }
 
 /**
- * Pi prices an image call from its catalogue (pi-ai api/openrouter-images.js), not from what
- * OpenRouter charges. Only a model with BOTH rates can show a real cost; at Pi 1.0.2, 39 of
- * the 59 are $0 there (billed per image) and would read as free — §19 ruling 3 forbids that.
+ * Which image models to offer: exactly those the paid probe saw work through Pi's image call.
+ * Nothing in Pi's catalogue or OpenRouter's model list says so — some models only serve
+ * OpenRouter's separate image endpoint (a 404 to Pi's chat/completions call), and Recraft's
+ * "styles" models need a reference image. Cheapest measured first. The cost a user is shown is
+ * OpenRouter's own charge per call either way (withCharge) — Pi's catalogue prices image output
+ * at the text rate, 12–20× under (docs/validation/im1.md).
  */
-export function isPricedImageModel(m: { cost?: { input?: number; output?: number } }): boolean {
-  const i = m.cost?.input;
-  const o = m.cost?.output;
-  return typeof i === "number" && typeof o === "number" && i > 0 && o > 0;
+export function offeredImageModels(
+  piModels: readonly { id: string; name?: string }[],
+  probe: { models: Record<string, { verdict: string; charged: number | null }> },
+): ImageModelInfo[] {
+  return piModels
+    .flatMap((m) => {
+      const p = probe.models[m.id];
+      return p?.verdict === "ok" && typeof p.charged === "number" ? [{ id: m.id, name: m.name ?? m.id, perImage: p.charged }] : [];
+    })
+    .sort((a, b) => a.perImage - b.perImage || a.id.localeCompare(b.id));
 }
 
-/** Cheapest first: the output rate (an image is billed as output), then input, then id. */
-export function byPrice(a: ImageModelInfo, b: ImageModelInfo): number {
-  return a.output - b.output || a.input - b.input || a.id.localeCompare(b.id);
-}
-
-/** The session's model: the user's choice while it is still priced, else the cheapest. Never invented. */
+/** The session's model: the user's choice while it is still offered, else the cheapest. Never invented. */
 export function resolveImageModel(models: readonly ImageModelInfo[], stored: string | undefined): string | null {
   if (stored && models.some((m) => m.id === stored)) return stored;
-  return [...models].sort(byPrice)[0]?.id ?? null;
+  return [...models].sort((a, b) => a.perImage - b.perImage)[0]?.id ?? null;
 }
 
 export const IMAGE_TOOL_DESCRIPTION =

@@ -76,13 +76,13 @@ Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB fil
 
 ### Images — 1 tool
 
-"Lets the agent make an image and save it as a new file in your project. Each image costs money on your OpenRouter account; Session cost shows what OpenRouter charged."
+"Lets the agent make an image and save it as a new file in your project. Each image costs money on your OpenRouter account. The prices below were measured once and are approximate; Session cost shows what OpenRouter actually charged."
 
 Images need an OpenRouter key or sign-in. Without one, the row reads "Needs an OpenRouter key or sign-in. Add one on Models." and the agent doesn't get the tool. Click **Models** in that line to add one.
 
-**Image model** picks the model the agent uses. It lists only image models whose cost HappyVibe can show, cheapest first. The agent can't choose another one. The list shows names, not prices. After each image, **Session cost** shows exactly what OpenRouter charged.
+**Image model** picks the model the agent uses. It lists only the image models HappyVibe has checked work, cheapest first, each with what one test image cost, such as "about $0.007 an image". Your images can cost more or less. The agent can't choose another model. After each image, **Session cost** shows exactly what OpenRouter charged.
 
-Before each image, the approval dialog reads "This makes an image with" the model's name "on your OpenRouter account. It costs money." and "It saves a new file:" followed by the file's path in your project. The agent never replaces an existing file. If the name is taken, the agent is asked to pick a new one before any image is made, so nothing is charged. Plan mode and read-only scheduled runs block this tool.
+Before each image, the approval dialog reads "This makes an image with" the model's name "on your OpenRouter account. It costs money", with the same approximate price, and "It saves a new file:" followed by the file's path in your project. The agent never replaces an existing file. If the name is taken, the agent is asked to pick a new one before any image is made, so nothing is charged. Plan mode and read-only scheduled runs block this tool.
 
 ### Tool intent
 

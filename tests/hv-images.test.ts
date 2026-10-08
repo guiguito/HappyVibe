@@ -1,22 +1,31 @@
 import { expect, test } from "vitest";
-import { byPrice, isPricedImageModel, resolveImageModel, type ImageModelInfo } from "../pi-runtime/extensions/hv-images";
+import { offeredImageModels, resolveImageModel, type ImageModelInfo } from "../pi-runtime/extensions/hv-images";
 
-test("priced means BOTH rates above zero — an input-only or $0 model would read as free", () => {
-  expect(isPricedImageModel({ cost: { input: 0.3, output: 2.5 } })).toBe(true);
-  expect(isPricedImageModel({ cost: { input: 5, output: 0 } })).toBe(false);      // microsoft/mai-image-*
-  expect(isPricedImageModel({ cost: { input: 0, output: 0 } })).toBe(false);      // FLUX, Recraft, …
-  expect(isPricedImageModel({ cost: { input: -1e6, output: -1e6 } })).toBe(false); // openrouter/auto
-  expect(isPricedImageModel({})).toBe(false);
+// The probe (tools/image-model-probe.mjs) is the only source of truth: nothing in Pi's catalogue
+// or OpenRouter's model list says which models work through Pi's chat/completions image call.
+test("only models the probe saw work are offered, cheapest measured first, with Pi's name", () => {
+  const pi = [
+    { id: "a/cheap", name: "Cheap" }, { id: "b/dear", name: "Dear" }, { id: "c/endpoint", name: "E" },
+    { id: "d/styles", name: "S" }, { id: "e/new-after-bump", name: "N" },
+  ];
+  const probe = { models: {
+    "a/cheap": { verdict: "ok", charged: 0.007 }, "b/dear": { verdict: "ok", charged: 0.2 },
+    "c/endpoint": { verdict: "wrong-endpoint", charged: null }, "d/styles": { verdict: "failed", charged: null },
+  } };
+  expect(offeredImageModels(pi, probe)).toEqual([
+    { id: "a/cheap", name: "Cheap", perImage: 0.007 },
+    { id: "b/dear", name: "Dear", perImage: 0.2 },
+  ]);
 });
 
-const m = (id: string, input: number, output: number): ImageModelInfo => ({ id, name: id, input, output });
-
-test("cheapest first: output rate, then input, then id", () => {
-  expect([m("b", 2, 3), m("a", 0.25, 1.5), m("c", 0.5, 3)].sort(byPrice).map((x) => x.id)).toEqual(["a", "c", "b"]);
+test("a model the probe saw work but that Pi no longer lists is not offered", () => {
+  expect(offeredImageModels([], { models: { "x/gone": { verdict: "ok", charged: 0.01 } } })).toEqual([]);
 });
 
-test("the stored model wins only while it is still priced; otherwise the cheapest; never invented", () => {
-  const list = [m("cheap", 0.25, 1.5), m("pro", 2, 12)];
+const m = (id: string, perImage: number): ImageModelInfo => ({ id, name: id, perImage });
+
+test("the stored model wins only while it is still offered; otherwise the cheapest; never invented", () => {
+  const list = [m("cheap", 0.007), m("pro", 0.2)];
   expect(resolveImageModel(list, "pro")).toBe("pro");
   expect(resolveImageModel(list, "gone/after-a-bump")).toBe("cheap");
   expect(resolveImageModel(list, undefined)).toBe("cheap");
