@@ -839,7 +839,7 @@ interface HvApi {
     openFiles?: string[],
     /** §31: absolute paths of attached documents — main converts and injects them. */
     documents?: string[]
-  ): Promise<{ warnings: string[] }>;
+  ): Promise<{ warnings: string[]; disposition: "started" | "queued" | "handled" }>;
   abortSession(sessionId: string): Promise<void>;
   // W2.1: per-session model override + image attach
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;

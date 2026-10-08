@@ -73,3 +73,12 @@ export function updateToolCard(
 export function indexTool(index: Map<string, number>, toolCallId: string, at: number): void {
   index.set(toolCallId, at);
 }
+
+/** Every tool card's position. Rebuilt whenever items move — a stale entry patches the wrong card. */
+export function indexTools(items: TranscriptItem[]): Map<string, number> {
+  const map = new Map<string, number>();
+  items.forEach((it, i) => {
+    if (it.kind === "tool") map.set(it.card.toolCallId, i);
+  });
+  return map;
+}

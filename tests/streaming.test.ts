@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyDelta, updateToolCard, indexTool, mergeIntoLastAssistant } from "../src/renderer/src/streaming";
+import { applyDelta, updateToolCard, indexTool, indexTools, mergeIntoLastAssistant } from "../src/renderer/src/streaming";
 import type { TranscriptItem } from "../src/renderer/src/components/Transcript";
 
 describe("applyDelta", () => {
@@ -87,4 +87,15 @@ test("empty text never mutates the transcript", () => {
 test("merge on an empty transcript starts the bubble", () => {
   const out = mergeIntoLastAssistant([], "hello");
   expect(out).toEqual([{ kind: "assistant", text: "hello" }]);
+});
+
+test("round 27: indexTools maps every tool card to its CURRENT position", () => {
+  const items = [
+    { kind: "user", text: "a" },
+    { kind: "tool", card: { toolCallId: "t1" } },
+    { kind: "assistant", text: "b" },
+    { kind: "tool", card: { toolCallId: "t2" } },
+  ] as never[];
+  expect([...indexTools(items)]).toEqual([["t1", 1], ["t2", 3]]);
+  expect([...indexTools(items.slice(1))]).toEqual([["t1", 0], ["t2", 2]]); // a removed bubble shifts every card
 });
