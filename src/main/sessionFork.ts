@@ -18,19 +18,22 @@ export async function forkSessionFile(
 ): Promise<string> {
   const c = make(spec);
   await c.start();
+  let copy: string | undefined;
+  let result: string | undefined;
   try {
     const fileOf = async (): Promise<string | undefined> =>
       ((await c.send({ type: "get_state" })).data as { sessionFile?: string } | undefined)?.sessionFile;
-    const copy = await fileOf();
-    if (!copy) throw new Error("Pi did not report the copied session.");
-    if (!entryId) return copy;
+    copy = await fileOf();
+    if (!copy || !fs.existsSync(copy)) throw new Error("Pi did not write the forked session.");
+    if (!entryId) return (result = copy);
     const r = await c.send({ type: "fork", entryId });
     if ((r.data as { cancelled?: boolean } | undefined)?.cancelled) throw new Error("Pi cancelled the fork.");
     const forked = await fileOf();
     if (!forked || forked === copy || !fs.existsSync(forked)) throw new Error("Pi did not write the forked session.");
-    if (path.resolve(copy).startsWith(path.resolve(sessionDirPath) + path.sep)) fs.rmSync(copy, { force: true });
-    return forked;
+    return (result = forked);
   } finally {
     c.stop();
+    // The intermediate copy goes on every path but the duplicate (where it IS the result).
+    if (entryId && copy && result !== copy && path.resolve(copy).startsWith(path.resolve(sessionDirPath) + path.sep)) fs.rmSync(copy, { force: true });
   }
 }
