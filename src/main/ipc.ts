@@ -3398,7 +3398,7 @@ export function registerIpc(
   const runCost = (sessionId: string): number | undefined => {
     const meta = index.get(sessionId);
     if (!meta) return undefined;
-    const calls = sessionCalls(sessionDir(), meta.piSessionFile, planProvidersFor(providerKeyStatus()));
+    const calls = sessionCalls(sessionDir(), meta.piSessionFile, planProvidersFor(providerKeyStatus()), undefined, meta.forkedFrom?.at);
     if (!calls?.length) return undefined;
     return ledgerTotal(calls).cost;
   };
@@ -3947,7 +3947,7 @@ export function registerIpc(
     // A child's path does not carry the agent name; the delegation rows are the
     // only durable record of it. Read once per open — this is a click, not a tick.
     const agents = agentByFileFrom(await log.read({ sessionId }));
-    const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents)) || [];
+    const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents, meta.forkedFrom?.at)) || [];
     return { calls, total: ledgerTotal(calls) };
   });
 
@@ -3993,6 +3993,8 @@ export function registerIpc(
   });
 
   // getStats(sessionId?) — the optional sessionId is the additive B1 extension.
+  // Only feeds the context gauge (App.tsx selStats → contextUsage / tokens fallback), where a fork's
+  // copied history IS in its context — so Pi's totals are right here; spend comes from the ledger.
   ipcMain.handle("hv:get-stats", async (_e, sessionId?: string) => {
     const client = sessionId ? (manager.get(sessionId) as PiClient | null) : null;
     if (!client) return null;
@@ -4823,7 +4825,7 @@ export function registerIpc(
       // The SAME function the session pill uses, so Stats cannot drift from it —
       // that drift is exactly what round 11 fixed, and sub-agent rows would
       // otherwise reintroduce it one surface later.
-      return sessionCalls(sessionDir(), meta.piSessionFile, plans, agents);
+      return sessionCalls(sessionDir(), meta.piSessionFile, plans, agents, meta.forkedFrom?.at);
     };
     return aggregate(events, filter ?? {}, readCalls);
   });
