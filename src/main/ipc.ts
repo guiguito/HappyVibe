@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import { parseImageDataUrl } from "./imageData";
+import { slashRefusal } from "./slashGuard";
 import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
 import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
@@ -3637,6 +3638,10 @@ export function registerIpc(
     if (documents !== undefined && !(Array.isArray(documents) && documents.every((m) => typeof m === "string"))) {
       throw new Error("Invalid documents payload");
     }
+    // §10 round 28: a typed extension command never reaches Pi (slashGuard.ts). Before the
+    // wake, so a refusal never boots a hibernated session.
+    const refusal = slashRefusal(msg);
+    if (refusal) throw new Error(refusal);
     let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
     if (!client) {
