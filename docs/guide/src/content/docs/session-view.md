@@ -79,7 +79,7 @@ On a message:
 - The agent's last reply of a turn shows how long the turn took. Hover over it: "This turn took …".
 - Hover over a message for its buttons: **Copy message** on yours, **Copy answer** on the agent's. Code blocks get their own **Copy code**.
 - On your own messages, the rewind icon takes the session back to that point. It's hidden while the agent is working. See [Changed your mind? Rewind](/docs/first-session/#changed-your-mind-rewind).
-- On your own messages, the fork icon ("Fork from here") opens a new session from that point. See [Fork from a message](#fork-from-a-message).
+- On your own messages, the fork icon opens a new session with everything before that message. See [Fork from a message](#fork-from-a-message).
 - A very long message is folded. **Show more** and **Show less** open and close it. A message sent from a [prompt](/docs/prompts/) shows what you typed, with **Show the expanded prompt** for the full text the agent got.
 
 On a tool card:
@@ -156,18 +156,18 @@ The agent can use a browser of its own too. See [Agent browser](/docs/built-in-t
 
 Want to try a different approach without losing this one? Fork it. The new session starts with everything before one of your messages, and this session stays exactly as it is.
 
-1. Hover over one of your messages and click the fork icon, "Fork from here". You can do this while the agent is working.
+1. Hover over one of your messages and click the fork icon. Its tooltip reads "Fork from here — a new session with everything before this message". You can do this while the agent is working.
 2. The dialog asks "Fork from this message?" and explains: "A new session opens in a new tab with everything before this message, and this message goes into its composer so you can edit and resend it. This session stays exactly as it is."
 3. Choose what to carry over:
    - **Conversation only** (the default): "Files on disk are left exactly as they are."
    - **Conversation and files**: "Also roll the workspace back to before this message. This session shares those files." This option appears only when there are files to roll back, and it's hidden while the agent is working.
 4. Click **Fork**.
 
-The new session opens in a tab beside the original, titled with "(fork)" after the original's name. Your message waits in its composer, with any documents you'd attached, ready to edit and send.
+The new session opens in a new tab, titled with "(fork)" after the original's name. Your message waits in its composer, with any documents you'd attached, ready to edit and send.
 
-- Because both sessions use the same project folder, **Conversation and files** changes this session's files too. If the fork then fails, the files have already been rolled back, and a notice in this session says so.
+- Because both sessions use the same project folder, **Conversation and files** changes this session's files too. Before the fork starts, this session posts a notice like "Files rewound — 2 restored, 0 removed." If the fork then fails, a second notice gives the error, and the files stay rolled back.
 - A fork's cost pill counts only what it spends after the fork.
-- The fork opens with "Forked from" and the original's name, a link you can click, or "Forked from a deleted session" once the original is gone.
+- A "Forked from" line with the original's name (a link you can click) sits where the fork's own messages begin, above everything you send there. It reads "Forked from a deleted session" once the original is gone.
 - Run cards from before the fork read "From the original session". They link to the original (plain text if it's deleted), and they don't expand.
 - Messages from before a compaction have no fork icon, because the agent no longer has them.
 
@@ -218,8 +218,10 @@ You always know when the agent is busy:
 - the session's tab pulses;
 - the message box reads "Steer the agent — lands between tool calls…", and the Send button's tooltip changes to "Steer — lands between tool calls";
 - **Stop** appears beside it;
-- the rewind icon hides until the turn ends.
+- the rewind icon hides until the turn ends;
 - the fork icon stays, but **Conversation and files** hides in its dialog.
+
+Typing a command that HappyVibe runs for you is refused with a short note, such as "/mcp is managed from the MCP page.", "/agents is managed from the Agents page." or "Sign-ins are managed from Models." Turning off bypass is the one exception: **Turn off** on the red banner does it.
 
 While subagents work, the message box says so instead: "Subagents are working in the background — keep chatting; results drop in when they finish", or, while one subagent holds the turn, "Type away — messages will be answered when *name* finishes".
 

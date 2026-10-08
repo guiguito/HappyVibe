@@ -118,7 +118,12 @@ A new session gets its name on its own, and you can change it any time.
 
 ## Duplicate a session
 
-Want a second copy of a session to take in another direction? Right-click its tab and choose **Duplicate**. A new session opens beside it with the whole conversation, titled with "(copy)" after the original's name. The original isn't touched.
+Want a second copy of a session to take in another direction? Duplicate it.
+
+1. Right-click the session's tab.
+2. Choose **Duplicate**.
+
+A new session opens in a new tab with the whole conversation, titled with "(copy)" after the original's name. It ends with a "Forked from" line naming the original, and any run cards above it read "From the original session". The original isn't touched.
 
 **Duplicate** is greyed out while the agent is working: "Wait for the turn to finish". Both copies work in the same project folder, so they edit the same files. The copy's cost pill counts only what it spends after you duplicate. To branch from an earlier message instead, see [Fork from a message](/docs/session-view/#fork-from-a-message).
 
