@@ -169,6 +169,9 @@ export function resolvePiSpawn(
   const twOn = sw?.subagents ?? true;
   const mcpOn = !!opts.mcp && (sw?.mcp ?? true);
   const excluded = sw ? excludedTools({ coreOff: sw.coreOff ?? [], subagents: twOn, workflows: sw.workflows ?? true }) : [];
+  // Pi registers its Windows `powershell` tool everywhere, inactive, and getAllTools() lists it —
+  // so a bash session would show the user a tool the agent can never call (Agent tools page).
+  if (opts.agentShell !== "powershell" && !excluded.includes("powershell")) excluded.push("powershell");
   return {
     execPath: plat.nodeExecPath(),
     args: [

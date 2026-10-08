@@ -43,7 +43,7 @@ describe("§13 round 26 — spawn obeys the switches", () => {
   });
   test("one --exclude-tools list: core tools plus SubagentWorkflow", () => {
     expect(valueAfter(argsOf({ coreOff: ["bash", "write"], workflows: false }), "--exclude-tools")).toBe("bash,write,powershell,SubagentWorkflow");
-    expect(argsOf({})).not.toContain("--exclude-tools");
+    expect(valueAfter(argsOf({}), "--exclude-tools")).toBe("powershell");
   });
   test("Windows: powershell is excluded alongside the --tools allowlist", () => {
     const a = argsOf({ coreOff: ["powershell"] }, { agentShell: "powershell" });
@@ -53,5 +53,18 @@ describe("§13 round 26 — spawn obeys the switches", () => {
   test("HV_BUILTINS lists every new key", () => {
     const b = JSON.parse(spawnWith({ mcp: false, subagents: false, workflows: false, skills: false, coreOff: ["ls"] }).env.HV_BUILTINS);
     expect(b).toMatchObject({ mcp: false, subagents: false, workflows: false, skills: false, coreOff: ["ls"] });
+  });
+});
+
+// GUI pass: on macOS/Linux Pi registers its Windows `powershell` tool, inactive, and getAllTools()
+// lists it — so Agent tools showed a tool the agent can never call, even with every switch on
+// (and the only tool left with every core switch off). A bash session excludes it outright.
+describe("§13 round 26 — a bash session never lists powershell", () => {
+  test("excluded with every switch on, and alongside a switched-off tool", () => {
+    expect(valueAfter(argsOf({}), "--exclude-tools")).toBe("powershell");
+    expect(valueAfter(argsOf({ coreOff: ["ls"] }), "--exclude-tools")).toBe("ls,powershell");
+  });
+  test("a Windows powershell session keeps it", () => {
+    expect(argsOf({}, { agentShell: "powershell" })).not.toContain("--exclude-tools");
   });
 });
