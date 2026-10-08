@@ -73,11 +73,15 @@ export async function runImageTool(d: {
   modelId: string;
   prompt: string;
   path: string;
+  /** Checked BEFORE generating: a taken name refused after the call would still be paid for.
+      Main's `wx` write stays the guarantee — this only saves the money. */
+  exists?: (path: string) => boolean;
   generate: (prompt: string) => Promise<ImagesReply | { error: string }>;
   save: (p: { path: string; mimeType: string; data: string; model: string }) => Promise<unknown>;
 }): Promise<ImageToolResult> {
   const details = { provider: "openrouter", model: d.modelId, path: d.path };
   const say = (text: string, usage?: Usage): ImageToolResult => ({ content: [{ type: "text", text }], details, ...(usage ? { usage } : {}) });
+  if (d.exists?.(d.path)) return say(`A file already exists at ${d.path}. Pick a new name.`);
   const r = await d.generate(d.prompt);
   if ("error" in r) return say(r.error);
   const usage = withCharge(r.usage, r.charged);

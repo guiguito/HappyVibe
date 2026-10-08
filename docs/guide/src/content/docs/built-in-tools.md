@@ -82,7 +82,7 @@ Images need an OpenRouter key or sign-in. Without one, the row reads "Needs an O
 
 **Image model** picks the model the agent uses. It lists only image models whose cost HappyVibe can show, cheapest first. The agent can't choose another one. The list shows names, not prices. After each image, **Session cost** shows exactly what OpenRouter charged.
 
-Before each image, the approval dialog reads "This makes an image with" the model's name "on your OpenRouter account. It costs money." and "It saves a new file:" followed by the file's path in your project. The agent never replaces an existing file. If the name is taken, the image is still charged but not saved, and the agent is asked to pick a new name. Plan mode and read-only scheduled runs block this tool.
+Before each image, the approval dialog reads "This makes an image with" the model's name "on your OpenRouter account. It costs money." and "It saves a new file:" followed by the file's path in your project. The agent never replaces an existing file. If the name is taken, the agent is asked to pick a new one before any image is made, so nothing is charged. Plan mode and read-only scheduled runs block this tool.
 
 ### Tool intent
 

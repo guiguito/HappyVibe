@@ -2140,6 +2140,8 @@ export default function (pi: ExtensionAPI) {
           modelId: imageModelId,
           prompt: p.prompt,
           path: p.path,
+          // Pi's cwd is the workspace. A read, not a write — main still writes with `wx`.
+          exists: (rel) => fs.existsSync(path.resolve(process.cwd(), rel)),
           generate: async (prompt) => {
             const model = ctx.modelRegistry.getModelsOfType("image", "openrouter").find((m) => m.id === imageModelId);
             if (!model) return { error: `The image model ${imageModelId} isn't available in this version of HappyVibe.` };

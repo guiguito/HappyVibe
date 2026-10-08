@@ -92,3 +92,16 @@ test("parseImageSave accepts only our envelope", () => {
   expect(parseImageSave({ method: "select", title: "{}" })).toBeNull();
   expect(parseImageSave({ method: "input", title: JSON.stringify({ kind: "hv.document-read", path: "a" }) })).toBeNull();
 });
+
+test("a taken name is refused BEFORE the image is generated — nothing is paid for", async () => {
+  let generated = false;
+  const r = await runImageTool({
+    modelId: "m", prompt: "p", path: "assets/sun.png",
+    exists: (p) => p === "assets/sun.png",
+    generate: async () => { generated = true; return okImages; },
+    save: async () => "",
+  });
+  expect(generated).toBe(false);
+  expect(r.content[0]).toEqual({ type: "text", text: "A file already exists at assets/sun.png. Pick a new name." });
+  expect(r.usage).toBeUndefined();
+});
