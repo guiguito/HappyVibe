@@ -323,3 +323,19 @@ export function resolvePiSpawn(
     cwd: workspace,
   };
 }
+
+/**
+ * §17 round 28: a short-lived BARE Pi that writes a fork/duplicate file and exits — never
+ * the session's own process (Pi's live `fork` aborts the turn and reloads every extension
+ * in place). `cwd` must be the source session's root: `--fork` stamps the copy's header cwd
+ * from the process cwd (session-manager.js forkFrom).
+ */
+export function resolveForkSpawn(cwd: string, sessionDir: string, runtimeDir: string, sourceFile: string, agentDirPath: string, plat: Platform = platform) {
+  return {
+    execPath: plat.nodeExecPath(),
+    args: [path.join(runtimeDir, PI_CLI_RELPATH), "--mode", "rpc", "--fork", sourceFile, "--session-dir", sessionDir,
+      "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"],
+    cwd,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PI_CODING_AGENT_DIR: agentDirPath },
+  };
+}
