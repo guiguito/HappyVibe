@@ -1,5 +1,6 @@
 import type { Schedule as HvSchedule } from "../../main/schedules";
 import type { UpdateState as HvUpdateState } from "../../main/update/state";
+import type { PrivacyState, SwitchKey } from "../../main/privacySwitches";
 
 /** §35: a create/update the agent proposed — the drawer opens prefilled and answers it. */
 export interface HvScheduleDrawerRequest {
@@ -1128,6 +1129,10 @@ interface HvApi {
   /** §39 */
   getUsageStats(): Promise<boolean>;
   setUsageStats(on: boolean): Promise<void>;
+  /** Privacy round: every switch's state, live across windows. */
+  privacyGet(): Promise<PrivacyState>;
+  privacySet(key: SwitchKey, on: boolean): Promise<PrivacyState>;
+  onPrivacyChanged(cb: (s: PrivacyState) => void): () => void;
   usageFeature(sessionId: string, feature: string): void;
   setCrashReports(on: boolean): Promise<void>;
   crashInfo(): Promise<HvCrashInfo>;

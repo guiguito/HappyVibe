@@ -444,6 +444,14 @@ contextBridge.exposeInMainWorld("hv", {
   setUsageStats: (on: boolean): Promise<void> => ipcRenderer.invoke("hv:set-usage-stats", on),
   usageFeature: (sessionId: string, feature: string): void => ipcRenderer.send("hv:usage-feature", sessionId, feature),
   setCrashReports: (on: boolean) => ipcRenderer.invoke("hv:set-crash-reports", on),
+  // Privacy round: the switches' state, pushed to every window on a change.
+  privacyGet: () => ipcRenderer.invoke("hv:privacy-get"),
+  privacySet: (key: string, on: boolean) => ipcRenderer.invoke("hv:privacy-set", key, on),
+  onPrivacyChanged: (cb: (s: unknown) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p);
+    ipcRenderer.on("hv:privacy-changed", listener);
+    return () => ipcRenderer.removeListener("hv:privacy-changed", listener);
+  },
   crashInfo: () => ipcRenderer.invoke("hv:crash-info"),
   crashReveal: () => ipcRenderer.invoke("hv:crash-reveal"),
   /** §17 round 25: Clear all data. */

@@ -20,3 +20,18 @@ export function webDefaultServiceAllowed(): boolean {
     return CONFIG_DEFAULTS.web_default_service;
   }
 }
+
+/**
+ * Privacy round (2026-10-09): the Remote settings switch. ipc.ts (which must not
+ * reach Electron) calls applyRemoteConfigSwitch; remoteConfig/index.ts plugs in
+ * the live stop/start at install. No handler (no key, tests): inert.
+ */
+let onSwitch: ((on: boolean) => void) | null = null;
+
+export function setRemoteConfigSwitchHandler(fn: ((on: boolean) => void) | null): void {
+  onSwitch = fn;
+}
+
+export function applyRemoteConfigSwitch(on: boolean): void {
+  onSwitch?.(on);
+}
