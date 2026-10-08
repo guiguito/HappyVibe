@@ -33,6 +33,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { byPrice, isPricedImageModel } from "../../pi-runtime/extensions/hv-images.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -122,6 +123,14 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+
+  const { getBuiltinImageModels } = (await import(PI_AI_PROVIDERS)) as {
+    getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string; cost?: { input?: number; output?: number } }>;
+  };
+  // §13 round 27: Pi lists image models only under OpenRouter (the contract test fails if that changes).
+  const imageModels = getBuiltinImageModels("openrouter").filter(isPricedImageModel)
+    .map((m) => ({ id: m.id, name: m.name ?? m.id, input: m.cost!.input!, output: m.cost!.output! }))
+    .sort(byPrice);
 
   const { builtinProviders } = (await import(PI_AI_PROVIDERS)) as {
     builtinProviders: () => Array<Record<string, never>>;
@@ -250,6 +259,8 @@ async function main(): Promise<void> {
  * a regional twin behind the same variable.
  */
 
+import type { ImageModelInfo } from "../../pi-runtime/extensions/hv-images";
+
 export interface CatalogProvider {
   /** Canonical Pi provider id — also the config key a stored key is filed under. */
   id: string;
@@ -284,6 +295,9 @@ export const OAUTH_NOT_ENABLED: Readonly<Record<string, string>> = ${JSON.string
 /** §39: Pi's registry model ids per provider. A usage event names a model only if it is here. */
 export const REGISTRY_MODELS: Readonly<Record<string, readonly string[]>> = ${JSON.stringify(registryModels)};
 
+/** §13 round 27: OpenRouter image models Pi fully prices (hv-images.ts isPricedImageModel), cheapest first. */
+export const IMAGE_MODELS: readonly ImageModelInfo[] = ${JSON.stringify(imageModels, null, 2)};
+
 /** The cards that stay above the "More providers…" search. */
 export const FEATURED_PROVIDER_IDS = ["deepseek", "anthropic", "openai", "google", "openrouter"] as const;
 `;
@@ -292,6 +306,7 @@ export const FEATURED_PROVIDER_IDS = ["deepseek", "anthropic", "openai", "google
   fs.writeFileSync(dest, out);
 
   console.log(`\n${rows.length} key providers, ${oauth.length} OAuth providers → ${path.relative(ROOT, dest)}`);
+  console.log(`priced image models: ${imageModels.length}`);
   console.log(`total models offered: ${rows.reduce((n, r) => n + r.modelCount, 0)}`);
   if (refusedOAuth.length) console.log(`OAuth refused (product decision): ${refusedOAuth.join(", ")}`);
   console.log(`\nrejected (${Object.values(rejected).flat().length}):`);

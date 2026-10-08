@@ -3,12 +3,14 @@ import path from "node:path";
 import fs from "node:fs";
 import {
   FEATURED_PROVIDER_IDS,
+  IMAGE_MODELS,
   OAUTH_CATALOG,
   OAUTH_NOT_ENABLED,
   PROVIDER_CATALOG,
   REGISTRY_MODELS,
 } from "../src/main/providerCatalog.generated";
 import { KEY_RESOLVED_PLAN_PROVIDERS, PLAN_PROVIDERS } from "../src/main/calls";
+import { byPrice, isPricedImageModel } from "../pi-runtime/extensions/hv-images";
 
 /**
  * Pin-bump gate for the generated provider catalog (key-free).
@@ -65,6 +67,21 @@ function modelsOf(p: UpstreamProvider): unknown[] {
 }
 
 describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", () => {
+  test("IMAGE_MODELS is exactly the OpenRouter image models Pi fully prices, cheapest first", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => Array<{ id: string; name?: string; cost?: { input?: number; output?: number } }> };
+    const want = mod.getBuiltinImageModels("openrouter").filter(isPricedImageModel)
+      .map((x) => ({ id: x.id, name: x.name ?? x.id, input: x.cost!.input!, output: x.cost!.output! })).sort(byPrice);
+    expect(IMAGE_MODELS).toEqual(want);
+  });
+
+  test("only OpenRouter ships image models — a second provider is a product decision, not drift", async () => {
+    const mod = (await import(PI_AI_PROVIDERS)) as { getBuiltinImageModels: (p: string) => unknown[] };
+    for (const p of await upstream()) {
+      if (p.id === "openrouter") continue;
+      expect(mod.getBuiltinImageModels(p.id), `${p.id} now ships image models`).toHaveLength(0);
+    }
+  });
+
   test("the registry is reachable at the path the generator uses", async () => {
     // The reach itself is the contract: pi-ai is a NESTED scoped dep of
     // pi-coding-agent, not a top-level `pi-ai`. If a bump moves it, the
