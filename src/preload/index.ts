@@ -164,6 +164,9 @@ contextBridge.exposeInMainWorld("hv", {
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
   // §7 round 27: Take back — Pi's clear_queue, answering with the texts it removed.
   clearQueue: (sessionId: string) => ipcRenderer.invoke("hv:clear-queue", sessionId),
+  // §13 round 27: the Images row.
+  imageSettings: () => ipcRenderer.invoke("hv:image-settings"),
+  imageModelSet: (id: string) => ipcRenderer.invoke("hv:image-model-set", id),
 
   // ── W2.1: per-session model override + image attach (additive) ──
   setSessionModel: (sessionId: string, m: { provider: string; modelId: string } | null) =>

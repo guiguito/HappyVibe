@@ -164,3 +164,13 @@ test("buildMentionBlocks falls back to a listing when a directory exceeds the ca
   expect(blocks).toContain(path.join("big", "huge.txt"));
   expect(warnings[0]).toMatch(/too large/);
 });
+
+test("round 27: writeNewFile writes bytes inside the workspace and never overwrites", async () => {
+  const { writeNewFile } = await import("../src/main/files");
+  const abs = writeNewFile([ws], ws, "assets/sun.png", Buffer.from("ABC"));
+  expect(fs.readFileSync(abs, "utf8")).toBe("ABC");
+  expect(() => writeNewFile([ws], ws, "assets/sun.png", Buffer.from("XYZ"))).toThrow(/EEXIST|exists/);
+  expect(fs.readFileSync(abs, "utf8")).toBe("ABC");
+  expect(() => writeNewFile([ws], ws, "../escape.png", Buffer.from("X"))).toThrow("Path escapes workspace");
+  expect(() => writeNewFile([ws], ws, "/tmp/abs.png", Buffer.from("X"))).toThrow("Path escapes workspace");
+});

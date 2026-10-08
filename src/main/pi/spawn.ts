@@ -115,6 +115,10 @@ export interface PiSpawnOptions {
       OpenAI, instead of the 5min/in-memory default. Global setting, resolved at
       spawn — same pattern as HV_BYPASS. */
   longCache?: boolean;
+  /** §13 round 27: the priced image model, or absent (switch off / no OpenRouter credential).
+      Deliberately NOT a key in HV_BUILTINS: the bridge registers generate_image on this alone,
+      which main resolves from the Images switch AND the credential. */
+  imageModel?: string;
   /**
    * §16 round 21: the global APPEND_SYSTEM.md, passed EXPLICITLY.
    *
@@ -305,6 +309,7 @@ export function resolvePiSpawn(
       ...(opts.memoryGlobalDir ? { HV_MEMORY_GLOBAL_DIR: opts.memoryGlobalDir } : {}),
       ...(opts.memoryWorkspaceDir ? { HV_MEMORY_WORKSPACE_DIR: opts.memoryWorkspaceDir } : {}),
       ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
+      ...(opts.imageModel ? { HV_IMAGE_MODEL: opts.imageModel } : {}),
       // tintinweb (PRD §12 2026-09-26). HV_HOST is what the owned patch keys on: a child built
       // with no host policy registered FAILS, and a project's own subagents.json / saved
       // workflows / gate commands are never used. Child sessions go to a SUBDIRECTORY of the

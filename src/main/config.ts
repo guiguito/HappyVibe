@@ -64,7 +64,7 @@ interface ConfigFile {
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
       and §26's grouped Terminal entry). Global only — no per-workspace tier.
       Absent key = on (fail-open default). */
-  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] };
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; images?: boolean; skills?: boolean; coreOff?: string[] };
   /** §32: the web service main calls for the web tools. Absent = HappyVibe's
       default. Global only, like builtinTools, and read PER CALL rather than at
       spawn — the Pi child never sees the URL or the key, so a change needs no
@@ -74,6 +74,8 @@ interface ConfigFile {
       absent = off — the default is cheaper for short-gap sessions, see
       getLongCache. */
   longCache?: boolean;
+  /** §13 round 27: the user's image model. Absent ⇒ the cheapest priced one (resolveImageModel). */
+  imageModel?: string;
   /** §13 round 8: safeStorage-encrypted secrets for catalog-installed MCP
       servers, base64, keyed "<serverKey>:<inputId>". mcp.json holds only a
       ${HV_MCP_…} placeholder — the workspace tier writes .mcp.json at the repo
@@ -398,7 +400,7 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
-export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; skills: boolean; coreOff: string[] } {
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; images: boolean; skills: boolean; coreOff: string[] } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
   // Plan mode's prompt tells the model to resolve decisions with ask_user, so
@@ -418,10 +420,10 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §33's Memory is three tools over one store, coupled to each other and to nothing else —
   // same grouping argument as the terminal, so one entry.
   // §13 round 27: Workflows ships off (≈5.5k tok/request); an absent key is a user who never chose.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? false, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? false, images: t?.images ?? true, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
 }
 
-export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; skills?: boolean; coreOff?: string[] }): void {
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; images?: boolean; skills?: boolean; coreOff?: string[] }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);
@@ -526,6 +528,17 @@ export function setAssistantTask(id: AssistantTaskId, patch: Partial<AssistantTa
  * which carries no write premium. Applied at spawn (PI_CACHE_RETENTION), so it
  * reaches live sessions only when they next respawn.
  */
+/** §13 round 27: the user's image model. Absent ⇒ the cheapest priced one (resolveImageModel). */
+export function getImageModel(): string | undefined {
+  return load().imageModel;
+}
+
+export function setImageModel(id: string): void {
+  const cfg = load();
+  cfg.imageModel = id;
+  save(cfg);
+}
+
 export function getLongCache(): boolean {
   return load().longCache ?? false;
 }

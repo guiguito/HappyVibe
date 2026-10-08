@@ -11,6 +11,7 @@ import {
 import { checkCommand, hasBackgroundAmpersand, terminalSteerFor, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
+import { IMAGE_TOOL, IMAGE_TOOL_DESCRIPTION, runImageTool } from "./hv-images";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
 import { isPiMcpTool, mcpCallInfo, mcpNamespace, PI_MCP_SOURCE, READ_RESOURCE_TOOL, TOOL_SEARCH_LIMIT, TOOL_SEARCH_SOURCE } from "./hv-mcp";
 import { workspaceRegistrations } from "./hv-mcp-config";
@@ -87,6 +88,10 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
     const { intent: _words, ...factual } = input;
     if (typeof factual.content === "string") factual.content = factual.content.slice(0, 4096);
     return JSON.stringify(factual);
+  }
+  // §13 round 27: what is approved is the model (it costs money), the file and the prompt.
+  if (toolName === IMAGE_TOOL) {
+    return JSON.stringify({ model: process.env.HV_IMAGE_MODEL ?? "", path: input.path, prompt: String(input.prompt ?? "").slice(0, 300) });
   }
   // …and for EVERYTHING else, strip `intent` rather than special-casing the
   // tools that happen to carry one.
@@ -2112,6 +2117,51 @@ export default function (pi: ExtensionAPI) {
       },
     });
   } // builtins.document
+
+  // §13 round 27: generate_image. Main names a model only when the Images switch is on AND an
+  // OpenRouter key or sign-in exists, so an absent HV_IMAGE_MODEL is how "off" arrives — the
+  // memory dirs' pattern. MAIN writes the file (hv.image-save), like memory and plans.
+  // The cost is OpenRouter's own `usage.cost`, read off the same response through a wrapped
+  // fetch: Pi prices image output at the text rate, 12–20× under (docs/validation/im1.md).
+  const imageModelId = process.env.HV_IMAGE_MODEL;
+  if (imageModelId) {
+    pi.registerTool({
+      name: IMAGE_TOOL,
+      label: "Generate image",
+      description: IMAGE_TOOL_DESCRIPTION,
+      parameters: Type.Object({
+        intent: intentParam(),
+        prompt: Type.String({ description: "What the image should show, in detail." }),
+        path: Type.String({ description: "Workspace-relative file to create, e.g. assets/icon.png. Must not exist yet." }),
+      }),
+      async execute(_id, params, signal, _onUpdate, ctx) {
+        const p = params as { prompt: string; path: string };
+        return (await runImageTool({
+          modelId: imageModelId,
+          prompt: p.prompt,
+          path: p.path,
+          generate: async (prompt) => {
+            const model = ctx.modelRegistry.getModelsOfType("image", "openrouter").find((m) => m.id === imageModelId);
+            if (!model) return { error: `The image model ${imageModelId} isn't available in this version of HappyVibe.` };
+            let charged: number | undefined;
+            const tap = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {
+              const res = await fetch(input, init);
+              try {
+                const c = ((await res.clone().json()) as { usage?: { cost?: unknown } })?.usage?.cost;
+                if (typeof c === "number") charged = c;
+              } catch {
+                /* not JSON — no charge known */
+              }
+              return res;
+            };
+            const r = await ctx.modelRegistry.generateImages(model, { input: [{ type: "text", text: prompt }] }, { signal, fetch: tap as never });
+            return { ...(r as never as object), charged } as never;
+          },
+          save: (payload) => ctx.ui.input(JSON.stringify({ kind: "hv.image-save", ...payload }), ""),
+        })) as never;
+      },
+    });
+  }
 
   // ── §33 Memory: three thin shells over blocking envelopes ────────────────
   //

@@ -22,3 +22,73 @@ test("the stored model wins only while it is still priced; otherwise the cheapes
   expect(resolveImageModel(list, undefined)).toBe("cheap");
   expect(resolveImageModel([], "pro")).toBeNull();
 });
+
+import { parseImageSave, runImageTool, withCharge } from "../pi-runtime/extensions/hv-images";
+
+const usage = { input: 12, output: 1120, cacheRead: 0, cacheWrite: 0, totalTokens: 1132, cost: { input: 0.000003, output: 0.00168, cacheRead: 0, cacheWrite: 0, total: 0.001683 } };
+const okImages = { stopReason: "stop", output: [{ type: "image", data: "QUJD", mimeType: "image/png" }], usage };
+
+test("withCharge: OpenRouter's total wins, split in Pi's proportions (im1: Pi under-prices 12–20x)", () => {
+  const u = withCharge(usage, 0.03326697)!;
+  expect(u.cost.total).toBeCloseTo(0.03326697, 10);
+  expect(u.cost.input + u.cost.output).toBeCloseTo(0.03326697, 10);
+  expect(u.cost.input).toBeGreaterThan(0);
+  expect(u.output).toBe(1120); // tokens untouched
+});
+
+test("withCharge: no reported charge → cost zeroed, so the ledger reads $? instead of Pi's understated figure", () => {
+  const u = withCharge(usage, undefined)!;
+  expect(u.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
+  expect(withCharge(undefined, 0.03)).toBeUndefined();
+});
+
+test("a saved image comes back to the agent with its path, and carries OpenRouter's charge for the ledger", async () => {
+  const saved: unknown[] = [];
+  const r = await runImageTool({
+    modelId: "google/x", prompt: "a sun", path: "assets/sun.png",
+    generate: async () => ({ ...okImages, charged: 0.033 }),
+    save: async (p) => { saved.push(p); return JSON.stringify({ ok: true, path: "assets/sun.png" }); },
+  });
+  expect(saved).toEqual([{ path: "assets/sun.png", mimeType: "image/png", data: "QUJD", model: "google/x" }]);
+  expect(r.content).toEqual([{ type: "text", text: "Saved the image to assets/sun.png." }, { type: "image", data: "QUJD", mimeType: "image/png" }]);
+  expect(r.details).toEqual({ provider: "openrouter", model: "google/x", path: "assets/sun.png" });
+  expect(r.usage?.cost.total).toBeCloseTo(0.033, 10);
+});
+
+test("a refused save (the file exists) keeps the usage — the image was still paid for", async () => {
+  const r = await runImageTool({
+    modelId: "google/x", prompt: "a sun", path: "assets/sun.png",
+    generate: async () => ({ ...okImages, charged: 0.033 }),
+    save: async () => JSON.stringify({ ok: false, error: "A file already exists at assets/sun.png. Pick a new name." }),
+  });
+  expect(r.content).toEqual([{ type: "text", text: "A file already exists at assets/sun.png. Pick a new name." }]);
+  expect(r.usage?.cost.total).toBeCloseTo(0.033, 10);
+});
+
+test("a failed generation says why and never calls save", async () => {
+  let called = false;
+  const r = await runImageTool({
+    modelId: "google/x", prompt: "a sun", path: "a.png",
+    generate: async () => ({ stopReason: "error", errorMessage: "402 Insufficient credits", output: [] }),
+    save: async () => { called = true; return ""; },
+  });
+  expect(called).toBe(false);
+  expect(r.content[0]).toEqual({ type: "text", text: "The image model failed: 402 Insufficient credits" });
+});
+
+test("a reply with no image block is said plainly", async () => {
+  const r = await runImageTool({ modelId: "m", prompt: "p", path: "a.png", generate: async () => ({ stopReason: "stop", output: [{ type: "text", text: "I can't draw that." }] }), save: async () => "" });
+  expect(r.content[0]).toEqual({ type: "text", text: "The image model returned no image: I can't draw that." });
+});
+
+test("a broken envelope round trip is an error the agent sees, never a fake success", async () => {
+  const r = await runImageTool({ modelId: "m", prompt: "p", path: "a.png", generate: async () => okImages, save: async () => undefined });
+  expect(r.content[0]).toEqual({ type: "text", text: "HappyVibe could not save the image." });
+});
+
+test("parseImageSave accepts only our envelope", () => {
+  expect(parseImageSave({ method: "input", title: JSON.stringify({ kind: "hv.image-save", path: "a.png", mimeType: "image/png", data: "QUJD", model: "m" }) }))
+    .toEqual({ path: "a.png", mimeType: "image/png", data: "QUJD", model: "m" });
+  expect(parseImageSave({ method: "select", title: "{}" })).toBeNull();
+  expect(parseImageSave({ method: "input", title: JSON.stringify({ kind: "hv.document-read", path: "a" }) })).toBeNull();
+});
