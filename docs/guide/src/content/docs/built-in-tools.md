@@ -3,7 +3,7 @@ title: Built-in tools
 description: See the abilities HappyVibe gives the agent and switch off any you don't want.
 ---
 
-Out of the box, the agent can plan, ask you questions, run terminals, drive a browser, read the web, remember, suggest schedules and read documents. It can also use your MCP servers, hand work to subagents, load skills, and use Pi's own tools for files and commands. Each one starts on, and each one has a switch. Turn one off and back on, and its tools come back.
+Out of the box, the agent can plan, ask you questions, run terminals, drive a browser, read the web, remember, suggest schedules, read documents and make images. It can also use your MCP servers, hand work to subagents, load skills, and use Pi's own tools for files and commands. Each one starts on except Workflows, and each one has a switch. Turn one off and back on, and its tools come back.
 
 The one thing here you can't take back is **Clear browsing data**, which signs the agent's browser out of everything.
 
@@ -78,11 +78,11 @@ Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB fil
 
 "Lets the agent make an image and save it as a new file in your project. Each image costs money on your OpenRouter account; Session cost shows what OpenRouter charged."
 
-Images need an OpenRouter key or sign-in. Without one, the row reads "Needs an OpenRouter key or sign-in. Add one on Models." and the agent doesn't get the tool.
+Images need an OpenRouter key or sign-in. Without one, the row reads "Needs an OpenRouter key or sign-in. Add one on Models." and the agent doesn't get the tool. Click **Models** in that line to add one.
 
-**Image model** picks the model the agent uses. It lists only image models whose cost HappyVibe can show, cheapest first. The agent can't choose another one.
+**Image model** picks the model the agent uses. It lists only image models whose cost HappyVibe can show, cheapest first. The agent can't choose another one. The list shows names, not prices. After each image, **Session cost** shows exactly what OpenRouter charged.
 
-Before each image, the approval dialog names the model, says it costs money and shows the new file's name. The agent never replaces an existing file: it's asked to pick a new name. Plan mode blocks this tool.
+Before each image, the approval dialog reads "This makes an image with" the model's name "on your OpenRouter account. It costs money." and "It saves a new file:" followed by the file's path in your project. The agent never replaces an existing file. If the name is taken, the image is still charged but not saved, and the agent is asked to pick a new name. Plan mode and read-only scheduled runs block this tool.
 
 ### Tool intent
 
