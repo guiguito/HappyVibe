@@ -9,7 +9,8 @@
  */
 import { app, ipcMain, shell } from "electron";
 import electronUpdater from "electron-updater";
-import { getAutoUpdate, setAutoUpdate } from "../config";
+import { getAutoUpdate, getSwitch, setAutoUpdate, setSwitch } from "../config";
+import { lockedByEnv } from "../privacySwitches";
 import type { UpdateDeps } from "../ipc";
 import { initialState, installGate, reduce, RELEASES_URL, updateMode, type UpdateEvent, type UpdateState } from "./state";
 
@@ -25,8 +26,9 @@ const EVERY_MS = 4 * 60 * 60_000;
 const GATE_POLL_MS = 5_000;
 
 export function startUpdater(deps: UpdateDeps): void {
-  const mode = updateMode({ packaged: app.isPackaged, platform: process.platform, appImage: process.env.APPIMAGE });
-  let state: UpdateState = initialState(mode, getAutoUpdate());
+  const locked = lockedByEnv("updateCheck", process.env);
+  const mode = updateMode({ packaged: app.isPackaged, platform: process.platform, appImage: process.env.APPIMAGE, locked });
+  let state: UpdateState = initialState(mode, getAutoUpdate(), getSwitch("updateCheck"), locked);
 
   const push = (): void => deps.send("hv:update-state", state);
   const apply = (e: UpdateEvent): void => {
@@ -44,7 +46,7 @@ export function startUpdater(deps: UpdateDeps): void {
   // Dev: nothing runs — unless a GUI pass asks to SEE the row. `ready:0.3.0`,
   // `available:0.3.0` or `downloading:0.3.0`. Install then only writes the audit
   // row it would have written; a dev build never installs over itself.
-  const fake = !app.isPackaged && process.env.HV_UPDATE_FAKE ? process.env.HV_UPDATE_FAKE : null;
+  const fake = !app.isPackaged && !locked && process.env.HV_UPDATE_FAKE ? process.env.HV_UPDATE_FAKE : null;
   if (fake) {
     const [k, version = "0.3.0"] = fake.split(":");
     state = { ...state, mode: "auto" };
@@ -94,9 +96,15 @@ export function startUpdater(deps: UpdateDeps): void {
     if (state.mode === "auto" && !fake) autoUpdater.autoDownload = !!on;
     apply({ t: "auto", on: !!on });
   });
+  ipcMain.handle("hv:update-set-check", (_e, on: boolean) => {
+    if (locked) return;
+    setSwitch("updateCheck", !!on);
+    apply({ t: "check", on: !!on });
+  });
   let manualCheck = false;
   const check = (manual: boolean): void => {
     if (state.mode === "disabled" || fake) return;
+    if (!manual && !state.check) return; // the switch stops the timers' checks; Check now is consent
     manualCheck = manual;
     apply({ t: "checking", manual });
     void autoUpdater.checkForUpdates().catch(() => { /* the error event reports it */ });

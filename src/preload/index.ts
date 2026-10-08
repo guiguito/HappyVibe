@@ -466,6 +466,7 @@ contextBridge.exposeInMainWorld("hv", {
   updateInstall: () => ipcRenderer.invoke("hv:update-install"),
   updateDownload: () => ipcRenderer.invoke("hv:update-download"),
   updateSetAuto: (on: boolean) => ipcRenderer.invoke("hv:update-set-auto", on),
+  updateSetCheck: (on: boolean) => ipcRenderer.invoke("hv:update-set-check", on),
   onUpdateState: (cb: (s: unknown) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p);
     ipcRenderer.on("hv:update-state", listener);

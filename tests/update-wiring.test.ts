@@ -23,7 +23,7 @@ describe("updater wiring — §38", () => {
   it("does nothing at all in a dev build unless HV_UPDATE_FAKE asks for the row", () => {
     expect(UPD).toMatch(/updateMode\(\{ packaged: app\.isPackaged/);
     expect(UPD).toMatch(/HV_UPDATE_FAKE/);
-    expect(UPD).toMatch(/!app\.isPackaged && process\.env\.HV_UPDATE_FAKE/);
+    expect(UPD).toMatch(/!app\.isPackaged && !locked && process\.env\.HV_UPDATE_FAKE/); // an env lock wins over the fake
   });
   it("re-evaluates the gate in MAIN before every quitAndInstall", () => {
     const install = UPD.slice(UPD.indexOf("const tryInstall"));

@@ -1153,6 +1153,7 @@ interface HvApi {
   updateInstall(): Promise<void>;
   updateDownload(): Promise<void>;
   updateSetAuto(on: boolean): Promise<void>;
+  updateSetCheck(on: boolean): Promise<void>;
   onUpdateState(cb: (s: HvUpdateState) => void): () => void;
   setLongCache(on: boolean): Promise<void>;
 
