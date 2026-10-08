@@ -42,4 +42,11 @@ describe("privacy state wiring", () => {
   it("ipc.ts reaches remote config only through its import-free seam", () => {
     expect(read("src/main/ipc.ts")).toMatch(/from "\.\/remoteConfig\/client"/);
   });
+  it("final review: under HV_NO_USAGE_STATS the old installation ID is forgotten, so remote settings can't send it", () => {
+    const u = read("src/main/usage/index.ts");
+    const body = u.slice(u.indexOf("export async function installUsage"));
+    expect(body).toMatch(/if \(locked\) \{\s*await a\.setEnabled\(false, \{ forget: true \}\);\s*return;/);
+    // the lock must no longer skip the install: forgetting needs the client
+    expect(body).not.toMatch(/if \(!cfg \|\| lockedByEnv\("usageStats"/);
+  });
 });

@@ -39,7 +39,11 @@ function registerUsageIpc(): void {
 export async function installUsage(): Promise<void> {
   registerUsageIpc(); // before every gate: the Privacy page must always be able to turn it back on
   const cfg = resolveFeedbackConfig(process.env, is.dev);
-  if (!cfg || lockedByEnv("usageStats", process.env)) return; // the env lock: no client, no ID on disk
+  if (!cfg) return;
+  // Privacy round: under the env lock the client is still built, disabled, so its stored
+  // installation ID can be FORGOTTEN — remote settings share that ID, and must not keep
+  // sending the one linked to past statistics (the Privacy copy promises an unlinked one).
+  const locked = lockedByEnv("usageStats", process.env);
   const userData = app.getPath("userData");
   const attribution = existingUserAttribution(path.join(userData, "inlet"), hasPriorUse(userData, agentDir()));
   try {
@@ -60,6 +64,10 @@ export async function installUsage(): Promise<void> {
           }
         : {}),
     });
+    if (locked) {
+      await a.setEnabled(false, { forget: true });
+      return;
+    }
     setEnabled = (on, opts) => a.setEnabled(on, opts);
     setAttribution = (value) => a.setAttribution(value);
     setUsageSink((name, category, params) => a.track(name, { category, params }));
