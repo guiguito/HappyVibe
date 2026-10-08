@@ -19,6 +19,7 @@ import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
+import { stampPiTs } from "./fork";
 import { reloadNotice } from "./reloadNotice";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
@@ -1858,8 +1859,19 @@ export default function App(): React.JSX.Element {
       // the turn ultimately failed, while auto_retry_start clears it on a retry.
       if (e.type === "message_end") {
         const m = (e as {
-          message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string };
+          message?: {
+            role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string;
+            timestamp?: number; content?: string | Array<{ type?: string; text?: string }>;
+          };
         }).message;
+        // §17 round 28: the bubble learns Pi's own timestamp — the key a fork is made by.
+        if (m?.role === "user" && typeof m.timestamp === "number") {
+          const ts = m.timestamp;
+          const text = typeof m.content === "string"
+            ? m.content
+            : (m.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+          setTranscripts((p) => ({ ...p, [sid]: stampPiTs(p[sid] ?? [], ts, stripInjectedBlocks(text)) }));
+        }
         if (m?.role === "assistant" && m.stopReason === "error") {
           commitStream(sid); // flush any partial bubble before the (deferred) error
           // Keep the provider and model alongside the text: some providers answer
@@ -2960,7 +2972,7 @@ export default function App(): React.JSX.Element {
     if (uiReq?.kind !== "askUser") return;
     window.hv.respondInput(uiReq.req.id, answers ? JSON.stringify(answers) : null);
     const sid = uiReq.req.sessionId;
-    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers), ts: Date.now() });
+    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers), ts: Date.now(), synthetic: true });
     setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
@@ -3003,6 +3015,38 @@ export default function App(): React.JSX.Element {
     setTranscripts((p) => ({ ...p, [sid]: (p[sid] ?? []).slice(0, idx) }));
     pendingRewind.current[sid] = { msgCount, toolIds };
     void window.hv.contextSnapshot(sid);
+  };
+
+  // §17 round 28: Fork from a message — a NEW session holding everything before `it`,
+  // opened with `it` back in its composer. The original's conversation is never
+  // touched; with "both" its workspace files roll back first (they are shared).
+  const forkFrom = async (it: TranscriptItem, scope: RewindScope): Promise<void> => {
+    if (it.id == null || it.kind !== "user" || it.piTs == null) return;
+    // Same owner lookup as rewindTo: ids are globally unique.
+    const sid =
+      (selectedId && (transcripts[selectedId] ?? []).some((x) => x.id === it.id) && selectedId) ||
+      Object.keys(transcripts).find((k) => transcripts[k].some((x) => x.id === it.id));
+    if (!sid) return;
+    const items = transcripts[sid] ?? [];
+    const idx = items.findIndex((x) => x.id === it.id);
+    if (idx < 0) return;
+    try {
+      if (scope === "both") {
+        const res = await window.hv.rewindRestore(sid, tailToolCallIds(items, idx));
+        if (!res) {
+          appendItem(sid, { kind: "notice", text: "No snapshot for that message — no files were changed." });
+        } else {
+          const parts = [`${res.restored.length} restored`, `${res.deleted.length} removed`];
+          if (res.stale.length) parts.push(`${res.stale.length} left alone (changed since)`);
+          appendItem(sid, { kind: "notice", text: `Files rewound — ${parts.join(", ")}.` });
+        }
+      }
+      const r = await window.hv.forkSession(sid, it.piTs);
+      await openSessionRef.current?.(r.sessionId);
+      setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), nonce: (prev?.nonce ?? 0) + 1 }));
+    } catch (err) {
+      appendItem(sid, { kind: "notice", text: ipcMessage(err) });
+    }
   };
 
   // §20 round 17 — the one nav callback GoTo rides, via NavContext.
@@ -4098,6 +4142,7 @@ export default function App(): React.JSX.Element {
                 onOpenVoice={() => setView("voice")}
                 voiceSettings={voiceSettings}
                 onRewind={rewindTo}
+                onFork={(it, scope) => void forkFrom(it, scope)}
                 onLoadEarlier={() => void loadEarlier(sid)}
                 activePlan={activePlan[sid] ?? null}
               />

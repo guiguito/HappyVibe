@@ -119,6 +119,9 @@ export function toTranscriptItems(
       // — main computes both, and an unnamed field here is a dropped field.
       ts: m.ts,
       turnMs: m.turnMs,
+      // §17 round 28: a restored user message's `ts` IS Pi's `message.timestamp`
+      // (restore.ts tsOf), which is what a fork matches on — so it is forkable at once.
+      piTs: m.kind === "user" ? m.ts : undefined,
       id: nextId(),
     };
   }) as TranscriptItem[];

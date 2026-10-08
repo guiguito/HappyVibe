@@ -53,6 +53,21 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
   );
 }
 
+/** §17 round 28: Fork from a message — only rendered on a bubble Pi has confirmed (`piTs`). */
+function ForkButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label="Fork from here"
+      title="Fork from here — a new session with everything before this message"
+      onClick={onClick}
+      className="rounded-lg border-2 border-line bg-card p-1 text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+    >
+      <ToolIcon kind="fork" className="size-3.5" />
+    </button>
+  );
+}
+
 // Perf: `id` is a stable key assigned at append time (see App.appendItem). Keying
 // on it instead of the array index lets React.memo skip re-parsing committed
 // markdown when new items arrive or the live streaming bubble updates.
@@ -87,6 +102,13 @@ export type TranscriptItem = { id?: number; live?: true } & (
       /** Round 15: assistant only, and only on a turn's LAST bubble — how long
           the turn took, from the user message that started it. */
       turnMs?: number;
+      /** §17 round 28: Pi's own `message.timestamp` for this user message — from the
+          user-role `message_end` live, from the session file on restore. Main finds a
+          fork's entry by it, so Fork is offered only once it is known. */
+      piTs?: number;
+      /** §17 round 28: a bubble the app drew that is not a Pi user message (the askUser
+          answers summary) — never stamped, so never forkable. */
+      synthetic?: boolean;
       /**
        * §31: documents attached to THIS message, for the live path only.
        *
@@ -238,6 +260,7 @@ const MessageItem = memo(function MessageItem({
   sessionId,
   onOpenFile,
   onRewind,
+  onFork,
   onLoadEarlier,
 }: {
   it: TranscriptItem;
@@ -253,6 +276,8 @@ const MessageItem = memo(function MessageItem({
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind to a user message (only wired for user items). */
   onRewind?: (it: TranscriptItem) => void;
+  /** §17 round 28: fork from a user message. */
+  onFork?: (it: TranscriptItem) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
 }): React.JSX.Element {
@@ -355,7 +380,14 @@ const MessageItem = memo(function MessageItem({
   }
   // Out-of-context items get no rewind: rewind truncates Pi's LIVE context, and
   // these are already outside it — the button would promise something it cannot do.
-  return <UserBubble it={it} onRewind={it.outOfContext ? undefined : onRewind} />;
+  // Fork follows the same rule: its entry would sit above the compaction boundary.
+  return (
+    <UserBubble
+      it={it}
+      onRewind={it.outOfContext ? undefined : onRewind}
+      onFork={it.outOfContext ? undefined : onFork}
+    />
+  );
 });
 
 /** User message bubble: zoomable images, long-message collapse (#4),
@@ -363,9 +395,11 @@ const MessageItem = memo(function MessageItem({
 function UserBubble({
   it,
   onRewind,
+  onFork,
 }: {
   it: TranscriptItem;
   onRewind?: (it: TranscriptItem) => void;
+  onFork?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   // F3: strip the hidden @file context blocks so the bubble (and copy/search)
   // shows only what the user wrote; @tokens render as chips.
@@ -467,6 +501,7 @@ function UserBubble({
         <span className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <CopyButton text={text} label="Copy message" />
           {onRewind && <RewindButton onClick={() => onRewind(it)} />}
+          {"piTs" in it && onFork && it.piTs != null && <ForkButton onClick={() => onFork(it)} />}
         </span>
         {/* Same `in` narrowing the rest of this component uses — `it` is the
             whole union here, and only the message member carries a stamp. */}
@@ -567,6 +602,7 @@ export function Transcript({
   sessionId,
   onOpenFile,
   onRewind,
+  onFork,
   searchQuery,
   searchActiveIndex,
   onSearchTotal,
@@ -597,6 +633,8 @@ export function Transcript({
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind a user message (removes everything after + re-edits). */
   onRewind?: (it: TranscriptItem) => void;
+  /** §17 round 28: fork from a user message into a new session. */
+  onFork?: (it: TranscriptItem) => void;
   /** Round 4 #1: in-conversation search — highlight matches (not filter). */
   searchQuery?: string;
   searchActiveIndex?: number;
@@ -816,6 +854,7 @@ export function Transcript({
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}
                 onRewind={onRewind}
+                onFork={onFork}
                 onLoadEarlier={onLoadEarlier}
               />
             );

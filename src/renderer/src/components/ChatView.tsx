@@ -6,6 +6,7 @@ import { usePresence } from "../usePresence";
 import { Unfold } from "./Unfold";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, rewindDialogBody, tailToolCallIds, type RewindScope } from "../rewind";
+import { FORK_DIALOG, forkScopes } from "../fork";
 import { formatBinding, matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { GoTo } from "./GoTo";
@@ -176,6 +177,7 @@ export function ChatView({
   onOpenVoice,
   voiceSettings,
   onRewind,
+  onFork,
   onLoadEarlier,
   activePlan,
   composerInsert,
@@ -302,6 +304,8 @@ export function ChatView({
   voiceSettings?: HvVoiceSettings | null;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem, scope: RewindScope) => void;
+  /** §17 round 28: fork a new session from a user message (App-side). */
+  onFork?: (it: TranscriptItem, scope: RewindScope) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
   /** §23 round 9: the session's active plan — the pill's data, null when none. */
@@ -556,7 +560,17 @@ export function ChatView({
   const [collapseNonce, setCollapseNonce] = useState(0);
   const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
-  const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
+  const openRewind = useCallback((it: TranscriptItem) => {
+    setForkMode(false);
+    setPendingRewind(it);
+  }, []);
+  // §17 round 28: Fork reuses the rewind dialog — same preview, same stale list,
+  // its own copy and scopes (forkScopes: never "Files only").
+  const [forkMode, setForkMode] = useState(false);
+  const openFork = useCallback((it: TranscriptItem) => {
+    setForkMode(true);
+    setPendingRewind(it);
+  }, []);
   // §9 round 7: rewind scope + the affected-file preview behind it. `undefined`
   // = still loading, `null` = no snapshot for this message.
   const [rewindScope, setRewindScope] = useState<RewindScope>("conversation");
@@ -1240,13 +1254,23 @@ export function ChatView({
       {pendingRewind !== null && (
         <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
           <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="font-bold text-ink mb-1">Rewind to this message?</div>
-            <p className="text-sm text-ink-soft mb-3">{rewindDialogBody(rewindScope)}</p>
+            <div className="font-bold text-ink mb-1">{forkMode ? FORK_DIALOG.title : "Rewind to this message?"}</div>
+            {forkMode ? (
+              <p className="text-sm text-ink-soft mb-3">{FORK_DIALOG.body}</p>
+            ) : (
+              <p className="text-sm text-ink-soft mb-3">{rewindDialogBody(rewindScope)}</p>
+            )}
             <div className="flex flex-col gap-1.5 mb-3">
               {((): Array<[RewindScope, string, string]> => {
                 const opts: Array<[RewindScope, string, string]> = [
                   ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
                 ];
+                if (forkMode) {
+                  if (forkScopes(rewindPreview).includes("both")) {
+                    opts.push(["both", "Conversation and files", FORK_DIALOG.bothHint]);
+                  }
+                  return opts;
+                }
                 // §9 round 12: the file scopes exist only when a rewind here
                 // would actually restore something. Hidden, not greyed — and
                 // hidden while the preview loads, so they appear once and never
@@ -1314,6 +1338,12 @@ export function ChatView({
                 // restore — so there is nothing left to disable.
                 onClick={() => {
                   const it = pendingRewind;
+                  if (forkMode) {
+                    // App opens the fork and fills ITS composer; this one is left alone.
+                    onFork?.(it, rewindScope);
+                    setPendingRewind(null);
+                    return;
+                  }
                   onRewind?.(it, rewindScope);
                   // "Files only" leaves the conversation alone, so the composer
                   // must not be repopulated with a message that is still there.
@@ -1339,7 +1369,7 @@ export function ChatView({
                 }}
                 className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker enabled:cursor-pointer enabled:hover:brightness-105 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Rewind
+                {forkMode ? FORK_DIALOG.confirm : "Rewind"}
               </button>
             </div>
           </div>
@@ -1498,6 +1528,7 @@ export function ChatView({
           sessionId={sessionId}
           onOpenFile={onOpenFile}
           onRewind={onRewind && !busy ? openRewind : undefined}
+          onFork={onFork && !busy ? openFork : undefined}
           onLoadEarlier={onLoadEarlier}
           searchQuery={searchOpen ? searchQuery : ""}
           searchActiveIndex={searchActive}
