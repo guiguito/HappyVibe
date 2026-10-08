@@ -13,7 +13,7 @@ import { formatDuration, timeagoLong } from "../timeago";
 import { thinkingLabel } from "../thinkingLabel";
 import { busyStatus, type Activity, type ToolDraft } from "../busyStatus";
 import { toolLabel } from "../toolLabel";
-import { forkMarkerCopy } from "../fork";
+import { FORK_MARKER_PREFIX, forkMarkerCopy } from "../fork";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -299,7 +299,7 @@ const MessageItem = memo(function MessageItem({
         <span className="size-2 rounded-full bg-plum shrink-0" />
         {title != null && forkOrigin?.onOpen ? (
           <span className="text-center">
-            Forked from{" "}
+            {FORK_MARKER_PREFIX}{" "}
             <button type="button" onClick={forkOrigin.onOpen} className="underline underline-offset-2 hover:text-ink cursor-pointer">
               {title}
             </button>
@@ -332,7 +332,8 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile} />;
+  if (it.kind === "tool")
+    return <ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile} onOpenOriginal={forkOrigin?.onOpen} />;
   if (it.kind === "plan") return <PlanCard card={it.card} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
     return (
@@ -888,7 +889,7 @@ export function Transcript({
                 onRewind={onRewind}
                 onFork={onFork}
                 onLoadEarlier={onLoadEarlier}
-                forkOrigin={it.kind === "forkMarker" ? forkOrigin : undefined}
+                forkOrigin={it.kind === "forkMarker" || (it.kind === "tool" && it.card.preFork) ? forkOrigin : undefined}
               />
             );
             // Dimmed items get a wrapper; everything else stays a direct flex

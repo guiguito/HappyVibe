@@ -106,7 +106,7 @@ describe("sessionId reaches the card the same way workspace does", () => {
 
   it("Transcript takes it and hands it to ToolCard", () => {
     expect(t).toMatch(/sessionId\?: string \| null;/);
-    expect(t).toContain("<ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile} />");
+    expect(t).toContain("<ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile}");
   });
 
   it("Transcript passes it through the memoized row", () => {

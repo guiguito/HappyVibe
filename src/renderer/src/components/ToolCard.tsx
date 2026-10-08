@@ -612,7 +612,16 @@ export function delegationSummary(card: ToolCardData): string {
  * "it's running" signal is the sticky delegation section (ChatView), not this line.
  * W1.1: shares the headline treatment — robot icon + intent-first label.
  */
-function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: string | null }): React.JSX.Element {
+function SubagentCard({
+  card,
+  sessionId,
+  onOpenOriginal,
+}: {
+  card: ToolCardData;
+  sessionId?: string | null;
+  /** §17 round 28: a pre-fork card links to the original session; absent once it is deleted. */
+  onOpenOriginal?: () => void;
+}): React.JSX.Element {
   const running = card.status === "running";
   const [open, setOpen] = useState(false);
   const preFork = !!card.preFork;
@@ -744,8 +753,20 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
             {summary}
           </span>
         )}
-        {preFork && <span className="block mt-1 pl-5 text-xs text-ink-soft italic">{PRE_FORK_CARD_COPY}</span>}
       </button>
+      {/* §17 round 28: outside the toggle — a button may not nest a button, and following
+          the link must not be a click on the card. */}
+      {preFork && (
+        <div className="-mt-1.5 pb-2.5 pl-10 pr-3.5 text-xs text-ink-soft italic">
+          {onOpenOriginal ? (
+            <button type="button" onClick={onOpenOriginal} className="italic underline underline-offset-2 hover:text-ink cursor-pointer">
+              {PRE_FORK_CARD_COPY}
+            </button>
+          ) : (
+            PRE_FORK_CARD_COPY
+          )}
+        </div>
+      )}
       {/* B1 (Animations round, 2026-09-10): the body UNFOLDS. A card that grows
           by its own height in one frame shoves every message below it, which is
           the whole reason this is a height reveal rather than a fade. `Unfold`
@@ -851,6 +872,7 @@ export function ToolCard({
   workspace,
   sessionId,
   onOpenFile,
+  onOpenOriginal,
 }: {
   card: ToolCardData;
   /** W2.2: session workspace — card paths resolve against it. */
@@ -859,8 +881,10 @@ export function ToolCard({
    *  finished child by asyncId — inspection is session-scoped. */
   sessionId?: string | null;
   onOpenFile?: (relPath: string) => void;
+  /** §17 round 28: opens the session this one was forked from (pre-fork sub-agent cards only). */
+  onOpenOriginal?: () => void;
 }): React.JSX.Element {
-  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} />;
+  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} onOpenOriginal={onOpenOriginal} />;
   // W1.1: headline = icon + human label; the technical block (raw name/args/
   // result) lives behind the collapsed "details" toggle. Diffs are NOT
   // technical — they ARE the human content for edit/write — so they render

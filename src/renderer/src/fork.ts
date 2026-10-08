@@ -43,10 +43,14 @@ export function forkMarkerIndex(items: Array<{ ts?: number }>, atMs: number): nu
   return i < 0 ? items.length : i;
 }
 
+/** One copy for the marker's plain text and its clickable-title variant (Transcript.tsx). */
+export const FORK_MARKER_PREFIX = "Forked from";
+
 /** `null` = the original no longer exists. */
 export function forkMarkerCopy(originalTitle: string | null): string {
-  return originalTitle == null ? "Forked from a deleted session" : `Forked from ${originalTitle}`;
+  return `${FORK_MARKER_PREFIX} ${originalTitle ?? "a deleted session"}`;
 }
 
-/** A sub-agent run from before the fork: its children belong to the original, so the card cannot expand. */
+/** A sub-agent run from before the fork: its children belong to the original, so the card cannot
+    expand; this line links to the original instead (plain text once it is deleted). */
 export const PRE_FORK_CARD_COPY = "From the original session";
