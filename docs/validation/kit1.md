@@ -32,7 +32,9 @@ Quarter-of-window vs reserve rule: both pick basics at 4k/8k/32k and full at 64k
 Profiles: **LO** = DeepSeek + OpenRouter keys (both in the launch environment, so every profile is
 LO; no pure-L profile was run — the L-only absence of the Images tile is covered by `kitTiles(false)`
 in `tests/onboarding-kit.test.ts`). **S4 / S32 / S128** = a seeded custom endpoint (`hv-tiny`, an
-unreachable URL) whose one model declares a 4,096 / 32,768 / 131,072 window, made the default model.
+unreachable URL) whose one model declares a 4,096 / 32,768 / 131,072 window, seeded as the default
+model BEFORE launch — so no S* profile exercised a default set after the kit's window read, which is
+why C1 below slipped past this pass.
 Projects via **Start fresh…** (`~/Documents/HappyVibe/hv-kit-gui-*`, removed afterwards).
 
 | # | Check | Result |
@@ -66,6 +68,13 @@ Projects via **Start fresh…** (`~/Documents/HappyVibe/hv-kit-gui-*`, removed a
   Re-checked: no notice.
 - **First-run notices landed above the agent's reply** (also the round-25 context note): appended
   before `commitStream`. Moved after `stampTurnEnd`; source-pinned. Re-checked.
+- **C1 — a fresh install on a small local model opened the FULL kit.** Seen on the built app: fresh
+  profile, Ollama with gemma4:12b (window 4,096), no keys → 10 families ticked, no small-model or
+  too-small line, `defaultModel` still null. Every door, and a local runner found at boot, announces
+  the provider before main sets the default, so the window read saw no default and settled as
+  "unknown ⇒ full". Fixed: the read goes through `hv:ensure-default-model`, which fills a null default
+  first (free once set, always resolves); source-pinned in `tests/onboarding.test.ts`.
+- **GUI-3 — the footer total was clipped by the scrollbar.** Right padding on the kit's scroll content.
 - Layout: Workflows nested inside the Sub-agents tile; footer buttons no longer wrap; expanded items
   show their weight when above 0.
 
