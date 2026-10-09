@@ -6,6 +6,7 @@
  */
 import { WEB_CAPS } from "../../pi-runtime/extensions/hv-web";
 import { hostOf } from "../../pi-runtime/extensions/hv-browser";
+import { lockedByEnv, type Env } from "./privacySwitches";
 
 /**
  * ONE constant. The UI never renders it — the settings sub-block says
@@ -24,13 +25,18 @@ export interface WebServiceConfig {
 export const WEB_CUSTOM_URL_INVALID =
   "Your custom web service URL isn't valid — fix it in Settings → Built-in tools, or switch back to the default service.";
 
-/** §39: the sentence a web tool returns while remote config pauses the default box. */
+/** §39: the sentence a web tool returns while remote config doesn't allow the default box
+    (paused remotely, not checked yet, or remote settings off — it fails closed). */
 export const WEB_DEFAULT_PAUSED =
-  "HappyVibe's free web service is paused right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.";
+  "HappyVibe's free web service isn't available right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.";
+
+/** Privacy round: the sentence a web tool returns instead of reaching the default box under its env lock. */
+export const WEB_DEFAULT_OFF =
+  "HappyVibe's free web service is turned off on this machine. To use web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.";
 
 export type ResolvedWebService =
   | { baseUrl: string; key?: string; service: "default" | "custom" }
-  | { error: string; code: "CUSTOM_URL_INVALID" | "DEFAULT_PAUSED"; service: "default" | "custom" };
+  | { error: string; code: "CUSTOM_URL_INVALID" | "DEFAULT_PAUSED" | "DEFAULT_OFF"; service: "default" | "custom" };
 
 /**
  * Which service this call goes to, with the key decrypted only here.
@@ -45,8 +51,11 @@ export function resolveWebService(
   cfg: WebServiceConfig | undefined,
   decrypt: (b64: string) => string,
   defaultAllowed = true,
+  env: Env = process.env,
 ): ResolvedWebService {
   if (cfg?.mode !== "custom") {
+    // The env lock (HV_NO_DEFAULT_WEB / HV_NO_PHONE_HOME): the default box is never contacted; a custom service still is.
+    if (lockedByEnv("defaultWeb", env)) return { error: WEB_DEFAULT_OFF, code: "DEFAULT_OFF", service: "default" };
     // §39: paused remotely → refuse BEFORE any request; the four tools stay
     // registered so the model can relay the sentence (D14).
     if (!defaultAllowed) return { error: WEB_DEFAULT_PAUSED, code: "DEFAULT_PAUSED", service: "default" };

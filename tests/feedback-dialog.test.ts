@@ -97,7 +97,7 @@ describe("§34 dialog", () => {
   });
 
   it("App opens through feedbackOpen and every close path drops main's capture", () => {
-    expect(app).toMatch(/feedbackAvailable=\{feedbackInfo\.available\}/);
+    expect(app).toMatch(/feedbackAvailable=\{feedbackInfo\.available && !!privacy\?\.on\.feedback\}/); // Privacy round: the switch too
     expect(dialog).toMatch(/window\.hv\.feedbackOpen\(\)/);
     expect(dialog).toMatch(/window\.hv\.feedbackClose\(\)/);
     // One `close` helper, so no path can forget it.

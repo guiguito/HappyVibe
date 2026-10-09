@@ -16,12 +16,15 @@ export function Toggle({
   onChange,
   label,
   title,
+  disabled,
 }: {
   on: boolean;
   onChange: (v: boolean) => void;
   /** Accessible name — the control has no visible text of its own. */
   label: string;
   title?: string;
+  /** An env lock holds it (Privacy round): shown, never clickable. */
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
     <button
@@ -30,8 +33,9 @@ export function Toggle({
       aria-checked={on}
       aria-label={label}
       title={title}
+      disabled={disabled}
       onClick={() => onChange(!on)}
-      className={`shrink-0 w-11 h-6 rounded-full border-2 transition-colors cursor-pointer relative ${
+      className={`shrink-0 w-11 h-6 rounded-full border-2 transition-colors cursor-pointer relative disabled:opacity-50 disabled:cursor-default ${
         on ? "bg-sky-soft border-sky" : "bg-paper-deep border-line"
       }`}
     >

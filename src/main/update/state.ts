@@ -13,7 +13,7 @@ export const RELEASES_URL = "https://github.com/guiguito/HappyVibe/releases/late
 /**
  * `auto`: electron-updater replaces the app in place (macOS, Windows, AppImage).
  * `manual`: it cannot (a `.deb`), so the row links to the release page instead.
- * `disabled`: a dev build — never checks, never installs over itself.
+ * `disabled`: a dev build, or an env lock (HV_NO_UPDATE_CHECK / HV_NO_PHONE_HOME) — never checks, never installs over itself.
  */
 export type UpdateMode = "disabled" | "auto" | "manual";
 
@@ -36,6 +36,10 @@ export interface UpdateGate {
 export interface UpdateState {
   mode: UpdateMode;
   auto: boolean;
+  /** Privacy round: "Check for updates automatically". Off stops the timers' checks; Check now still works. */
+  check: boolean;
+  /** An env lock: the page shows the lock line, not the dev-build sentence. */
+  locked: boolean;
   lastCheckedAt: number | null;
   phase: UpdatePhase;
   gate: UpdateGate;
@@ -49,14 +53,15 @@ export type UpdateEvent =
   | { t: "downloaded"; version: string; at: number }
   | { t: "error"; message: string; at: number }
   | { t: "auto"; on: boolean }
+  | { t: "check"; on: boolean }
   | { t: "gate"; gate: UpdateGate };
 
-export function initialState(mode: UpdateMode, auto: boolean): UpdateState {
-  return { mode, auto, lastCheckedAt: null, phase: { k: "idle" }, gate: { blockedBy: [], terminalsOpen: false, armed: false } };
+export function initialState(mode: UpdateMode, auto: boolean, check = true, locked = false): UpdateState {
+  return { mode, auto, check, locked, lastCheckedAt: null, phase: { k: "idle" }, gate: { blockedBy: [], terminalsOpen: false, armed: false } };
 }
 
-export function updateMode(p: { packaged: boolean; platform: string; appImage?: string }): UpdateMode {
-  if (!p.packaged) return "disabled";
+export function updateMode(p: { packaged: boolean; platform: string; appImage?: string; locked?: boolean }): UpdateMode {
+  if (!p.packaged || p.locked) return "disabled";
   if (p.platform === "linux" && !p.appImage) return "manual";
   return "auto";
 }
@@ -90,6 +95,8 @@ export function reduce(s: UpdateState, e: UpdateEvent): UpdateState {
     }
     case "auto":
       return { ...s, auto: e.on };
+    case "check":
+      return { ...s, check: e.on };
     case "gate":
       return { ...s, gate: e.gate };
   }

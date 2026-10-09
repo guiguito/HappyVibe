@@ -1,5 +1,10 @@
+import { createContext } from "react";
 import { DOC_SLUG, docUrl } from "../docsLinks";
 import type { View } from "./Sidebar";
+
+/** Opens a guide page in the app (App's openDocs). A context, like NavContext, so a lock
+    line three components deep needs no prop threaded down to it. */
+export const OpenDocsContext = createContext<(url: string) => void>(() => {});
 
 /**
  * Docs round (2026-09-28): the one help link every settings screen gets. It sits

@@ -99,3 +99,36 @@ it("state.ts imports nothing — the renderer imports its types (the schedules.t
   const src = readFileSync(path.join(__dirname, "..", "src/main/update/state.ts"), "utf8");
   expect(src).not.toMatch(/^import /m);
 });
+
+describe("Privacy round: the check switch and the env lock", () => {
+  it("an env lock disables every packaged build, AppImage included (PR #103)", () => {
+    for (const p of [{ platform: "darwin" }, { platform: "win32" }, { platform: "linux" }, { platform: "linux", appImage: "/x.AppImage" }])
+      expect(updateMode({ packaged: true, locked: true, ...p })).toBe("disabled");
+  });
+  it("initial state carries the switch and the lock; two-argument callers read check on, unlocked", () => {
+    expect(initialState("auto", true)).toMatchObject({ check: true, locked: false });
+    expect(initialState("disabled", true, false, true)).toMatchObject({ check: false, locked: true });
+  });
+  it("the check event flips only the switch", () => {
+    const s = initialState("auto", true);
+    expect(reduce(s, { t: "check", on: false })).toEqual({ ...s, check: false });
+  });
+  it("check off, then Check now: the manual check still runs and downloads with auto on (Review Focus 5)", () => {
+    let s = reduce(initialState("auto", true), { t: "check", on: false });
+    s = reduce(s, { t: "checking", manual: true });
+    expect(s.phase).toEqual({ k: "checking", manual: true });
+    s = reduce(s, { t: "available", version: "9.9.9" });
+    expect(s.phase).toEqual({ k: "downloading", version: "9.9.9", percent: 0 });
+  });
+});
+
+describe("Privacy round: updater wiring", () => {
+  const idx = readFileSync("src/main/update/index.ts", "utf8");
+  it("scheduled checks stop with the switch; Check now is consent", () => {
+    expect(idx).toMatch(/if \(!manual && !state\.check\) return;/);
+    expect(idx).toContain('ipcMain.handle("hv:update-set-check"');
+  });
+  it("the env lock beats HV_UPDATE_FAKE", () => {
+    expect(idx).toMatch(/const fake = !app\.isPackaged && !locked && process\.env\.HV_UPDATE_FAKE/);
+  });
+});

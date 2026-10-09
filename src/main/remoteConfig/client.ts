@@ -2,7 +2,7 @@
  * §39 — the electron-free seam, the crash/client.ts pattern: `ipc.ts` and
  * `config.ts` read the flag through here, and `remoteConfig/index.ts` plugs
  * the real reader in at install. Until then — or if it throws — the in-app
- * default answers, so nothing ever fails closed.
+ * default answers — which, for the free web service, is OFF (defaults.ts).
  */
 import { CONFIG_DEFAULTS } from "./defaults";
 
@@ -19,4 +19,19 @@ export function webDefaultServiceAllowed(): boolean {
   } catch {
     return CONFIG_DEFAULTS.web_default_service;
   }
+}
+
+/**
+ * Privacy round (2026-10-09): the Remote settings switch. ipc.ts (which must not
+ * reach Electron) calls applyRemoteConfigSwitch; remoteConfig/index.ts plugs in
+ * the live stop/start at install. No handler (no key, tests): inert.
+ */
+let onSwitch: ((on: boolean) => void) | null = null;
+
+export function setRemoteConfigSwitchHandler(fn: ((on: boolean) => void) | null): void {
+  onSwitch = fn;
+}
+
+export function applyRemoteConfigSwitch(on: boolean): void {
+  onSwitch?.(on);
 }

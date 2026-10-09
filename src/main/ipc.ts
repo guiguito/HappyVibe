@@ -36,7 +36,10 @@ import {
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
   getAttentionNotified,
   setAttentionNotified,
+  getSwitch, setSwitch,
 } from "./config";
+import { SWITCH_KEYS, lockedByEnv, lockedKeys, type PrivacyState, type SwitchKey } from "./privacySwitches";
+import { applyRemoteConfigSwitch } from "./remoteConfig/client";
 import { markForReset, removeAppWorktrees, resetBlockers } from "./reset";
 import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
 // `./crash` itself is NOT imported here: it reaches @electron-toolkit/utils,
@@ -1068,6 +1071,8 @@ export function registerIpc(
       memoryWorkspaceDir,
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
+      // Privacy round D10: Model list off (or locked) → this Pi skips pi.dev and the fd/rg download.
+      offline: !getSwitch("modelList"),
       // §13 round 27: generate_image exists only with the switch on AND an OpenRouter credential.
       imageModel: builtins.images && openRouterReady() ? resolveImageModel(IMAGE_MODELS, getImageModel()) ?? undefined : undefined,
       skills: entries.map((e) => e.skill.id),
@@ -4469,6 +4474,23 @@ export function registerIpc(
   // Extended prompt-cache retention. Deliberately NO live reload: the only gain
   // is a longer cache TTL on later turns, which is not worth respawning live
   // sessions for (a respawn resets their grants + dangerous mode). Next spawn.
+  // Privacy round (2026-10-09): one state for every window. Usage statistics, crash
+  // reports and the update check keep their own setters (each has a side effect in
+  // an Electron-only module); these four are config plus, for remote config, the seam.
+  const PRIVACY_SET_HERE: SwitchKey[] = ["feedback", "sessionPulse", "remoteConfig", "modelList"];
+  const privacyState = (): PrivacyState => ({
+    on: Object.fromEntries(SWITCH_KEYS.map((k) => [k, getSwitch(k)])) as Record<SwitchKey, boolean>,
+    locked: lockedKeys(process.env),
+  });
+  ipcMain.handle("hv:privacy-get", () => privacyState());
+  ipcMain.handle("hv:privacy-set", (_e, key: SwitchKey, on: boolean) => {
+    if (!PRIVACY_SET_HERE.includes(key) || lockedByEnv(key, process.env)) return privacyState();
+    setSwitch(key, !!on);
+    if (key === "remoteConfig") applyRemoteConfigSwitch(!!on);
+    const s = privacyState();
+    windows.broadcast("hv:privacy-changed", s);
+    return s;
+  });
   ipcMain.handle("hv:get-long-cache", () => getLongCache());
   ipcMain.handle("hv:set-long-cache", (_e, on: boolean) => setLongCache(!!on));
   // Round 11: open-files context. Global and ON by default (§9).
@@ -4819,7 +4841,10 @@ export function registerIpc(
   const feedbackFast = fastPulse(process.env);
   // One SDK client per database, each queueing undelivered submissions on disk
   // (replayed on the next start) under <userData>/inlet-feedback/<database>.
-  const inlet = feedbackCfg ? createFeedbackClients(feedbackCfg, path.join(app.getPath("userData"), "inlet-feedback")) : null;
+  // Privacy round: under HV_NO_FEEDBACK (or the master, which nulls feedbackCfg) the
+  // clients are never built, so a queued submission is not replayed while the lock
+  // holds. The queue stays on disk: those were explicit Sends.
+  const inlet = feedbackCfg && !lockedByEnv("feedback", process.env) ? createFeedbackClients(feedbackCfg, path.join(app.getPath("userData"), "inlet-feedback")) : null;
   /**
    * The window capture, per window, in MEMORY only — never a file, dropped when
    * the dialog closes or the submission lands. Keyed by window id because the
@@ -4888,10 +4913,10 @@ export function registerIpc(
     });
   };
 
-  ipcMain.handle("hv:feedback-info", () => ({ available: !!feedbackCfg, fastPulse: feedbackFast }));
+  ipcMain.handle("hv:feedback-info", () => ({ available: !!inlet, fastPulse: feedbackFast }));
 
   ipcMain.handle("hv:feedback-open", async (e) => {
-    if (!feedbackCfg) return { ok: false, reason: "unavailable" };
+    if (!inlet || !feedbackCfg) return { ok: false, reason: "unavailable" };
     const win = windows.bySender(e.sender);
     let thumbnail: string | null = null;
     if (win) {

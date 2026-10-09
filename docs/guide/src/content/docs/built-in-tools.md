@@ -157,9 +157,18 @@ The web tools don't fetch pages from your computer. A web service does, so sites
 4. Click **Test**. "Connected." means it answered. You can test before you save.
 5. Click **Save**.
 
-If you pick **Your own** and leave the address empty, **Save** and **Test** both answer "Enter the address of your service first." While the address is empty, the agent keeps using HappyVibe's service, so the web tools never break halfway through a change.
+If you pick **Your own** and leave the address empty, **Save** and **Test** both answer "Enter the address of your service first." While the address is empty, the agent keeps using HappyVibe's service, if it's available.
 
 Your web service choice applies from the next call, so nothing restarts.
+
+When HappyVibe's service isn't available, its option reads "HappyVibe's service — not available right now". That happens when we've paused it, when a new install hasn't checked yet, or when remote settings are off. Nothing is wrong with your setup. If it's the one you picked, the line under it tells you what to do:
+
+- **Receive remote settings** off on [Privacy](/docs/privacy/#remote-settings): "It stays off while Remote settings are off on Privacy."
+- Otherwise: "Choose Your own to keep using web tools."
+
+A service of your own keeps working either way.
+
+On a computer where an administrator turned HappyVibe's service off, **HappyVibe's service** can't be picked and says "Turned off on this computer by an environment setting.", with a **Learn more** link. If it was your choice, the web tools stop until you pick **Your own**. Your own service still works. [Privacy](/docs/privacy/#on-a-managed-computer) explains how that's set.
 
 ## During a session
 

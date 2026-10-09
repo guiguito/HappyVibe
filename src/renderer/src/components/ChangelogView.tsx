@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 // from. CHANGELOG.md lives at the repo root, four levels up from here.
 import changelog from "../../../../CHANGELOG.md?raw";
 import { Toggle } from "./Toggle";
+import { LockLine } from "./LockLine";
 import { relativeChecked, useUpdateState } from "./UpdateRow";
 import { UPDATE_COPY as C } from "./updateCopy";
 
@@ -44,6 +45,18 @@ export function ChangelogView(): React.JSX.Element {
 function UpdateControls(): React.JSX.Element {
   const s = useUpdateState();
   if (!s) return <div className="mb-8" />;
+  // An env lock: the switch shows off and disabled with the lock line. Check now and the
+  // download switch are absent, because nothing they do can happen.
+  if (s.locked)
+    return (
+      <div className="mt-3 mb-8 text-sm">
+        <label className="flex items-center gap-3">
+          <Toggle on={false} disabled onChange={() => {}} label={C.check} />
+          <span>{C.check}</span>
+        </label>
+        <LockLine />
+      </div>
+    );
   if (s.mode === "disabled") return <p className="text-sm text-ink-soft mt-3 mb-8">{C.devOff}</p>;
   const p = s.phase;
   const status =
@@ -63,6 +76,11 @@ function UpdateControls(): React.JSX.Element {
       </p>
       {/* Only an error the user ASKED for is shown, verbatim (the §27 lesson). */}
       {p.k === "error" && p.manual && <p className="text-ink font-mono text-xs">{p.message}</p>}
+      <label className="flex items-center gap-3">
+        <Toggle on={s.check} onChange={(v) => void window.hv.updateSetCheck(v)} label={C.check} />
+        <span>{C.check}</span>
+      </label>
+      {/* D7: stays visible with check off. It still decides what Check now does. */}
       {s.mode === "auto" && (
         <label className="flex items-center gap-3">
           <Toggle on={s.auto} onChange={(v) => void window.hv.updateSetAuto(v)} label={C.auto} />

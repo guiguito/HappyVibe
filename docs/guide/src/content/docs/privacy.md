@@ -1,19 +1,25 @@
 ---
 title: Privacy
-description: See what a crash report contains, turn crash reports off in one click, or clear all of HappyVibe's data and start fresh.
+description: See everything HappyVibe sends on its own, turn any of it off in one click, lock it off on a managed computer, or clear all data and start fresh.
 ---
 
-Short version: this screen controls crash reports, and it's where you start over from scratch. Crash reports are short technical notes about the app, never about your work. You can read the last one sent, see every send in the Audit log, and one click stops them.
+Short version: this screen lists everything HappyVibe sends on its own, and one click turns each thing off. It's also where you start over from scratch. Everything starts on, so the app stays handy, and nothing that goes out on its own ever carries your prompts, your files or your keys.
 
-In the app's own words: "What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your stats — stays here."
+In the app's own words: "What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your Stats page — stays here."
 
-A few things this screen doesn't cover. Your conversations go to the model you picked on [Models](/docs/models/), because that's where the agent's thinking happens. HappyVibe checks for updates on its own; the [Changelog](/docs/changelog/) explains how. And the agent's web tools fetch pages through a web service, by default one HappyVibe runs, which sees the addresses and searches; [Built-in tools](/docs/built-in-tools/#choose-the-web-service) explains how to use your own.
+Two connections are controlled somewhere else: the update check is on the [Changelog](/docs/changelog/), and you can swap or turn off the free web service behind the agent's web tools on [Built-in tools](/docs/built-in-tools/#choose-the-web-service).
 
 ## Where to find it
 
 **App features** → **Privacy** in the sidebar.
 
 ## What's on the screen
+
+### Usage statistics
+
+"Which features get used, where setup gets stuck, and whether the app is reliable. Never what you type, your files or your projects."
+
+**Send anonymous usage statistics** is on by default. Click **On** to turn it off; it takes effect straight away. Open **What usage statistics contain** for the full list of what's counted and what never leaves.
 
 ### Crash reports
 
@@ -37,16 +43,89 @@ Open **What a crash report contains** for the full answer. A report holds:
 - **Show the last report** displays the most recent report sent from this computer, in full. A copy stays on your computer, so it's still there after HappyVibe restarts. Click **Hide the last report** to fold it away. If none has been sent yet, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
 - **Reveal in Finder** (**Show in File Explorer** on Windows, **Show in file manager** on Linux) shows the folder where crash snapshots are kept on your computer.
 
+### Feedback
+
+"Things you choose to send us. Nothing leaves until you press Send or tap a rating." If this copy of HappyVibe can't send feedback, this block isn't shown.
+
+- **Show the feedback button**: "The megaphone in the sidebar, which opens a short form." Turn it off and the megaphone disappears from the sidebar. A message you already sent still arrives.
+- **Ask how a session is going**: "Once per chat session, a one-tap rating above the message box." Turn it off and the rating never shows. Turn it back on and it can ask in sessions it skipped.
+
+### Remote settings
+
+"Lets HappyVibe adjust a few settings without a new release."
+
+**Receive remote settings** is on by default. Right now it decides one thing: whether HappyVibe's free web service is available. The check carries a random device ID. When we change a setting for some devices first, the same devices keep getting it. That ID isn't linked to your usage statistics while they're off.
+
+Turning it off stops the check straight away. What that costs is written under the switch: "Off, HappyVibe stops checking and uses its built-in settings, which keep features that rely on HappyVibe's online services turned off." Today that's the free web service; a web service of your own keeps working ([Built-in tools](/docs/built-in-tools/#choose-the-web-service)). The same goes for a brand-new install until its first check has answered.
+
+### Model list
+
+"Pi, the engine inside HappyVibe, asks pi.dev for newly released models when a session starts, at most every 4 hours. The first time the agent searches files, it also downloads two search tools from GitHub if they aren't installed."
+
+**Check for new models** is on by default. Before you turn it off, read the line under it: "Off: models released after this version of HappyVibe only appear once you update, and if the search tools aren't on this computer yet, the agent can't download them, so its file search stops working. Applies to new sessions."
+
 ### Clear all data
 
 "Start over as if HappyVibe were just installed." The **Clear all data…** button is at the bottom of the screen. See [Clear all data and start over](#clear-all-data-and-start-over).
 
-## Turn crash reports off
+## Turn things off
+
+Every switch starts on. Each one acts straight away, except **Check for new models**, which applies to new sessions.
 
 1. Open **Privacy**.
-2. Next to **Send crash reports**, the switch reads **On** while reports are on. Click it to turn them off.
+2. Click **On** next to the switch you want off. It reads **Off**, and from that moment that thing isn't sent. Click it again whenever you want it back.
 
-From that moment, nothing is sent. Click it again whenever you want to turn reports back on.
+Where each switch lives:
+
+- On **Privacy**: **Send anonymous usage statistics**, **Send crash reports**, **Show the feedback button**, **Ask how a session is going**, **Receive remote settings** and **Check for new models**.
+- On the [Changelog](/docs/changelog/): **Check for updates automatically**.
+- On [Built-in tools](/docs/built-in-tools/#choose-the-web-service): pick **Your own** web service, or turn the web tools off.
+
+## On a managed computer
+
+On a company laptop, a lab machine, or a network that only lets approved addresses through, an administrator can turn things off before anyone opens the app, with an environment variable. A variable only ever turns something off. The switch it holds is off and greyed out, with the line "Turned off on this computer by an environment setting." and a **Learn more** link.
+
+| Variable | Turns off |
+|---|---|
+| `HV_NO_PHONE_HOME` | Everything else in this table |
+| `HV_NO_USAGE_STATS` | Usage statistics |
+| `HV_NO_CRASH_REPORTS` | Crash reports |
+| `HV_NO_FEEDBACK` | The feedback button and the session rating. Nothing waiting to be sent goes out while it's set |
+| `HV_NO_REMOTE_CONFIG` | Remote settings |
+| `HV_NO_UPDATE_CHECK` | The update check, including **Check now**. Download new versions yourself |
+| `HV_NO_DEFAULT_WEB` | HappyVibe's free web service. Your own web service still works |
+| `PI_OFFLINE` | Pi's own variable: the model list and the search-tool download |
+
+Only the value `1` counts: `0`, an empty value or anything else leaves the switch alone. `PI_OFFLINE` is different: Pi treats it as set whatever its value, so set it only to `1`, and remove it to turn the model list back on. With the model list off, install `fd` and `rg` yourself if file search should keep working.
+
+Your conversations still go to the model you picked on [Models](/docs/models/). No variable changes that.
+
+**On macOS**, an app you open from the Dock or Finder doesn't read your shell's variables, so a line in `~/.zshrc` does nothing for it. Set the variable for your login session instead. A LaunchAgent that runs `launchctl setenv` does it at every login: save this as `~/Library/LaunchAgents/dev.happyvibe.env.plist` (or deploy it to `/Library/LaunchAgents/` from your device management tool), then log out and back in.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.happyvibe.env</string>
+  <key>ProgramArguments</key>
+  <array><string>launchctl</string><string>setenv</string><string>HV_NO_PHONE_HOME</string><string>1</string></array>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+```
+
+For a single launch, quit HappyVibe first, then run `open -a HappyVibe --env HV_NO_PHONE_HOME=1` in Terminal.
+
+**On Linux**, start it with the variable set:
+
+```bash
+HV_NO_PHONE_HOME=1 happyvibe
+```
+
+That works for the `.deb`. For the AppImage, put the variable before its path: `HV_NO_PHONE_HOME=1 ./HappyVibe-….AppImage`. To make it stick, copy HappyVibe's `.desktop` file to `~/.local/share/applications/` and change its `Exec=` line to start with `env HV_NO_PHONE_HOME=1`.
+
+**On Windows**, set `HV_NO_PHONE_HOME` to `1` in your user environment variables (search the Start menu for "Edit environment variables for your account"), then quit and restart HappyVibe.
 
 ## Check what was sent
 
@@ -74,6 +153,8 @@ If HappyVibe breaks mid-session, the report describes where in the app's own cod
 
 ## Related
 
+- [Changelog](/docs/changelog/): the update check and automatic downloads.
+- [Built-in tools](/docs/built-in-tools/#choose-the-web-service): choose the web service.
 - [Audit log](/docs/audit-log/): a record of every crash report that left your computer.
 - [Voice](/docs/voice/): dictation that never leaves your computer.
 - [Models](/docs/models/): choose where your conversations go.

@@ -18,6 +18,7 @@ export const UPDATE_COPY = {
   minutesAgo: (n: number) => `Last checked ${n} min ago`,
   hoursAgo: (n: number) => `Last checked ${n} h ago`,
   checkNow: "Check now",
+  check: "Check for updates automatically",
   checking: "Checking…",
   upToDate: "You're on the latest version.",
   auto: "Download updates automatically",

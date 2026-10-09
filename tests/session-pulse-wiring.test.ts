@@ -52,7 +52,7 @@ describe("§34 pulse wiring", () => {
    * suite renders App, so the position is pinned as a source fact instead.
    */
   it("the pulse effect sits ABOVE App's early return, or React tears the app down", () => {
-    const effect = app.indexOf("useEffect(() => {\n    if (!feedbackInfo.available) return;");
+    const effect = app.indexOf("useEffect(() => {\n    if (!(feedbackInfo.available && !!privacy?.on.sessionPulse)) return;"); // Privacy round: the switch too
     const earlyReturn = app.indexOf('if (keyState === "loading") {');
     expect(effect).toBeGreaterThan(0);
     expect(earlyReturn).toBeGreaterThan(0);

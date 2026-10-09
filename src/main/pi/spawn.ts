@@ -3,6 +3,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { buildIdentity } from "../appendSystem";
 import { platform, type Platform } from "../platform";
+import { MASTER_ENV, type Env } from "../privacySwitches";
 
 /**
  * Node-capable exec path for Electron-as-node children. On macOS, LaunchServices
@@ -39,6 +40,14 @@ export const TW_RELPATH = "node_modules/@tintinweb/pi-subagents/src/index.ts";
     off; these load additively. Chat sessions only — the utility client and one-shots would
     otherwise start every configured server (Pi has no lazy start). */
 export const PI_MCP_EXTENSIONS = ["-e", "builtin:mcp", "-e", "builtin:tool-search"] as const;
+
+/** Privacy round D4: HV_NO_PHONE_HOME=1 → Pi's own switch for pi.dev (the model list) and the
+    fd/rg download from GitHub. index.ts writes it into process.env at boot so every Pi child
+    inherits it (PR #104). Never PI_SKIP_VERSION_CHECK or PI_TELEMETRY: Pi only makes those calls
+    in its terminal UI, and a value in process.env reaches the built-in terminal's own `pi`. */
+export function piMasterEnv(env: Env): Record<string, string> {
+  return env[MASTER_ENV] === "1" ? { PI_OFFLINE: "1" } : {};
+}
 
 export interface PiSpawnOptions {
   /** Global default model (config.ts); falls back to the spike default. */
@@ -115,6 +124,8 @@ export interface PiSpawnOptions {
       OpenAI, instead of the 5min/in-memory default. Global setting, resolved at
       spawn — same pattern as HV_BYPASS. */
   longCache?: boolean;
+  /** Privacy round D10: the Model list switch off → PI_OFFLINE=1 for this session's Pi only. */
+  offline?: boolean;
   /** §13 round 27: the priced image model, or absent (switch off / no OpenRouter credential).
       Deliberately NOT a key in HV_BUILTINS: the bridge registers generate_image on this alone,
       which main resolves from the Images switch AND the credential. */
@@ -309,6 +320,7 @@ export function resolvePiSpawn(
       ...(opts.memoryGlobalDir ? { HV_MEMORY_GLOBAL_DIR: opts.memoryGlobalDir } : {}),
       ...(opts.memoryWorkspaceDir ? { HV_MEMORY_WORKSPACE_DIR: opts.memoryWorkspaceDir } : {}),
       ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
+      ...(opts.offline ? { PI_OFFLINE: "1" } : {}),
       ...(opts.imageModel ? { HV_IMAGE_MODEL: opts.imageModel } : {}),
       // tintinweb (PRD §12 2026-09-26). HV_HOST is what the owned patch keys on: a child built
       // with no host policy registered FAILS, and a project's own subagents.json / saved

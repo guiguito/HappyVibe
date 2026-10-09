@@ -4,6 +4,7 @@ import {
   resolveWebService,
   WEB_CUSTOM_URL_INVALID,
   WEB_DEFAULT_PAUSED,
+  WEB_DEFAULT_OFF,
   clampInt,
   pageWindow,
   formatFetch,
@@ -13,6 +14,7 @@ import {
   SERVICE_UNAVAILABLE_TEXT,
 } from "../src/main/webTools";
 import { WEB_CAPS } from "../pi-runtime/extensions/hv-web";
+import { mapWebCode } from "../src/main/usage/fromLog";
 
 describe("webTools — service resolution (§32)", () => {
   it("resolves the default with no key, and a custom one with a decrypted key", () => {
@@ -183,13 +185,27 @@ describe("webTools — result text (§32)", () => {
 });
 
 describe("§39 the default service can be paused remotely", () => {
+  it("HV_NO_DEFAULT_WEB=1 or the master + default mode → DEFAULT_OFF, no URL, even with the flag on", () => {
+    for (const env of [{ HV_NO_DEFAULT_WEB: "1" }, { HV_NO_PHONE_HOME: "1" }]) {
+      const r = resolveWebService({ mode: "default" }, dec, true, env);
+      expect(r).toEqual({ error: WEB_DEFAULT_OFF, code: "DEFAULT_OFF", service: "default" });
+      expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
+      expect(resolveWebService(undefined, dec, true, env)).toEqual(r);
+    }
+  });
+  it("the lock + custom mode → the custom service, untouched", () => {
+    expect(resolveWebService({ mode: "custom", baseUrl: "https://x.test" }, dec, true, { HV_NO_DEFAULT_WEB: "1" })).toEqual({ baseUrl: "https://x.test", service: "custom" });
+  });
+  it("DEFAULT_OFF is one of our own codes in the usage catalog", () => {
+    expect(mapWebCode("DEFAULT_OFF")).toBe("DEFAULT_OFF");
+  });
   const dec = (s: string): string => s;
   it("flag off + default mode → DEFAULT_PAUSED with the exact sentence, no URL", () => {
     const r = resolveWebService({ mode: "default" }, dec, false);
     expect(r).toEqual({ error: WEB_DEFAULT_PAUSED, code: "DEFAULT_PAUSED", service: "default" });
     expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
     expect(WEB_DEFAULT_PAUSED).toBe(
-      "HappyVibe's free web service is paused right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.",
+      "HappyVibe's free web service isn't available right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.",
     );
   });
   it("flag off + custom mode → the custom service, untouched", () => {

@@ -11,6 +11,16 @@
 
 ### Added
 
+- **Everything HappyVibe sends on its own can now be turned off, in one click each.** **Privacy**
+  gains switches for the feedback button, the "how is this session going" rating, remote
+  settings, and Pi's check for new models (off means models released after your version only appear
+  when you update). The **Changelog** gains **Check for updates automatically**. Everything still
+  starts on. Thanks to @plyd.
+
+- **On a managed computer, an administrator can lock any of these off before the first launch.**
+  A locked switch stays off and says why. The guide's **Privacy** page explains how to set it up
+  on macOS, Windows and Linux. Your conversations still go to the model you picked.
+
 - **The approval dialog tells you what a server says about its tool**: "Server says: read-only"
   or "Server says: may delete data". It's the server's own claim, not a check. In plan mode, a tool
   its server calls read-only now follows your rules instead of always asking.

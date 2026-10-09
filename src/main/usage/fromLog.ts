@@ -18,7 +18,7 @@ export interface TapContext {
 }
 type Out = { name: UsageEventName; params: UsageParams } | null;
 
-const WEB_CODES = new Set(["UNAVAILABLE", "DEFAULT_PAUSED", "CUSTOM_URL_INVALID", "DEADLINE", "CANCELLED", "TOO_LARGE", "BAD_RESPONSE", "CRAWL_FAILED"]);
+const WEB_CODES = new Set(["UNAVAILABLE", "DEFAULT_PAUSED", "DEFAULT_OFF", "CUSTOM_URL_INVALID", "DEADLINE", "CANCELLED", "TOO_LARGE", "BAD_RESPONSE", "CRAWL_FAILED"]);
 /** A code the service itself returned is untrusted text: only our own codes pass. */
 export function mapWebCode(code: unknown): string {
   if (typeof code !== "string") return "other";
