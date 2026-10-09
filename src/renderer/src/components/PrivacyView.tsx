@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Section } from "./Section";
 import { HowItWorks } from "./HowItWorks";
-import { GoTo } from "./GoTo";
 import { LockLine } from "./LockLine";
 import type { HvCrashInfo } from "../hv";
 import { REVEAL_IN_FILE_MANAGER } from "../platformCopy";
@@ -21,8 +20,7 @@ import { MODEL_LIST_REFRESH_HOURS, type SwitchKey } from "../../../main/privacyS
  * to be believable to a user.
  *
  * Privacy round (2026-10-09): every connection the app makes on its own has a
- * switch here (updates on Changelog, the web service on Built-in tools, listed
- * read-only under Other connections). An env lock shows it off and disabled with
+ * switch here (updates on Changelog, the web service on Built-in tools). An env lock shows it off and disabled with
  * the lock line, never hidden, and the page never names a variable.
  */
 const smallBtn =
@@ -48,15 +46,8 @@ export const PRIVACY_COPY = {
   modelSwitch: "Check for new models",
   modelCost:
     "Off: models released after this version of HappyVibe only appear once you update, and if the search tools aren't on this computer yet, the agent can't download them, so its file search stops working. Applies to new sessions.",
-  otherTitle: "Other connections",
-  otherSubtitle: "What this page doesn't control, and where you can.",
-  updates: "Updates",
-  freeWeb: "Free web service",
-  provider: "Your model provider",
-  providerBody: "Your conversations go to the model you picked. Nothing on this page changes that.",
   on: "On",
   off: "Off",
-  locked: "Locked",
 } as const;
 const C = PRIVACY_COPY;
 
@@ -112,10 +103,8 @@ export function PrivacyView(): React.JSX.Element {
   const [reset, setReset] = useState<{ blockers: Array<{ path: string; reason: string }> } | null>(null);
   // A channel with no key can't send, so its feedback switches would be noise (§20).
   const [feedbackAvailable, setFeedbackAvailable] = useState(false);
-  const [web, setWeb] = useState<{ on: boolean; mode: "default" | "custom" } | null>(null);
   const isOn = (k: SwitchKey): boolean => !!privacy?.on[k];
   const isLocked = (k: SwitchKey): boolean => !!privacy?.locked.includes(k);
-  const state = (k: SwitchKey): string => (isLocked(k) ? C.locked : isOn(k) ? C.on : C.off);
 
   // After an opt-out the report is gone; the button must not stay on "Hide".
   useEffect(() => {
@@ -129,9 +118,6 @@ export function PrivacyView(): React.JSX.Element {
   useEffect(() => {
     refresh();
     void window.hv.feedbackInfo().then((f) => setFeedbackAvailable(f.available));
-    void Promise.all([window.hv.builtinsGet(), window.hv.webServiceGet()]).then(([b, w]) =>
-      setWeb({ on: (b as { web?: boolean }).web !== false, mode: w.mode }),
-    );
     // A report can land while the page is open; the "last report" block is the
     // page's own evidence, so it must not be a snapshot taken at mount.
     return window.hv.onCrashSent(() => refresh());
@@ -234,31 +220,6 @@ export function PrivacyView(): React.JSX.Element {
 
       <Section icon="stats" title={C.modelTitle} subtitle={C.modelSubtitle}>
         <SwitchRow label={C.modelSwitch} cost={C.modelCost} on={isOn("modelList")} locked={isLocked("modelList")} onChange={setPrivacy("modelList")} />
-      </Section>
-
-      {/* D8: what the page doesn't own, read-only, each linking to where it's controlled. */}
-      <Section icon="audit" title={C.otherTitle} subtitle={C.otherSubtitle}>
-        <ul className="rounded-xl border-2 border-line bg-card divide-y-2 divide-line text-sm">
-          <li className="p-3 flex justify-between gap-3">
-            <span className="font-bold">{C.updates}</span>
-            <span>
-              {state("updateCheck")} · <GoTo view="changelog" />
-            </span>
-          </li>
-          <li className="p-3 flex justify-between gap-3">
-            <span className="font-bold">{C.freeWeb}</span>
-            <span>
-              {isLocked("defaultWeb") ? C.locked : web?.on && web.mode === "default" ? C.on : C.off} · <GoTo view="builtinTools" />
-            </span>
-          </li>
-          <li className="p-3">
-            <div className="flex justify-between gap-3">
-              <span className="font-bold">{C.provider}</span>
-              <GoTo view="models" />
-            </div>
-            <p className="text-ink-soft mt-0.5">{C.providerBody}</p>
-          </li>
-        </ul>
       </Section>
 
       {/* §17 round 25: the only way back to a clean slate — reinstalling keeps this data. */}

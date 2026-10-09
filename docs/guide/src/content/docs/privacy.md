@@ -7,7 +7,7 @@ Short version: this screen lists everything HappyVibe sends on its own, and one 
 
 In the app's own words: "What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your Stats page — stays here."
 
-A few connections have their switch somewhere else. The **Other connections** block near the bottom lists them and takes you there in one click.
+Two connections are controlled somewhere else: the update check is on the [Changelog](/docs/changelog/), and you can swap or turn off the free web service behind the agent's web tools on [Built-in tools](/docs/built-in-tools/#choose-the-web-service).
 
 ## Where to find it
 
@@ -64,14 +64,6 @@ Turning it off stops the check straight away. What that costs is written under t
 
 **Check for new models** is on by default. Before you turn it off, read the line under it: "Off: models released after this version of HappyVibe only appear once you update, and if the search tools aren't on this computer yet, the agent can't download them, so its file search stops working. Applies to new sessions."
 
-### Other connections
-
-"What this page doesn't control, and where you can." Each row shows **On**, **Off** or **Locked**, and **Updates** and **Free web service** link to their page.
-
-- **Updates**: the update check, switched on the [Changelog](/docs/changelog/).
-- **Free web service**: the service behind the agent's web tools, chosen on [Built-in tools](/docs/built-in-tools/#choose-the-web-service).
-- **Your model provider**: "Your conversations go to the model you picked. Nothing on this page changes that." Pick it on [Models](/docs/models/).
-
 ### Clear all data
 
 "Start over as if HappyVibe were just installed." The **Clear all data…** button is at the bottom of the screen. See [Clear all data and start over](#clear-all-data-and-start-over).
@@ -91,7 +83,7 @@ Where each switch lives:
 
 ## On a managed computer
 
-On a company laptop, a lab machine, or a network that only lets approved addresses through, an administrator can turn things off before anyone opens the app, with an environment variable. A variable only ever turns something off. The switch it holds is off and greyed out, with the line "Turned off on this computer by an environment setting." and a **Learn more** link. On **Other connections** it reads **Locked**.
+On a company laptop, a lab machine, or a network that only lets approved addresses through, an administrator can turn things off before anyone opens the app, with an environment variable. A variable only ever turns something off. The switch it holds is off and greyed out, with the line "Turned off on this computer by an environment setting." and a **Learn more** link.
 
 | Variable | Turns off |
 |---|---|

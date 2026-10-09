@@ -12,10 +12,13 @@ function walk(d: string): string[] {
 
 describe("Privacy page", () => {
   it("blocks run in the spec's order, Clear all data last", () => {
-    const marks = ['title="Usage statistics"', 'title="Crash reports"', "title={C.feedbackTitle}", "title={C.remoteTitle}", "title={C.modelTitle}", "title={C.otherTitle}", 'title="Clear all data"'];
+    const marks = ['title="Usage statistics"', 'title="Crash reports"', "title={C.feedbackTitle}", "title={C.remoteTitle}", "title={C.modelTitle}", 'title="Clear all data"'];
     const at = marks.map((m) => page.indexOf(m));
     expect(at.every((i) => i > -1), JSON.stringify(at)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+  it("there is no Other connections block — each connection's own page shows it (Guilhem, 2026-10-09)", () => {
+    expect(page).not.toMatch(/Other connections/);
   });
   it("every PRIVACY_COPY key is used (no dead copy)", () => {
     for (const k of Object.keys(PRIVACY_COPY)) expect(page, k).toMatch(new RegExp(`C\\.${k}\\b`));

@@ -15,8 +15,7 @@
   gains switches for the feedback button, the "how is this session going" rating, the settings
   check, and Pi's check for new models (off means models released after your version only appear
   when you update). The **Changelog** gains **Check for updates automatically**. Everything still
-  starts on, and Privacy lists the connections it doesn't switch, with a link to where you can.
-  Thanks to @plyd.
+  starts on. Thanks to @plyd.
 
 - **On a managed computer, an administrator can lock any of these off before the first launch.**
   A locked switch stays off and says why. The guide's **Privacy** page explains how to set it up
