@@ -2893,7 +2893,9 @@ export function registerIpc(
   };
 
   let mcpReloadTimer: ReturnType<typeof setTimeout> | undefined;
-  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null; reason: ReloadReason }> = [];
+  // `alive`: sessions live when the change was scheduled — one spawned after it
+  // already has the new config and must not be reloaded (mcpReloadScope.ts).
+  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null; reason: ReloadReason; alive: Set<string> }> = [];
   const runMcpReloadPass = async (): Promise<void> => {
     const scopes = pendingScopes.splice(0);
     const live: ReloadSession[] = manager
@@ -2901,8 +2903,8 @@ export function registerIpc(
       .map((id) => { const m = index.get(id); return m ? { id, workspaceId: m.workspaceId } : null; })
       .filter((s): s is ReloadSession => s !== null);
     const affected = new Set<string>();
-    for (const { scope, workspaceId, reason } of scopes)
-      for (const id of affectedSessionIds(scope, workspaceId, live)) { affected.add(id); reloadReasons.set(id, reason); }
+    for (const { scope, workspaceId, reason, alive } of scopes)
+      for (const id of affectedSessionIds(scope, workspaceId, live, alive)) { affected.add(id); reloadReasons.set(id, reason); }
     for (const id of affected) {
       if (activity.isIdle(id)) await reloadSession(id); // sequential — avoid a spawn burst
       else pendingMcpReload.add(id);
@@ -2912,7 +2914,7 @@ export function registerIpc(
   // single reload pass. §14 skills and §24 commands reuse the exact same
   // machinery (one mechanism, three config sources) — only the label differs.
   const scheduleRuntimeReload = (reason: ReloadReason, scope: "global" | "workspace", workspaceId: string | null): void => {
-    pendingScopes.push({ scope, workspaceId, reason });
+    pendingScopes.push({ scope, workspaceId, reason, alive: new Set(manager.activeIds()) });
     clearTimeout(mcpReloadTimer);
     mcpReloadTimer = setTimeout(() => { void runMcpReloadPass(); }, 500);
   };

@@ -25,3 +25,10 @@ test("workspace scope with no match / null workspaceId → none", () => {
 test("no live sessions → none", () => {
   expect(affectedSessionIds("global", null, [])).toEqual([]);
 });
+
+test("a session started after the change is not reloaded; one alive before is", () => {
+  const alive = new Set(["s1", "s3"]); // s2 spawned after the change was scheduled
+  expect(affectedSessionIds("global", null, sessions, alive)).toEqual(["s1", "s3"]);
+  expect(affectedSessionIds("workspace", "/ws/a", sessions, alive)).toEqual(["s1"]);
+  expect(affectedSessionIds("global", null, sessions, new Set())).toEqual([]);
+});

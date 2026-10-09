@@ -73,7 +73,8 @@ PRD §13 Decision (2026-10-05); evidence `docs/validation/mcp2.md`.
 ## Live reload
 - Pi reads MCP config at spawn. `hv:mcp-set-server` / `-authenticate` / `-logout` / connect-flow
   call `scheduleMcpReload` (debounced) → affected live sessions respawn RESUMED. Scope: global →
-  every live session; workspace → that workspace's (`mcpReloadScope.ts`). Busy sessions defer via
+  every live session; workspace → that workspace's (`mcpReloadScope.ts`) — only sessions alive when the
+  change was SCHEDULED (one spawned after it already has the new config). Busy sessions defer via
   `pendingMcpReload`, drained on `agent_end` / prompt close; `/hv-tools` follows.
 
 ## Secrets can execute
