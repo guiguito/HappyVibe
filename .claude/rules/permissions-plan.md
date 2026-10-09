@@ -13,6 +13,7 @@ paths:
   app-internal control tools that must never prompt, and `gatePlanCall` for plan mode. The
   `floor-ask` default clamps allow→ask, so a read tool that is polled must be in `PLAN_PASS_TOOLS`
   or it prompts on every poll.
+- Typed `/hv-dangerous on` is refused by `slashGuard.ts`; only main's `client.send` (`applyBypassLive`) and the banner's `/hv-dangerous off` reach the bridge command.
 - Session grants and dangerous mode are in-memory: any respawn (MCP reload, hibernation wake) resets
   them to safe defaults.
 

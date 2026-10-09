@@ -10,6 +10,7 @@ import { isDocumentPath } from "../../../../pi-runtime/extensions/hv-document";
 import { delegationAgent } from "../../../../pi-runtime/extensions/hv-rules";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { ZoomableImage } from "./ZoomableImage";
+import { PRE_FORK_CARD_COPY } from "../fork";
 
 export interface ToolCardData {
   toolCallId: string;
@@ -58,6 +59,12 @@ export interface ToolCardData {
    * made that expansion an empty panel.
    */
   asyncId?: string;
+  /**
+   * §17 round 28: a card from BEFORE this session was forked or duplicated (App sets it on
+   * reopen, after restoreMap). A sub-agent run's children belong to the original session, so
+   * the card says so and does not expand.
+   */
+  preFork?: boolean;
 }
 
 const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
@@ -235,6 +242,14 @@ const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
     <>
       <polyline points="1 4 1 10 7 10" />
       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+    </>
+  ),
+  fork: (
+    <>
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
     </>
   ),
   check: <polyline points="20 6 9 17 4 12" />,
@@ -597,9 +612,19 @@ export function delegationSummary(card: ToolCardData): string {
  * "it's running" signal is the sticky delegation section (ChatView), not this line.
  * W1.1: shares the headline treatment — robot icon + intent-first label.
  */
-function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: string | null }): React.JSX.Element {
+function SubagentCard({
+  card,
+  sessionId,
+  onOpenOriginal,
+}: {
+  card: ToolCardData;
+  sessionId?: string | null;
+  /** §17 round 28: a pre-fork card links to the original session; absent once it is deleted. */
+  onOpenOriginal?: () => void;
+}): React.JSX.Element {
   const running = card.status === "running";
   const [open, setOpen] = useState(false);
+  const preFork = !!card.preFork;
   const req = card.args as { agent?: string; task?: string; prompt?: string } | undefined;
   // Either stack's args: nicobailon `agent`/`task`, tintinweb `subagent_type`/`prompt`.
   const reqAgent = delegationAgent(card.args);
@@ -682,8 +707,8 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
     >
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full text-left cursor-pointer hover:bg-paper-deep/40 transition-colors px-3.5 py-2.5"
+        onClick={() => !preFork && setOpen(!open)}
+        className={`w-full text-left px-3.5 py-2.5 ${preFork ? "cursor-default" : "cursor-pointer hover:bg-paper-deep/40 transition-colors"}`}
       >
         {/* v5: intent wraps (break-words) instead of clipping to one ellipsized line. */}
         <span className="flex items-start gap-2.5">
@@ -717,9 +742,11 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
               cannot separate — dispatched from done, both leaf — is spelled out
               in words on the summary line right below ("running in the
               background — result arrives when it finishes"). */}
-          <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
-            {open ? "▾" : "▸"}
-          </span>
+          {!preFork && (
+            <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
+              {open ? "▾" : "▸"}
+            </span>
+          )}
         </span>
         {!open && summary && (
           <span className="block mt-1 pl-5 text-xs text-ink-soft truncate" title={summary}>
@@ -727,6 +754,19 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
           </span>
         )}
       </button>
+      {/* §17 round 28: outside the toggle — a button may not nest a button, and following
+          the link must not be a click on the card. */}
+      {preFork && (
+        <div className="-mt-1.5 pb-2.5 pl-10 pr-3.5 text-xs text-ink-soft italic">
+          {onOpenOriginal ? (
+            <button type="button" onClick={onOpenOriginal} className="italic underline underline-offset-2 hover:text-ink cursor-pointer">
+              {PRE_FORK_CARD_COPY}
+            </button>
+          ) : (
+            PRE_FORK_CARD_COPY
+          )}
+        </div>
+      )}
       {/* B1 (Animations round, 2026-09-10): the body UNFOLDS. A card that grows
           by its own height in one frame shoves every message below it, which is
           the whole reason this is a height reveal rather than a fade. `Unfold`
@@ -832,6 +872,7 @@ export function ToolCard({
   workspace,
   sessionId,
   onOpenFile,
+  onOpenOriginal,
 }: {
   card: ToolCardData;
   /** W2.2: session workspace — card paths resolve against it. */
@@ -840,8 +881,10 @@ export function ToolCard({
    *  finished child by asyncId — inspection is session-scoped. */
   sessionId?: string | null;
   onOpenFile?: (relPath: string) => void;
+  /** §17 round 28: opens the session this one was forked from (pre-fork sub-agent cards only). */
+  onOpenOriginal?: () => void;
 }): React.JSX.Element {
-  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} />;
+  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} onOpenOriginal={onOpenOriginal} />;
   // W1.1: headline = icon + human label; the technical block (raw name/args/
   // result) lives behind the collapsed "details" toggle. Diffs are NOT
   // technical — they ARE the human content for edit/write — so they render

@@ -33,6 +33,7 @@ Right-click a tab for more:
 
 - **Rename…**: for a session or a terminal. Double-clicking the tab does the same.
 - **Repeat this on a schedule…** and **Export as HTML…**: for a session.
+- **Duplicate**: for a session. See [Duplicate a session](/docs/workspaces-and-sessions/#duplicate-a-session).
 - **To new window**, and **To** followed by another open window's name: moves the tab there.
 
 At the right end of the strip sit up to three small icon buttons for the pane. Hover over them to read their tooltips: "Split this pane — side by side", "Split this pane — stacked" and "Close this pane (its tabs move to the next one)". A button shows only when it can act on that pane. See [Split the view](#split-the-view).
@@ -78,6 +79,7 @@ On a message:
 - The agent's last reply of a turn shows how long the turn took. Hover over it: "This turn took …".
 - Hover over a message for its buttons: **Copy message** on yours, **Copy answer** on the agent's. Code blocks get their own **Copy code**.
 - On your own messages, the rewind icon takes the session back to that point. It's hidden while the agent is working. See [Changed your mind? Rewind](/docs/first-session/#changed-your-mind-rewind).
+- On your own messages, the fork icon opens a new session with everything before that message. See [Fork from a message](#fork-from-a-message).
 - A very long message is folded. **Show more** and **Show less** open and close it. A message sent from a [prompt](/docs/prompts/) shows what you typed, with **Show the expanded prompt** for the full text the agent got.
 
 On a tool card:
@@ -150,6 +152,25 @@ It reaches localhost freely. Any other site is blocked until you allow it: the p
 
 The agent can use a browser of its own too. See [Agent browser](/docs/built-in-tools/#agent-browser--10-tools).
 
+## Fork from a message
+
+Want to try a different approach without losing this one? Fork it. The new session starts with everything before one of your messages, and this session stays exactly as it is.
+
+1. Hover over one of your messages and click the fork icon. Its tooltip reads "Fork from here — a new session with everything before this message". You can do this while the agent is working.
+2. The dialog asks "Fork from this message?" and explains: "A new session opens in a new tab with everything before this message, and this message goes into its composer so you can edit and resend it. This session stays exactly as it is."
+3. Choose what to carry over:
+   - **Conversation only** (the default): "Files on disk are left exactly as they are."
+   - **Conversation and files**: "Also roll the workspace back to before this message. This session shares those files." This option appears only when there are files to roll back, and it's hidden while the agent is working.
+4. Click **Fork**.
+
+The new session opens in a new tab, titled with "(fork)" after the original's name. Your message waits in its composer, with any documents you'd attached, ready to edit and send.
+
+- Because both sessions use the same project folder, **Conversation and files** changes this session's files too. The fork is made first, then this session's files roll back and it posts a notice like "Files rewound — 2 restored, 0 removed." If the restore can't run, the fork still exists and the notice says no files were changed.
+- A fork's cost pill counts only what it spends after the fork.
+- A "Forked from" line with the original's name (a link you can click) sits where the fork's own messages begin, above everything you send there. It reads "Forked from a deleted session" once the original is gone.
+- Run cards from before the fork read "From the original session". They link to the original (plain text if it's deleted), and they don't expand.
+- Messages from before a compaction have no fork icon, because the agent no longer has them.
+
 ## Search this conversation
 
 1. Press ⌘F on macOS, Ctrl+F on Windows and Linux, or click **⌕** in the top bar.
@@ -197,7 +218,10 @@ You always know when the agent is busy:
 - the session's tab pulses;
 - the message box reads "Steer the agent — lands between tool calls…", and the Send button's tooltip changes to "Steer — lands between tool calls";
 - **Stop** appears beside it;
-- the rewind icon hides until the turn ends.
+- the rewind icon hides until the turn ends;
+- the fork icon stays, but **Conversation and files** hides in its dialog.
+
+A few slash commands belong to HappyVibe's own screens, so typing one gets a short note instead, such as "/mcp is managed from the MCP page.", "/agents is managed from the Agents page." or "Sign-ins are managed from Models." To turn off bypass, click **Turn off** on the red banner.
 
 While subagents work, the message box says so instead: "Subagents are working in the background — keep chatting; results drop in when they finish", or, while one subagent holds the turn, "Type away — messages will be answered when *name* finishes".
 

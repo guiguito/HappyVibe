@@ -88,6 +88,18 @@ export function leafPath(entries: FileEntry[]): FileEntry[] {
   return path.reverse();
 }
 
+/**
+ * §17 round 28: the user message a fork starts BEFORE — matched by Pi's own
+ * `message.timestamp`, which the renderer carries as `piTs` (live from a user-role
+ * `message_end`, restored from this file). `first`: nothing conversational precedes it,
+ * so Pi would write no file — main opens a fresh session instead.
+ */
+export function userEntryAt(jsonl: string | null | undefined, piTs: number): { entryId: string; first: boolean } | null {
+  const users = leafPath(parseEntries(jsonl)).filter((e) => e.type === "message" && e.message?.role === "user");
+  const i = users.findIndex((e) => e.message?.timestamp === piTs);
+  return i < 0 ? null : { entryId: users[i].id, first: i === 0 };
+}
+
 /** The LAST compaction on the path (the only one that bounds context), + a count. */
 export function latestCompaction(path: FileEntry[]): CompactionInfo | null {
   let count = 0;

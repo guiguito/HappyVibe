@@ -13,6 +13,7 @@ import { formatDuration, timeagoLong } from "../timeago";
 import { thinkingLabel } from "../thinkingLabel";
 import { busyStatus, type Activity, type ToolDraft } from "../busyStatus";
 import { toolLabel } from "../toolLabel";
+import { FORK_MARKER_PREFIX, forkMarkerCopy } from "../fork";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -53,6 +54,21 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
   );
 }
 
+/** §17 round 28: Fork from a message — only rendered on a bubble Pi has confirmed (`piTs`). */
+function ForkButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label="Fork from here"
+      title="Fork from here — a new session with everything before this message"
+      onClick={onClick}
+      className="rounded-lg border-2 border-line bg-card p-1 text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+    >
+      <ToolIcon kind="fork" className="size-3.5" />
+    </button>
+  );
+}
+
 // Perf: `id` is a stable key assigned at append time (see App.appendItem). Keying
 // on it instead of the array index lets React.memo skip re-parsing committed
 // markdown when new items arrive or the live streaming bubble updates.
@@ -87,6 +103,13 @@ export type TranscriptItem = { id?: number; live?: true } & (
       /** Round 15: assistant only, and only on a turn's LAST bubble — how long
           the turn took, from the user message that started it. */
       turnMs?: number;
+      /** §17 round 28: Pi's own `message.timestamp` for this user message — from the
+          user-role `message_end` live, from the session file on restore. Main finds a
+          fork's entry by it, so Fork is offered only once it is known. */
+      piTs?: number;
+      /** §17 round 28: a bubble the app drew that is not a Pi user message (the askUser
+          answers summary) — never stamped, so never forkable. */
+      synthetic?: boolean;
       /**
        * §31: documents attached to THIS message, for the live path only.
        *
@@ -104,7 +127,7 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // B2: provider errors / session crashes as first-class transcript items.
   // `detail` is verbatim machine output (a dead child's stderr tail) — shown
   // monospace with its newlines, where `hint` is prose we wrote.
-  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string; doc?: { slug: string; anchor?: string } }
+  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string; doc?: { slug: string; anchor?: string }; action?: "compact" }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   // `title` is hover-only detail that must NOT widen the pill — round 16: the
@@ -117,7 +140,14 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
   // agent's context; `loaded` flips once the user pulls that history in.
   | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
+  // §17 round 28: where a forked or duplicated session's own history starts. Built on
+  // reopen from `meta.forkedFrom`; the original's title is resolved at render (it can be
+  // renamed or deleted after the fork).
+  | { kind: "forkMarker"; fromId: string }
 );
+
+/** §17 round 28: the original of a forked session — its CURRENT title (null = deleted) and how to open it. */
+export type ForkOrigin = { title: string | null; onOpen?: () => void };
 
 /**
  * What the boundary bubble says. The reason matters because Pi's
@@ -234,16 +264,21 @@ const MessageItem = memo(function MessageItem({
   it,
   onRetry,
   onOpenDoc,
+  onCompactAction,
   workspace,
   sessionId,
   onOpenFile,
   onRewind,
+  onFork,
   onLoadEarlier,
+  forkOrigin,
 }: {
   it: TranscriptItem;
   onRetry?: () => void;
   /** Docs in the app (2026-09-29): opens a guide page from an error card that carries a `doc`. */
   onOpenDoc?: (url: string) => void;
+  /** An error card's "Compact now…" — opens the same confirm the context panel uses. */
+  onCompactAction?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
@@ -253,9 +288,31 @@ const MessageItem = memo(function MessageItem({
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind to a user message (only wired for user items). */
   onRewind?: (it: TranscriptItem) => void;
+  /** §17 round 28: fork from a user message. */
+  onFork?: (it: TranscriptItem) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
+  forkOrigin?: ForkOrigin;
 }): React.JSX.Element {
+  if (it.kind === "forkMarker") {
+    // Same pill as the compaction boundary: both say "the history above came from elsewhere".
+    const title = forkOrigin?.title ?? null;
+    return (
+      <div className="flex items-center gap-2.5 self-center rounded-full border-2 border-plum/50 bg-plum-soft px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker">
+        <span className="size-2 rounded-full bg-plum shrink-0" />
+        {title != null && forkOrigin?.onOpen ? (
+          <span className="text-center">
+            {FORK_MARKER_PREFIX}{" "}
+            <button type="button" onClick={forkOrigin.onOpen} className="underline underline-offset-2 hover:text-ink cursor-pointer">
+              {title}
+            </button>
+          </span>
+        ) : (
+          <span className="text-center">{forkMarkerCopy(title)}</span>
+        )}
+      </div>
+    );
+  }
   if (it.kind === "boundary") {
     return (
       <div className="flex flex-col items-center gap-2 self-center">
@@ -278,7 +335,8 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile} />;
+  if (it.kind === "tool")
+    return <ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile} onOpenOriginal={forkOrigin?.onOpen} />;
   if (it.kind === "plan") return <PlanCard card={it.card} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
     return (
@@ -308,6 +366,15 @@ const MessageItem = memo(function MessageItem({
             </pre>
           )}
         </div>
+        {it.action === "compact" && onCompactAction && (
+          <button
+            type="button"
+            onClick={onCompactAction}
+            className="shrink-0 rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
+          >
+            Compact now…
+          </button>
+        )}
         {it.retriable && onRetry && (
           <button
             type="button"
@@ -355,7 +422,14 @@ const MessageItem = memo(function MessageItem({
   }
   // Out-of-context items get no rewind: rewind truncates Pi's LIVE context, and
   // these are already outside it — the button would promise something it cannot do.
-  return <UserBubble it={it} onRewind={it.outOfContext ? undefined : onRewind} />;
+  // Fork follows the same rule: its entry would sit above the compaction boundary.
+  return (
+    <UserBubble
+      it={it}
+      onRewind={it.outOfContext ? undefined : onRewind}
+      onFork={it.outOfContext ? undefined : onFork}
+    />
+  );
 });
 
 /** User message bubble: zoomable images, long-message collapse (#4),
@@ -363,9 +437,11 @@ const MessageItem = memo(function MessageItem({
 function UserBubble({
   it,
   onRewind,
+  onFork,
 }: {
   it: TranscriptItem;
   onRewind?: (it: TranscriptItem) => void;
+  onFork?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   // F3: strip the hidden @file context blocks so the bubble (and copy/search)
   // shows only what the user wrote; @tokens render as chips.
@@ -467,6 +543,7 @@ function UserBubble({
         <span className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <CopyButton text={text} label="Copy message" />
           {onRewind && <RewindButton onClick={() => onRewind(it)} />}
+          {"piTs" in it && onFork && it.piTs != null && <ForkButton onClick={() => onFork(it)} />}
         </span>
         {/* Same `in` narrowing the rest of this component uses — `it` is the
             whole union here, and only the message member carries a stamp. */}
@@ -563,14 +640,17 @@ export function Transcript({
   header,
   onRetry,
   onOpenDoc,
+  onCompactAction,
   workspace,
   sessionId,
   onOpenFile,
   onRewind,
+  onFork,
   searchQuery,
   searchActiveIndex,
   onSearchTotal,
   onLoadEarlier,
+  forkOrigin,
   scrollNonce,
   collapseNonce,
   thinking,
@@ -588,6 +668,8 @@ export function Transcript({
   onRetry?: () => void;
   /** Docs in the app (2026-09-29): opens a guide page from an error card that carries a `doc`. */
   onOpenDoc?: (url: string) => void;
+  /** An error card's "Compact now…" — opens the same confirm the context panel uses. */
+  onCompactAction?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
@@ -597,12 +679,16 @@ export function Transcript({
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind a user message (removes everything after + re-edits). */
   onRewind?: (it: TranscriptItem) => void;
+  /** §17 round 28: fork from a user message into a new session. */
+  onFork?: (it: TranscriptItem) => void;
   /** Round 4 #1: in-conversation search — highlight matches (not filter). */
   searchQuery?: string;
   searchActiveIndex?: number;
   onSearchTotal?: (n: number) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
+  /** §17 round 28: what the "Forked from" marker names and opens. */
+  forkOrigin?: ForkOrigin;
   /**
    * Round 15: bumped by the composer on send. A send is the user SAYING they
    * are at the end, so it scrolls unconditionally — unlike the stream, which
@@ -812,11 +898,14 @@ export function Transcript({
                 it={it}
                 onRetry={onRetry}
                 onOpenDoc={onOpenDoc}
+                onCompactAction={onCompactAction}
                 workspace={workspace}
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}
                 onRewind={onRewind}
+                onFork={onFork}
                 onLoadEarlier={onLoadEarlier}
+                forkOrigin={it.kind === "forkMarker" || (it.kind === "tool" && it.card.preFork) ? forkOrigin : undefined}
               />
             );
             // Dimmed items get a wrapper; everything else stays a direct flex

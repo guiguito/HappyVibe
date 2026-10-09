@@ -14,11 +14,12 @@ import { DashboardView } from "./components/DashboardView";
 import { AuditView } from "./components/AuditView";
 import { ChangelogView } from "./components/ChangelogView";
 import { PrivacyView } from "./components/PrivacyView";
-import { type TranscriptItem } from "./components/Transcript";
+import { type ForkOrigin, type TranscriptItem } from "./components/Transcript";
 import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
+import { forkMarkerIndex, stampPiTs } from "./fork";
 import { reloadNotice } from "./reloadNotice";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
@@ -62,7 +63,7 @@ import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant, indexTools } from "./streaming";
 import { sendOutcome } from "./sendOutcome";
-import { stripInjectedBlocks } from "./mentions";
+import { parseDocumentChips, stripInjectedBlocks } from "./mentions";
 import type { Activity, ToolDraft } from "./busyStatus";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
@@ -597,7 +598,7 @@ export default function App(): React.JSX.Element {
    * ChatView appends on nonce change. Same shape as the rewind-to-composer path;
    * no store and no event bus, matching how every other prop reaches ChatView.
    */
-  const [composerInsert, setComposerInsert] = useState<{ sid: string; text: string; nonce: number } | null>(null);
+  const [composerInsert, setComposerInsert] = useState<{ sid: string; text: string; nonce: number; docs?: string[] } | null>(null);
   // Set when the user grants a permission; the next matching
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
@@ -658,6 +659,15 @@ export default function App(): React.JSX.Element {
   // error card (pendingError) so a retried-and-recovered error shows only a
   // transient "Retrying…" notice; a real error card lands only on the final,
   // non-retried failure. retryNotice tracks the in-place notice id per session.
+  // Global auto-compaction switch, for the overflow card's wording. A ref: it is only read when
+  // a turn ends. The Models row announces changes with a window event.
+  const autoCompaction = useRef(true);
+  useEffect(() => {
+    void window.hv.getAutoCompaction().then((on) => { autoCompaction.current = on; });
+    const onChange = (e: Event): void => { autoCompaction.current = (e as CustomEvent<boolean>).detail; };
+    window.addEventListener("hv:auto-compaction", onChange);
+    return () => window.removeEventListener("hv:auto-compaction", onChange);
+  }, []);
   const pendingError = useRef<Record<string, { raw: string; provider?: string; model?: string }>>({});
   const retryNotice = useRef<Record<string, number>>({});
 
@@ -1771,7 +1781,7 @@ export default function App(): React.JSX.Element {
           // nothing about whether to wait, fix a key, or fix a setting. Map it,
           // and offer a plain resend for the transient classes — Pi's own retry
           // list omits 529, so this button is the only way out of one.
-          const info = describeProviderError(err.raw, { provider: err.provider, model: err.model });
+          const info = describeProviderError(err.raw, { provider: err.provider, model: err.model, autoCompaction: autoCompaction.current });
           appendItem(sid, {
             kind: "error",
             text: info.headline,
@@ -1779,6 +1789,7 @@ export default function App(): React.JSX.Element {
             retriable: info.retriable,
             retryLabel: info.retriable ? "Retry" : undefined,
             doc: info.doc,
+            action: info.action,
           });
         }
         setBusy((p) => ({ ...p, [sid]: false }));
@@ -1862,8 +1873,22 @@ export default function App(): React.JSX.Element {
       // the turn ultimately failed, while auto_retry_start clears it on a retry.
       if (e.type === "message_end") {
         const m = (e as {
-          message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string };
+          message?: {
+            role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string;
+            timestamp?: number; content?: string | Array<{ type?: string; text?: string }>;
+          };
         }).message;
+        // §17 round 28: the bubble learns Pi's own timestamp — the key a fork is made by.
+        if (m?.role === "user" && typeof m.timestamp === "number") {
+          const ts = m.timestamp;
+          const text = typeof m.content === "string"
+            ? m.content
+            : (m.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+          setTranscripts((p) => {
+            const n = stampPiTs(p[sid] ?? [], ts, stripInjectedBlocks(text));
+            return n === p[sid] ? p : { ...p, [sid]: n };
+          });
+        }
         if (m?.role === "assistant" && m.stopReason === "error") {
           commitStream(sid); // flush any partial bubble before the (deferred) error
           // Keep the provider and model alongside the text: some providers answer
@@ -2735,6 +2760,18 @@ export default function App(): React.JSX.Element {
           { sessionId: id, workspaceId: meta.workspaceId },
           () => idCounter.current++,
         );
+        // §17 round 28: a fork or duplicate marks where its own history starts. Everything
+        // above is the original's, so a sub-agent card there cannot inspect its children
+        // (they belong to the original session) — `preFork` is set here, after restoreMap,
+        // which keeps only the fields it names.
+        if (meta.forkedFrom) {
+          const at = forkMarkerIndex(items.map((x) => ({ ts: "ts" in x ? x.ts : undefined })), Date.parse(meta.forkedFrom.at));
+          for (let k = 0; k < at; k++) {
+            const x = items[k];
+            if (x.kind === "tool") items[k] = { ...x, card: { ...x.card, preFork: true } };
+          }
+          items.splice(at, 0, { kind: "forkMarker", fromId: meta.forkedFrom.sessionId, id: idCounter.current++ });
+        }
         // §14 round 6: the skills chip's "used" marks came only from live hv.skill
         // notifies, so a REOPENED session reported "0 used" while its own restored
         // transcript listed use_skill cards. The session file is the source of
@@ -2964,7 +3001,7 @@ export default function App(): React.JSX.Element {
     if (uiReq?.kind !== "askUser") return;
     window.hv.respondInput(uiReq.req.id, answers ? JSON.stringify(answers) : null);
     const sid = uiReq.req.sessionId;
-    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers), ts: Date.now() });
+    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers), ts: Date.now(), synthetic: true });
     setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
@@ -3007,6 +3044,79 @@ export default function App(): React.JSX.Element {
     setTranscripts((p) => ({ ...p, [sid]: (p[sid] ?? []).slice(0, idx) }));
     pendingRewind.current[sid] = { msgCount, toolIds };
     void window.hv.contextSnapshot(sid);
+  };
+
+  // §17 round 28: open a just-made fork or duplicate of `fromSid`. It inherits the original's
+  // workspace, so its tab is opened HERE, as newSession does: selectSession looks the id up
+  // in `sessions`, which this render's closure may not have received yet, and would add no tab.
+  const openCopyOf = async (fromSid: string, newSid: string): Promise<void> => {
+    const ws = sessions.find((s) => s.id === fromSid)?.workspaceId;
+    if (ws) {
+      setActiveWs(ws);
+      setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, newSid) }));
+    }
+    await openSessionRef.current?.(newSid);
+  };
+
+  // §17 round 28: Duplicate (tab menu) — the whole conversation, as a new session in a new
+  // tab. Offered only while idle (canDuplicate); main refuses mid-turn too.
+  const duplicateSession = async (sid: string): Promise<void> => {
+    try {
+      const r = await window.hv.duplicateSession(sid);
+      await openCopyOf(sid, r.sessionId);
+    } catch (err) {
+      appendItem(sid, { kind: "notice", text: ipcMessage(err) });
+    }
+  };
+
+  // §17 round 28: the "Forked from" marker names the original's CURRENT title, or none when it is gone.
+  const forkOriginOf = (sid: string): ForkOrigin | undefined => {
+    const from = sessions.find((x) => x.id === sid)?.forkedFrom?.sessionId;
+    if (!from) return undefined;
+    const orig = sessions.find((x) => x.id === from);
+    return { title: orig?.title ?? null, onOpen: orig ? () => void selectSession(from) : undefined };
+  };
+
+  // §17 round 28: Fork from a message — a NEW session holding everything before `it`,
+  // opened with `it` back in its composer. The original's conversation is never
+  // touched; with "both" its workspace files roll back after the fork exists (they are shared).
+  const forkFrom = async (it: TranscriptItem, scope: RewindScope): Promise<void> => {
+    if (it.id == null || it.kind !== "user" || it.piTs == null) return;
+    // Same owner lookup as rewindTo: ids are globally unique.
+    const sid =
+      (selectedId && (transcripts[selectedId] ?? []).some((x) => x.id === it.id) && selectedId) ||
+      Object.keys(transcripts).find((k) => transcripts[k].some((x) => x.id === it.id));
+    if (!sid) return;
+    const items = transcripts[sid] ?? [];
+    const idx = items.findIndex((x) => x.id === it.id);
+    if (idx < 0) return;
+    try {
+      const r = await window.hv.forkSession(sid, it.piTs);
+      await openCopyOf(sid, r.sessionId);
+      // §31: the documents ride along, as Rewind re-attaches them, or edit-and-resend drops them.
+      const docs = parseDocumentChips(it.text).map((d) => d.path);
+      setComposerInsert((prev) => ({ sid: r.sessionId, text: stripInjectedBlocks(it.text), docs, nonce: (prev?.nonce ?? 0) + 1 }));
+      // The fork exists now, so a failed restore can no longer cost the user the fork. A running
+      // turn may be writing those files right now — never roll them back under it. ChatView
+      // already hides "both" while busy; this is the backstop.
+      if (scope === "both" && !busy[sid]) {
+        let res: Awaited<ReturnType<typeof window.hv.rewindRestore>> = null;
+        try {
+          res = await window.hv.rewindRestore(sid, tailToolCallIds(items, idx));
+        } catch {
+          /* falls through to the no-files-changed notice */
+        }
+        if (!res) {
+          appendItem(sid, { kind: "notice", text: "No snapshot for that message — no files were changed." });
+        } else {
+          const parts = [`${res.restored.length} restored`, `${res.deleted.length} removed`];
+          if (res.stale.length) parts.push(`${res.stale.length} left alone (changed since)`);
+          appendItem(sid, { kind: "notice", text: `Files rewound — ${parts.join(", ")}.` });
+        }
+      }
+    } catch (err) {
+      appendItem(sid, { kind: "notice", text: ipcMessage(err) });
+    }
   };
 
   // §20 round 17 — the one nav callback GoTo rides, via NavContext.
@@ -3742,6 +3852,8 @@ export default function App(): React.JSX.Element {
                     }}
                     onRepeatOnSchedule={repeatOnSchedule}
                     onExportHtml={exportSessionHtml}
+                    onDuplicate={(sid) => void duplicateSession(sid)}
+                    canDuplicate={(sid) => !busy[sid]}
                     onRename={(tab, title) => {
                       // §7 round 12: a chat tab renames the SESSION — the
                       // sidebar row changes with it, because it is the
@@ -4103,7 +4215,9 @@ export default function App(): React.JSX.Element {
                 onOpenVoice={() => setView("voice")}
                 voiceSettings={voiceSettings}
                 onRewind={rewindTo}
+                onFork={(it, scope) => void forkFrom(it, scope)}
                 onLoadEarlier={() => void loadEarlier(sid)}
+                forkOrigin={forkOriginOf(sid)}
                 activePlan={activePlan[sid] ?? null}
               />
             </div>

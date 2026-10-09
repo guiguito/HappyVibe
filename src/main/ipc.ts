@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import { parseImageDataUrl } from "./imageData";
+import { slashRefusal } from "./slashGuard";
 import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
 import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
@@ -17,7 +18,8 @@ import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UN
 import { crawl as webCrawl, mapSite as webMapSite, probe as webProbe, scrape as webScrape, search as webSearch, WebServiceError } from "./webService";
 import { PiClient } from "./pi/PiClient";
 import { spawn } from "node:child_process";
-import { resolvePiSpawn } from "./pi/spawn";
+import { resolvePiSpawn, resolveForkSpawn } from "./pi/spawn";
+import { forkSessionFile, forkMeta } from "./sessionFork";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
@@ -25,7 +27,7 @@ import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, d
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getImageModel, setImageModel, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts, getMcpRulesMigrated, setMcpRulesMigrated,
@@ -138,7 +140,7 @@ import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
 import { buildMemoryPrompt } from "../../pi-runtime/extensions/hv-memory";
 import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
-import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
+import { compactionInfo, compactionReason, contextItems, earlierItems, userEntryAt } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { isMcpServerOff, readMcpFile, withoutOffFlag, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { coalescer, configErrorFor, piMcpList, piMcpLogin, piMcpLogout, removeServerInOrder, statusFromList, type PiCliOpts } from "./mcpPi";
@@ -880,6 +882,11 @@ export function registerIpc(
     writeSubagentSettings();
   } catch (e) {
     console.warn("[hv] subagent settings write failed:", e);
+  }
+  try {
+    writePiCompactionSetting();
+  } catch (e) {
+    console.warn("[hv] compaction setting write failed:", e);
   }
 
   // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before
@@ -3259,6 +3266,33 @@ export function registerIpc(
     return true;
   };
 
+  // §17 round 28: fork / duplicate make a NEW session. The original's file is only read and its
+  // process never touched; hv:open-session then paints the new one from its file and resumes it.
+  const forkInto = async (meta: SessionMeta, kind: "fork" | "duplicate", entryId?: string, fresh = false): Promise<{ sessionId: string }> => {
+    const src = sessionFilePath(sessionDir(), meta.piSessionFile);
+    if (!fresh && (!src || !fs.existsSync(src))) throw new Error("This session has nothing to copy yet.");
+    const at = new Date().toISOString();
+    const file = fresh || !src
+      ? undefined
+      : await forkSessionFile(resolveForkSpawn(meta.workspaceId, sessionDir(), piRuntimeDir(), src, agentDir()), sessionDir(), entryId);
+    const next = index.create(meta.workspaceId);
+    index.update(next.id, { ...forkMeta(meta, kind, at), ...(file ? { piSessionFile: file } : {}) });
+    sessionsChanged();
+    return { sessionId: next.id };
+  };
+  ipcMain.handle("hv:session-fork", async (_e, sessionId: string, piTs: number) => {
+    const meta = index.get(sessionId);
+    if (!meta) throw new Error("Unknown session");
+    const hit = userEntryAt(readSessionFile(sessionDir(), meta.piSessionFile), Number(piTs));
+    if (!hit) throw new Error("That message is no longer in this conversation.");
+    return forkInto(meta, "fork", hit.entryId, hit.first);
+  });
+  ipcMain.handle("hv:session-duplicate", async (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta) throw new Error("Unknown session");
+    if (activity.isBusy(sessionId)) throw new Error("Wait for the turn to finish, then duplicate.");
+    return forkInto(meta, "duplicate");
+  });
   /**
    * §17 round 24 — export a session as HTML.
    *
@@ -3374,7 +3408,7 @@ export function registerIpc(
   const runCost = (sessionId: string): number | undefined => {
     const meta = index.get(sessionId);
     if (!meta) return undefined;
-    const calls = sessionCalls(sessionDir(), meta.piSessionFile, planProvidersFor(providerKeyStatus()));
+    const calls = sessionCalls(sessionDir(), meta.piSessionFile, planProvidersFor(providerKeyStatus()), undefined, meta.forkedFrom?.at);
     if (!calls?.length) return undefined;
     return ledgerTotal(calls).cost;
   };
@@ -3642,6 +3676,10 @@ export function registerIpc(
     if (documents !== undefined && !(Array.isArray(documents) && documents.every((m) => typeof m === "string"))) {
       throw new Error("Invalid documents payload");
     }
+    // §10 round 28: a typed extension command never reaches Pi (slashGuard.ts). Before the
+    // wake, so a refusal never boots a hibernated session.
+    const refusal = slashRefusal(msg);
+    if (refusal) throw new Error(refusal);
     let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
     if (!client) {
@@ -3919,7 +3957,7 @@ export function registerIpc(
     // A child's path does not carry the agent name; the delegation rows are the
     // only durable record of it. Read once per open — this is a click, not a tick.
     const agents = agentByFileFrom(await log.read({ sessionId }));
-    const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents)) || [];
+    const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents, meta.forkedFrom?.at)) || [];
     return { calls, total: ledgerTotal(calls) };
   });
 
@@ -3965,6 +4003,8 @@ export function registerIpc(
   });
 
   // getStats(sessionId?) — the optional sessionId is the additive B1 extension.
+  // Only feeds the context gauge (App.tsx selStats → contextUsage / tokens fallback), where a fork's
+  // copied history IS in its context — so Pi's totals are right here; spend comes from the ledger.
   ipcMain.handle("hv:get-stats", async (_e, sessionId?: string) => {
     const client = sessionId ? (manager.get(sessionId) as PiClient | null) : null;
     if (!client) return null;
@@ -4413,6 +4453,18 @@ export function registerIpc(
     sessionBypass.set(id, on); // §39: what the session now runs, so its next "Turn off" is measured against it
     void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: `/hv-dangerous ${on ? "on" : "off"}` }).catch(() => {});
   };
+  // §9 round 28: one global switch. Written to Pi's settings.json for every later spawn, and sent
+  // live (Pi persists the same key itself, so the two can't disagree).
+  ipcMain.handle("hv:get-auto-compaction", () => getAutoCompaction());
+  ipcMain.handle("hv:set-auto-compaction", (_e, on: boolean) => {
+    setAutoCompaction(!!on);
+    try {
+      writePiCompactionSetting();
+    } catch (e) {
+      console.warn("[hv] compaction setting write failed:", e);
+    }
+    for (const id of manager.activeIds()) void (manager.get(id) as PiClient | null)?.send({ type: "set_auto_compaction", enabled: !!on }).catch(() => {});
+  });
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
   ipcMain.handle("hv:set-global-bypass", (_e, on: boolean) => {
     setGlobalBypass(on);
@@ -4812,7 +4864,7 @@ export function registerIpc(
       // The SAME function the session pill uses, so Stats cannot drift from it —
       // that drift is exactly what round 11 fixed, and sub-agent rows would
       // otherwise reintroduce it one surface later.
-      return sessionCalls(sessionDir(), meta.piSessionFile, plans, agents);
+      return sessionCalls(sessionDir(), meta.piSessionFile, plans, agents, meta.forkedFrom?.at);
     };
     return aggregate(events, filter ?? {}, readCalls);
   });

@@ -34,6 +34,7 @@ export function sessionCalls(
   piSessionFile: string | undefined,
   plans: ReadonlySet<string>,
   agentByFile?: ReadonlyMap<string, string>,
+  since?: string,
 ): ApiCall[] | null {
   const text = readSessionFile(sessionDirPath, piSessionFile);
   if (text == null) return null;
@@ -49,7 +50,9 @@ export function sessionCalls(
   );
   // The panel is a chronological ledger, so the two streams interleave by time
   // rather than one being appended after the other.
-  return [...own, ...children].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  // §17 round 28: a fork's copied history keeps its timestamps — only what happened after the
+  // fork is this session's, so Stats (which sums every session) counts each call once.
+  return [...own, ...children].filter((c) => !since || c.ts > since).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 }
 
 /**

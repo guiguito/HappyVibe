@@ -241,6 +241,8 @@ contextBridge.exposeInMainWorld("hv", {
   gitDraftMessage: (workspaceId: string, stagedOnly: boolean) =>
     ipcRenderer.invoke("hv:git-draft-message", workspaceId, stagedOnly),
   gitInstallPrompt: () => ipcRenderer.invoke("hv:git-install-prompt"),
+  forkSession: (sessionId: string, piTs: number) => ipcRenderer.invoke("hv:session-fork", sessionId, piTs),
+  duplicateSession: (sessionId: string) => ipcRenderer.invoke("hv:session-duplicate", sessionId),
   exportSessionHtml: (sessionId: string) => ipcRenderer.invoke("hv:session-export-html", sessionId),
   gitPrUrl: (workspaceId: string, draft?: boolean) => ipcRenderer.invoke("hv:git-pr-url", workspaceId, draft),
   onGitChanged: (cb: (p: { workspaceId: string }) => void): (() => void) => {
@@ -334,6 +336,8 @@ contextBridge.exposeInMainWorld("hv", {
   setRules: (rules: unknown) => ipcRenderer.invoke("hv:set-rules", rules),
   addPermissionRule: (workspace: string | null, tool: string) =>
     ipcRenderer.invoke("hv:add-permission-rule", workspace, tool),
+  getAutoCompaction: () => ipcRenderer.invoke("hv:get-auto-compaction"),
+  setAutoCompaction: (on: boolean) => ipcRenderer.invoke("hv:set-auto-compaction", on),
   getGlobalBypass: () => ipcRenderer.invoke("hv:get-global-bypass"),
   setGlobalBypass: (on: boolean) => ipcRenderer.invoke("hv:set-global-bypass", on),
   getWorkspaceBypass: (workspace: string) => ipcRenderer.invoke("hv:get-workspace-bypass", workspace),

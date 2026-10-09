@@ -15,6 +15,14 @@ import { keyRejectedNote } from "../onboarding";
  */
 
 
+/** Confirm copy for turning automatic compaction off (pinned by tests/provider-error-compaction.test.ts). */
+export const COMPACTION_OFF_CONFIRM = {
+  title: "Turn off automatic compaction?",
+  body: "When the context fills up, the next message fails instead of being summarized.",
+  confirm: "Turn off",
+  cancel: "Keep it on",
+} as const;
+
 /**
  * The "More providers…" search (2026-08-29). Rows that already have a card
  * above the box — the featured five, plus anything with a key configured — are
@@ -96,6 +104,13 @@ export function ModelsView({
    *  and take the verdict with it. */
   onSaving: () => void;
 }): React.JSX.Element {
+  const [autoCompact, setAutoCompact] = useState(true);
+  const [confirmCompactOff, setConfirmCompactOff] = useState(false);
+  const applyAutoCompact = (on: boolean): void => {
+    setAutoCompact(on);
+    void window.hv.setAutoCompaction(on);
+    window.dispatchEvent(new CustomEvent("hv:auto-compaction", { detail: on }));
+  };
   const [byok, setByok] = useState<HvByokProvider[]>([]);
   /**
    * The sign-in list comes from MAIN (providers.ts), which derives it from Pi's
@@ -154,6 +169,7 @@ export function ModelsView({
     await window.hv.authStatus(); // status arrives as an hv.auth ui-request
     setModels(await window.hv.listModels());
     setThinking(await window.hv.getDefaultThinking());
+    setAutoCompact(await window.hv.getAutoCompaction());
   };
 
   useEffect(() => {
@@ -743,6 +759,50 @@ export function ModelsView({
                 ))}
               </div>
             </div>
+
+            <div className="mt-4 border-t-2 border-line pt-4 flex items-start justify-between gap-4">
+              <div>
+                <div className="font-bold text-sm mb-1">Compact automatically</div>
+                <p className="text-xs text-ink-soft">
+                  When the context is nearly full, older messages are summarized so the session can keep going.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoCompact}
+                onClick={() => (autoCompact ? setConfirmCompactOff(true) : applyAutoCompact(true))}
+                className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
+                  autoCompact ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
+                }`}
+              >
+                {autoCompact ? "On" : "Off"}
+              </button>
+            </div>
+            {confirmCompactOff && (
+              <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmCompactOff(false)}>
+                <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+                  <div className="font-bold mb-1">{COMPACTION_OFF_CONFIRM.title}</div>
+                  <p className="text-sm text-ink-soft mb-4">{COMPACTION_OFF_CONFIRM.body}</p>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmCompactOff(false)}
+                      className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+                    >
+                      {COMPACTION_OFF_CONFIRM.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setConfirmCompactOff(false); applyAutoCompact(false); }}
+                      className="rounded-xl bg-berry text-paper font-bold text-sm px-4 py-2 border-2 border-berry shadow-sticker cursor-pointer hover:brightness-105"
+                    >
+                      {COMPACTION_OFF_CONFIRM.confirm}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             <LongCacheToggle />
           </Section>
         )}

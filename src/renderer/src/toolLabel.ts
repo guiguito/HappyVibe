@@ -24,6 +24,8 @@ export type IconKind =
   | "wrench"
   | "copy"
   | "rewind"
+  /** §17 round 28: a branch — Fork from a message. */
+  | "fork"
   | "check"
   | "book"
   | "globe"

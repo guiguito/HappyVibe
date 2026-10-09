@@ -316,6 +316,8 @@ interface SessionMeta {
   /** §16 round 16: per-session thinking override (session → global). */
   thinking?: string;
   titleSource: "fallback" | "model" | "user";
+  /** §17 round 28: forked or duplicated from another session; `at` is the cut. Mirror of the main-side field. */
+  forkedFrom?: { sessionId: string; at: string };
   /** §35: the schedule that opened this session. Absent = you started it yourself. */
   scheduleId?: string;
   /** When the user last opened or prompted it — what the sidebar orders by.
@@ -915,6 +917,8 @@ interface HvApi {
    * the default branch, or nothing pushed yet. `drafted` is false when the model
    * was unavailable and the commit list was used instead.
    */
+  forkSession(sessionId: string, piTs: number): Promise<{ sessionId: string }>;
+  duplicateSession(sessionId: string): Promise<{ sessionId: string }>;
   /** §17 round 24: writes a self-contained HTML page wherever the user picks.
       `canceled` is a dismissed save dialog — not a failure, and says nothing. */
   exportSessionHtml(sessionId: string): Promise<{ ok: true; path: string } | { ok: false; error?: string; canceled?: boolean }>;
@@ -1034,6 +1038,8 @@ interface HvApi {
   setRules(rules: HvRulesFile): Promise<HvRulesFile>;
   /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
   addPermissionRule(workspace: string | null, tool: string): Promise<HvRulesFile>;
+  getAutoCompaction(): Promise<boolean>;
+  setAutoCompaction(on: boolean): Promise<void>;
   /** Round 3 #14: persistent "bypass all permissions". */
   getGlobalBypass(): Promise<boolean>;
   setGlobalBypass(on: boolean): Promise<void>;
