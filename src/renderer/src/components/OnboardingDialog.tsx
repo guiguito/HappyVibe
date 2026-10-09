@@ -4,6 +4,7 @@ import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors, type KeyNote } from "./OnboardingDoors";
 import { OnboardingKit } from "./OnboardingKit";
 import { GOTO_LABELS } from "./GoTo";
+import { KIT_FAMILIES } from "../toolSwitches";
 import {
   ONBOARDING_COPY as C,
   DEFAULT_SWITCHES,
@@ -189,8 +190,6 @@ export function OnboardingDialog({
   const [draft, setDraft] = useState<KitDraft | null>(null);
   const starting = useRef(false);
   const reported = useRef(false);
-  // "Load everything anyway" makes the small-model line false — it hides with its link.
-  const [loadedAll, setLoadedAll] = useState(false);
   const kitOpen = complete && !welcome;
   const ctx = contextWindow ?? null;
 
@@ -402,22 +401,20 @@ export function OnboardingDialog({
                     /* The celebration lands in the RIGHT panel, so the brand
                        column never moves and the dialog never resizes. The kit
                        scrolls inside it (min-h-full, round 25). */
-                    <div className="min-h-full flex flex-col items-center text-center py-1">
+                    <div className="min-h-full flex flex-col items-center text-center py-1 pr-3">
                       <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
                       <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
                       <p className="hv-done-body font-bold mt-1">{C.kitHeadline}</p>
                       <p className="text-sm text-ink-soft mt-1 leading-snug">
                         {C.kitSubline} {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.promptTemplates}.
                       </p>
-                      {draft && smallModel && ctx && !loadedAll && (
+                      {/* Only while nothing is ticked: "Load everything anyway" (or any tick) makes the line false. */}
+                      {draft && smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k]) && (
                         <div className="mt-2 text-xs text-ink-soft leading-snug">
                           <p>{smallModelLine(ctx, full)}</p>
                           <button
                             type="button"
-                            onClick={() => {
-                              setLoadedAll(true);
-                              setDraft({ ...draft, switches: { ...DEFAULT_SWITCHES, coreOff: draft.switches.coreOff } });
-                            }}
+                            onClick={() => setDraft({ ...draft, switches: { ...DEFAULT_SWITCHES, coreOff: draft.switches.coreOff } })}
                             className="mt-1 font-bold underline underline-offset-2 hover:text-ink cursor-pointer"
                           >
                             {C.kitLoadAll}

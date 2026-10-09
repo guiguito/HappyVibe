@@ -1,4 +1,5 @@
 import { TOOL_WEIGHTS } from "../../main/toolWeights.generated";
+import { parseBuiltins } from "../../../pi-runtime/extensions/hv-builtins";
 import { fmtNum } from "./analytics-format";
 import { KIT_FAMILIES, type KitFamily } from "./toolSwitches";
 import { THIS_COMPUTER, YOUR_COMPUTER } from "./platformCopy";
@@ -185,8 +186,9 @@ export interface KitTile { key: KitFamily | "core" | "prompts"; familyTick: bool
 /** Structural, not `typeof TOOL_WEIGHTS` (whose `as const` literals would reject any other figures). */
 type Weights = { total: number; compactionReserve: number; families: Record<string, number>; core: Record<string, number> };
 
-/** A fresh install's switches (hv-builtins.ts parseBuiltins + images on): everything on but Workflows. */
-export const DEFAULT_SWITCHES: KitSwitches = { plan: true, askUser: true, terminal: true, browser: true, web: true, memory: true, schedules: true, document: true, images: true, subagents: true, workflows: false, skills: true, coreOff: [] };
+const { plan, askUser, terminal, browser, web, memory, schedules, document, subagents, workflows, skills } = parseBuiltins(undefined);
+/** A fresh install's switches: hv-builtins.ts's own defaults (derived, never retyped) + images on. */
+export const DEFAULT_SWITCHES: KitSwitches = { plan, askUser, terminal, browser, web, memory, schedules, document, images: true, subagents, workflows, skills, coreOff: [] };
 
 /** Just the basics: every kit family off. MCP, intent, core tools and items are never touched. */
 export function basicsPatch(): Record<KitFamily, false> {

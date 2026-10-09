@@ -4200,6 +4200,14 @@ export function registerIpc(
     clientFor(owner)?.respondUi(id, value === null ? { cancelled: true } : { value });
   });
 
+  // §22 kit: the context-window read that picks the kit preset must see the default
+  // model, and every door (and a local runner found at boot, which never passes
+  // through providersChanged) announces itself BEFORE ensureDefaultModel has set it.
+  // Free when a default exists; swallows failure, so it always resolves (null = unknown).
+  ipcMain.handle("hv:ensure-default-model", async () => {
+    await ensureDefaultModel();
+    return getDefaultModel();
+  });
   ipcMain.handle("hv:get-providers", () => {
     const status = providerKeyStatus();
     return {

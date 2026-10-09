@@ -429,8 +429,9 @@ function MemoryRow({
         <>
           {FAMILY_COPY.memory.what} Saving and
           forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
-          saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
+          saves the policy and three tool schemas from every turn.
           <Weight tokens={TOOL_WEIGHTS.families.memory} />
+          <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
         </>
       }
       on={on}

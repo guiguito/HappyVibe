@@ -207,7 +207,10 @@ export default function App(): React.JSX.Element {
   // B5: default model's context window feeds the estimated-gauge fallback.
   const loadFallbackWindow = async (): Promise<void> => {
     try {
-      const { defaultModel } = await window.hv.getProviders();
+      // ensureDefaultModel, not getProviders: step 1's doors (and a local runner found at
+      // boot) announce the provider BEFORE main has picked the default, and a null here
+      // used to settle the kit as "full" on a 4k model.
+      const defaultModel = await window.hv.ensureDefaultModel();
       if (!defaultModel) return;
       const models = await window.hv.listModels();
       const m = models.find((x) => x.provider === defaultModel.provider && x.id === defaultModel.modelId);

@@ -4,6 +4,7 @@ import {
   ONBOARDING_COPY, setFamily, smallModelLine, tooSmall, tooSmallLine, type KitDraft, type KitItems,
 } from "../src/renderer/src/onboarding";
 import { KIT_FAMILIES } from "../src/renderer/src/toolSwitches";
+import { parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
 import { SAFE_TOOLS } from "../pi-runtime/extensions/hv-rules";
 import { DEFAULT_GIT_RULES } from "../src/main/gitRules";
 import { PLUGIN_CATALOG } from "../src/main/plugins/catalog.generated";
@@ -23,6 +24,14 @@ const items: KitItems = {
   core: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 };
 const full = (): KitDraft => ({ switches: { ...DEFAULT_SWITCHES, coreOff: [] }, skillsOff: [], agentsOff: [], promptsOff: [] });
+
+describe("DEFAULT_SWITCHES", () => {
+  it("is parseBuiltins' own defaults (images on, nothing core off), so a flipped default can't go stale here", () => {
+    const pb = parseBuiltins(undefined) as unknown as Record<string, boolean>;
+    for (const k of KIT_FAMILIES) expect(DEFAULT_SWITCHES[k], k).toBe(k === "images" ? true : pb[k]);
+    expect(DEFAULT_SWITCHES.coreOff).toEqual([]);
+  });
+});
 
 describe("kitPreset — the quarter (checked against Pi's reserve, docs/validation/kit1.md)", () => {
   it("opens on basics when the full kit takes more than a quarter of the window", () => {

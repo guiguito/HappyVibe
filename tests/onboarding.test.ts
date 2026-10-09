@@ -615,10 +615,21 @@ describe("the handover beat is actually visible", () => {
     expect(has(flat(APP), "contextWindow={kitInputsReady ? fallbackWindow : undefined}"), "App hands undefined while reading").toBe(true);
   });
 
-  it("Load everything anyway hides the small-model line, which would no longer be true", () => {
+  it("the small-model line shows only while no family is ticked — derived, never a flag", () => {
     const src = flat(DIALOG);
-    expect(has(src, "setLoadedAll(true);"), "the link sets the flag").toBe(true);
-    expect(has(src, "smallModel && ctx && !loadedAll"), "the line reads it").toBe(true);
+    expect(has(src, "smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k])"), "derived from the draft").toBe(true);
+    expect(has(src, "loadedAll"), "no separate flag to drift").toBe(false);
+  });
+
+  it("the kit's window read waits for the default model (C1: a fresh Ollama 4k install opened full)", () => {
+    // Every door — and a local runner found at boot — announces the provider BEFORE main
+    // has set the default; reading getProviders().defaultModel there saw null, settled
+    // kitInputsReady with no window, and the kit opened full on a 4,096 model.
+    const load = flat(APP).slice(flat(APP).indexOf("const loadFallbackWindow"), flat(APP).indexOf("const [imagesAvailable"));
+    expect(has(load, "await window.hv.ensureDefaultModel()"), "waits for the default").toBe(true);
+    expect(has(load, "getProviders"), "not the racy read").toBe(false);
+    const ipc = flat(fs.readFileSync(path.resolve(__dirname, "../src/main/ipc.ts"), "utf8"));
+    expect(has(ipc, 'ipcMain.handle("hv:ensure-default-model", async () => { await ensureDefaultModel(); return getDefaultModel(); });'), "main fills it first").toBe(true);
   });
 
   it("is settled instantly under reduced motion, like every other beat", () => {
