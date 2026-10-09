@@ -6,6 +6,10 @@ import { GOTO_LABELS } from "./GoTo";
 
 const CORE_WEIGHT = Object.values(TOOL_WEIGHTS.core).reduce((a: number, b: number) => a + b, 0);
 
+/** Per-tool weight; PowerShell is the Windows shell and weighs what bash does. */
+const coreWeight = (n: string): number =>
+  (TOOL_WEIGHTS.core as Record<string, number>)[n === "powershell" ? "bash" : n] ?? 0;
+
 const flip = (list: string[], id: string): string[] => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
 /**
@@ -36,12 +40,13 @@ export function OnboardingKit({
   const what = (t: KitTile): string => (t.key === "prompts" ? C.kitPrompts : FAMILY_COPY[t.key].what);
 
   /** One row per item of a tile's list: checked = not in its off-list. */
-  const rows = (t: KitTile): { id: string; name: string; on: boolean; disabled: boolean; toggle: () => void }[] => {
+  const rows = (t: KitTile): { id: string; name: string; tokens: number; on: boolean; disabled: boolean; toggle: () => void }[] => {
     switch (t.items) {
       case "core":
         return items.core.map((n) => ({
           id: n,
           name: n,
+          tokens: coreWeight(n),
           on: !s.coreOff.includes(n),
           disabled: false,
           toggle: () => setDraft({ ...draft, switches: { ...s, coreOff: toggleCore(s.coreOff, n) } }),
@@ -50,6 +55,7 @@ export function OnboardingKit({
         return items.skills.map((i) => ({
           id: i.id,
           name: i.name,
+          tokens: i.tokens,
           on: !draft.skillsOff.includes(i.id),
           disabled: !s.skills,
           toggle: () => setDraft({ ...draft, skillsOff: flip(draft.skillsOff, i.id) }),
@@ -58,6 +64,7 @@ export function OnboardingKit({
         return items.agents.map((i) => ({
           id: i.id,
           name: i.name,
+          tokens: i.tokens,
           on: !draft.agentsOff.includes(i.id),
           disabled: !s.subagents,
           toggle: () => setDraft({ ...draft, agentsOff: flip(draft.agentsOff, i.id) }),
@@ -66,6 +73,7 @@ export function OnboardingKit({
         return items.prompts.map((i) => ({
           id: i.id,
           name: i.name,
+          tokens: i.tokens,
           on: !draft.promptsOff.includes(i.id),
           disabled: false,
           toggle: () => setDraft({ ...draft, promptsOff: flip(draft.promptsOff, i.id) }),
@@ -81,10 +89,24 @@ export function OnboardingKit({
     items.core.includes("powershell") ? "powershell" : "bash",
   );
 
+  const tiles = kitTiles(items.imagesAvailable);
+  // Workflows renders INSIDE the Sub-agents tile (it needs sub-agents), not as its own tile.
+  const nested = tiles.filter((t) => t.nestedUnder === "subagents");
+  const tick = (t: KitTile, on: boolean): React.JSX.Element => (
+    <input
+      type="checkbox"
+      className="mt-1 shrink-0 accent-tangerine cursor-pointer disabled:cursor-not-allowed"
+      checked={on}
+      disabled={(t.key === "askUser" && s.plan) || (t.nestedUnder === "subagents" && !s.subagents)}
+      onChange={(e) => setDraft(setFamily(draft, t.key as KitFamily, e.target.checked))}
+      aria-label={label(t)}
+    />
+  );
+
   return (
     <div className="text-left">
       <div className="grid grid-cols-2 gap-2">
-        {kitTiles(items.imagesAvailable).map((t) => {
+        {tiles.filter((t) => !t.nestedUnder).map((t) => {
           const list = rows(t);
           const expanded = open === t.key;
           const on = isOn(t);
@@ -94,16 +116,7 @@ export function OnboardingKit({
               className={`rounded-xl border-2 px-3 py-2 ${expanded ? "col-span-2" : ""} ${on ? "border-line bg-card" : "border-line/60 bg-paper-deep"}`}
             >
               <div className="flex items-start gap-2" title={what(t)}>
-                {t.familyTick ? (
-                  <input
-                    type="checkbox"
-                    className="mt-1 shrink-0 accent-tangerine cursor-pointer disabled:cursor-not-allowed"
-                    checked={on}
-                    disabled={(t.key === "askUser" && s.plan) || (t.nestedUnder === "subagents" && !s.subagents)}
-                    onChange={(e) => setDraft(setFamily(draft, t.key as KitFamily, e.target.checked))}
-                    aria-label={label(t)}
-                  />
-                ) : null}
+                {t.familyTick ? tick(t, on) : null}
                 <div className="min-w-0 flex-1">
                   <div className={`text-sm font-bold leading-snug ${on ? "" : "text-ink-soft"}`}>{label(t)}</div>
                   <div className="text-xs text-ink-soft">
@@ -122,6 +135,16 @@ export function OnboardingKit({
                   </button>
                 )}
               </div>
+              {t.key === "subagents" &&
+                nested.map((n) => (
+                  <div key={n.key} className="flex items-start gap-2 mt-1.5 pl-5" title={what(n)}>
+                    {tick(n, isOn(n))}
+                    <div className="min-w-0 flex-1">
+                      <div className={`text-sm font-bold leading-snug ${isOn(n) ? "" : "text-ink-soft"}`}>{label(n)}</div>
+                      <div className="text-xs text-ink-soft">{weightLabel(weightOf(n))}</div>
+                    </div>
+                  </div>
+                ))}
               {expanded && list.length > 0 && (
                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
                   {list.map((r) => (
@@ -137,6 +160,7 @@ export function OnboardingKit({
                         onChange={r.toggle}
                       />
                       <span className="truncate">{r.name}</span>
+                      {r.tokens > 0 && <span className="shrink-0 text-ink-soft/80">{weightLabel(r.tokens)}</span>}
                     </label>
                   ))}
                 </div>

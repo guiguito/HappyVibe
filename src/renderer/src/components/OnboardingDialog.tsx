@@ -441,19 +441,19 @@ export function OnboardingDialog({
                       </div>
                       <p className="text-xs text-ink-soft mt-3 leading-snug">🔒 {C.kitConsent}</p>
                       <p className="text-xs text-ink-soft mt-1 leading-snug">{C.kitFooter}</p>
-                      <div className="w-full mt-3 flex items-center justify-between gap-2">
+                      {draft && kitItems && (
+                        <p className="w-full mt-3 text-xs text-ink-soft text-right">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</p>
+                      )}
+                      <div className="w-full mt-1 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          className={ghostBtn}
+                          className={`${ghostBtn} whitespace-nowrap`}
                           disabled={busy || !draft}
                           onClick={() => draft && setDraft({ ...draft, switches: { ...draft.switches, ...basicsPatch() } })}
                         >
                           {C.kitBasics}
                         </button>
-                        {draft && kitItems && (
-                          <span className="text-xs text-ink-soft">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</span>
-                        )}
-                        <button type="button" className={primaryBtn} onClick={start} disabled={busy || !draft}>
+                        <button type="button" className={`${primaryBtn} whitespace-nowrap`} onClick={start} disabled={busy || !draft}>
                           {C.kitStart}
                         </button>
                       </div>
