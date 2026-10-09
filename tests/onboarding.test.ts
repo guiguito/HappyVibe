@@ -305,6 +305,18 @@ describe("the two wow notices", () => {
     const src = flat(APP);
     expect((src.match(/sid === firstRunSession\.current/g) ?? []).length, "both gated").toBe(2);
   });
+
+  it("land after the agent's reply, not above it", () => {
+    const src = flat(APP);
+    const end = src.indexOf('if (e.type === "agent_end")');
+    expect(end, "agent_end block").toBeGreaterThan(-1);
+    const stream = src.indexOf("commitStream(sid)", end);
+    const extend = src.indexOf("ONBOARDING_COPY.noticeExtend", end);
+    expect(stream, "commitStream in agent_end").toBeGreaterThan(end);
+    expect(extend, "reply committed before the notice").toBeGreaterThan(stream);
+    expect(has(src, "firstRunTurns.current >= 2"), "one turn later").toBe(true);
+    expect(has(src, 'goTo: "plugins"'), "links to Plugins").toBe(true);
+  });
 });
 
 describe("the bottom-right overlay is gone", () => {

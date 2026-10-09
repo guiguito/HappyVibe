@@ -1779,8 +1779,13 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         toolDraftRef.current[sid] = null;
+        // A turn that thought and then said nothing still keeps its reasoning.
+        commitThinking(sid);
+        commitStream(sid); // finalize the live bubble into the transcript
+        stampTurnEnd(sid); // round 15: "· 34s" on that bubble, now that it exists
         // §22: the second wow, once — after a whole turn, when there is
-        // something in the window worth opening the gauge for.
+        // something in the window worth opening the gauge for. AFTER the reply
+        // is committed and stamped, so the notice lands below it, not above.
         if (sid === firstRunSession.current) {
           firstRunTurns.current += 1;
           if (!wowShown.current.context) {
@@ -1792,10 +1797,6 @@ export default function App(): React.JSX.Element {
             appendItem(sid, { kind: "notice", text: ONBOARDING_COPY.noticeExtend, goTo: "plugins" });
           }
         }
-        // A turn that thought and then said nothing still keeps its reasoning.
-        commitThinking(sid);
-        commitStream(sid); // finalize the live bubble into the transcript
-        stampTurnEnd(sid); // round 15: "· 34s" on that bubble, now that it exists
         delete aborted.current[sid]; // the abort window closes with the turn
         // Flush a deferred provider error that was NOT retried (or exhausted its
         // retries) as the single hard error card for the turn.
