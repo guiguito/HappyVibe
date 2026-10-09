@@ -35,12 +35,10 @@ export const PRIVACY_COPY = {
   pulse: "Ask how a session is going",
   pulseBody: "Once per chat session, a one-tap rating above the message box.",
   remoteTitle: "Remote settings",
-  remoteSubtitle:
-    "HappyVibe checks a small list of settings we can change without a release, for now only whether the free web service is available.",
+  remoteSubtitle: "Lets HappyVibe adjust a few settings without a new release.",
   remoteSwitch: "Receive remote settings",
-  remoteBody:
-    "The check carries a random device ID so gradual changes reach the same devices. Turning statistics off doesn't stop it, but the ID is replaced with a new one that isn't linked to your statistics.",
-  remoteCost: "Off, HappyVibe uses its built-in settings and we can't pause the free web service for you if it's overloaded.",
+  remoteCost:
+    "Off, HappyVibe stops checking and uses its built-in settings, which keep features that rely on HappyVibe's online services turned off.",
   modelTitle: "Model list",
   modelSubtitle: `Pi, the engine inside HappyVibe, asks pi.dev for newly released models when a session starts, at most every ${MODEL_LIST_REFRESH_HOURS} hours. The first time the agent searches files, it also downloads two search tools from GitHub if they aren't installed.`,
   modelSwitch: "Check for new models",
@@ -210,7 +208,6 @@ export function PrivacyView(): React.JSX.Element {
       <Section icon="stats" title={C.remoteTitle} subtitle={C.remoteSubtitle}>
         <SwitchRow
           label={C.remoteSwitch}
-          body={C.remoteBody}
           cost={C.remoteCost}
           on={isOn("remoteConfig")}
           locked={isLocked("remoteConfig")}

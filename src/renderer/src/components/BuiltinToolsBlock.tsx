@@ -445,7 +445,7 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
   const [saved, setSaved] = useState(false);
   // §39: remote config can pause the default box; the row explains itself
   // rather than greying the radio out — "Your own" is the way forward.
-  const paused = useWebDefaultPaused();
+  const { unavailable: paused, remoteOff } = useWebDefaultPaused();
   // Privacy round: an env lock keeps the default box out of reach; shown locked, never hidden.
   const [privacy] = usePrivacy();
   const defaultLocked = !!privacy?.locked.includes("defaultWeb");
@@ -523,7 +523,7 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
         <div className="mt-2 space-y-2 text-xs">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="radio" checked={mode === "default"} disabled={defaultLocked} onChange={() => setMode("default")} />
-            {paused ? <>HappyVibe&apos;s service — paused</> : <>HappyVibe&apos;s service (free for now)</>}
+            {paused ? <>HappyVibe&apos;s service — not available right now</> : <>HappyVibe&apos;s service (free for now)</>}
           </label>
           {defaultLocked && (
             <div className="pl-5">
@@ -531,7 +531,9 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
             </div>
           )}
           {paused && !defaultLocked && mode === "default" && (
-            <p className="pl-5 text-ink-soft">The free service is paused. Choose Your own to keep using web tools.</p>
+            <p className="pl-5 text-ink-soft">
+              {remoteOff ? "It stays off while Remote settings are off on Privacy." : "Choose Your own to keep using web tools."}
+            </p>
           )}
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="radio" checked={mode === "custom"} onChange={() => setMode("custom")} />

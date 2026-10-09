@@ -2,7 +2,7 @@
  * §39 — the electron-free seam, the crash/client.ts pattern: `ipc.ts` and
  * `config.ts` read the flag through here, and `remoteConfig/index.ts` plugs
  * the real reader in at install. Until then — or if it throws — the in-app
- * default answers, so nothing ever fails closed.
+ * default answers — which, for the free web service, is OFF (defaults.ts).
  */
 import { CONFIG_DEFAULTS } from "./defaults";
 

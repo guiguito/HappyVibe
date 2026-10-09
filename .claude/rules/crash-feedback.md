@@ -90,7 +90,7 @@ paths:
 - Opt-out is `setEnabled(false, { forget: true })` only; never `setUserId`, `setUser`, `setInstallationIdEnabled(false` (source-scanned).
 - `existing_user` keys on `<userData>/inlet/analytics-state.json` — config writes `installation-id.json` itself.
 - Dev builds send to the Dev project's databases. inlet-sdk 0.5.0 has no `environment` option and its server REFUSES an envelope carrying one (`unknown_field`) — never add it back (`tests/usage-wiring.test.ts` scans for it). The crash half of the one-ID check needs `HV_CRASH_DEV=1`.
-- `web_default_service` fails open (default `true`), is read per web call, and pausing it never removes the tools.
+- `web_default_service` fails CLOSED (default `false`, Privacy round): the free box runs only on a remote yes; remote settings off or never checked = off. Read per web call; off never removes the tools.
 
 ## Privacy switches (Privacy round, 2026-10-09)
 

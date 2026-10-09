@@ -7,14 +7,14 @@ const strip = (f: string): string =>
   fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 describe("§39 remote config", () => {
-  it("fails OPEN: true before install, and when the reader throws", () => {
-    expect(CONFIG_DEFAULTS).toEqual({ web_default_service: true });
+  it("fails CLOSED (Privacy round): the free box runs only on a remote yes — not before install, not when the reader throws", () => {
+    expect(CONFIG_DEFAULTS).toEqual({ web_default_service: false });
     setConfigReader(null);
-    expect(webDefaultServiceAllowed()).toBe(true);
-    setConfigReader(() => { throw new Error("boom"); });
-    expect(webDefaultServiceAllowed()).toBe(true);
-    setConfigReader(() => false);
     expect(webDefaultServiceAllowed()).toBe(false);
+    setConfigReader(() => { throw new Error("boom"); });
+    expect(webDefaultServiceAllowed()).toBe(false);
+    setConfigReader(() => true);
+    expect(webDefaultServiceAllowed()).toBe(true);
     setConfigReader(null);
   });
   it("defaults.ts imports nothing; client.ts nothing Electron", () => {
@@ -58,8 +58,9 @@ describe("§39 the renderer half", () => {
   it("WebRow carries the approved copy", () => {
     const row = fs.readFileSync("src/renderer/src/components/BuiltinToolsBlock.tsx", "utf8");
     expect(row).toContain("HappyVibe&apos;s service (free for now)");
-    expect(row).toContain("HappyVibe&apos;s service — paused");
-    expect(row).toContain("The free service is paused. Choose Your own to keep using web tools.");
+    expect(row).toContain("HappyVibe&apos;s service — not available right now");
+    expect(row).toContain("Choose Your own to keep using web tools.");
+    expect(row).toContain("It stays off while Remote settings are off on Privacy.");
   });
   it("Privacy round: the switch gates install, stop closes, start never runs twice (Review Focus 3)", () => {
     const idx = strip("src/main/remoteConfig/index.ts");
@@ -76,6 +77,6 @@ describe("§39 the renderer half", () => {
     }
   });
   it("Privacy round: the renderer's paused row yields to remote settings off", () => {
-    expect(strip("src/renderer/src/remoteConfig.ts")).toMatch(/privacy\?\.on\.remoteConfig !== false/);
+    expect(strip("src/renderer/src/remoteConfig.ts")).toMatch(/remoteOff: privacy\?\.on\.remoteConfig === false/);
   });
 });

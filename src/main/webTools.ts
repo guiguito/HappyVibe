@@ -25,9 +25,10 @@ export interface WebServiceConfig {
 export const WEB_CUSTOM_URL_INVALID =
   "Your custom web service URL isn't valid — fix it in Settings → Built-in tools, or switch back to the default service.";
 
-/** §39: the sentence a web tool returns while remote config pauses the default box. */
+/** §39: the sentence a web tool returns while remote config doesn't allow the default box
+    (paused remotely, not checked yet, or remote settings off — it fails closed). */
 export const WEB_DEFAULT_PAUSED =
-  "HappyVibe's free web service is paused right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.";
+  "HappyVibe's free web service isn't available right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.";
 
 /** Privacy round: the sentence a web tool returns instead of reaching the default box under its env lock. */
 export const WEB_DEFAULT_OFF =

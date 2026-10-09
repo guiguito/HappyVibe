@@ -205,7 +205,7 @@ describe("§39 the default service can be paused remotely", () => {
     expect(r).toEqual({ error: WEB_DEFAULT_PAUSED, code: "DEFAULT_PAUSED", service: "default" });
     expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
     expect(WEB_DEFAULT_PAUSED).toBe(
-      "HappyVibe's free web service is paused right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.",
+      "HappyVibe's free web service isn't available right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.",
     );
   });
   it("flag off + custom mode → the custom service, untouched", () => {

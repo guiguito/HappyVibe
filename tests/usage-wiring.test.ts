@@ -76,8 +76,7 @@ describe("§39 renderer half", () => {
     expect(v.indexOf('title="Usage statistics"')).toBeLessThan(v.indexOf('title="Crash reports"'));
     expect(v).toContain("Send anonymous usage statistics");
     expect(v).toContain("Which features get used, where setup gets stuck, and whether the app is reliable. Never what you type, your files or your projects.");
-    // Privacy round: the settings-check sentence moved to Remote settings (PRIVACY_COPY.remoteBody).
-    expect(v).toContain("Turning statistics off doesn't stop it, but the ID is replaced with a new one that isn't linked to your statistics.");
+    // Privacy round: the settings-check ID sentence left the app for the guide's Remote settings section.
     expect(v).toContain('copy="usageStats"');
   });
   it("main dedupes UI first-uses", () => {

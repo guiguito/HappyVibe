@@ -12,8 +12,8 @@
 ### Added
 
 - **Everything HappyVibe sends on its own can now be turned off, in one click each.** **Privacy**
-  gains switches for the feedback button, the "how is this session going" rating, the settings
-  check, and Pi's check for new models (off means models released after your version only appear
+  gains switches for the feedback button, the "how is this session going" rating, remote
+  settings, and Pi's check for new models (off means models released after your version only appear
   when you update). The **Changelog** gains **Check for updates automatically**. Everything still
   starts on. Thanks to @plyd.
 

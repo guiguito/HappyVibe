@@ -26,7 +26,9 @@ describe("Privacy page", () => {
   it("the settings-check paragraph lives under Remote settings, not Usage statistics", () => {
     const usage = page.slice(page.indexOf('title="Usage statistics"'), page.indexOf('title="Crash reports"'));
     expect(usage).not.toMatch(/checks HappyVibe|device ID|remoteBody/);
-    expect(PRIVACY_COPY.remoteBody).toContain("Turning statistics off doesn't stop it, but the ID is replaced with a new one that isn't linked to your statistics.");
+    // The ID detail lives in the guide only (Guilhem, 2026-10-09): the app says what Off does.
+    expect(page).not.toMatch(/device ID/);
+    expect(PRIVACY_COPY.remoteCost).toMatch(/built-in settings/);
   });
   it("the model-list interval is derived, never typed", () => {
     expect(page).toContain("${MODEL_LIST_REFRESH_HOURS}");
