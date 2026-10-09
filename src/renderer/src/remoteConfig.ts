@@ -1,7 +1,7 @@
 /**
  * §39 — the window's view of main's config client. Holds no key, makes no
  * request (the CSP stays `script-src 'self'`). Reads return CONFIG_DEFAULTS
- * until main's first push, so a window never shows "paused" by accident.
+ * until main's first push — the free web service reads "not available" until then (fails closed).
  */
 import { useEffect, useState } from "react";
 import { createElectronRenderer } from "inlet-sdk/config/electron-renderer";

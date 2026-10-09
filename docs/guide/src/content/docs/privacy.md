@@ -52,11 +52,11 @@ Open **What a crash report contains** for the full answer. A report holds:
 
 ### Remote settings
 
-"HappyVibe checks a small list of settings we can change without a release, for now only whether the free web service is available."
+"Lets HappyVibe adjust a few settings without a new release."
 
-**Receive remote settings** is on by default. "The check carries a random device ID so gradual changes reach the same devices. Turning statistics off doesn't stop it, but the ID is replaced with a new one that isn't linked to your statistics."
+**Receive remote settings** is on by default. Right now it decides one thing: whether HappyVibe's free web service is available. The check carries a random device ID. When we change a setting for some devices first, the same devices keep getting it. That ID isn't linked to your usage statistics while they're off.
 
-Turning it off stops the check straight away. What that costs is written under the switch: "Off, HappyVibe uses its built-in settings and we can't pause the free web service for you if it's overloaded."
+Turning it off stops the check straight away. What that costs is written under the switch: "Off, HappyVibe stops checking and uses its built-in settings, which keep features that rely on HappyVibe's online services turned off." Today that's the free web service; a web service of your own keeps working ([Built-in tools](/docs/built-in-tools/#choose-the-web-service)). The same goes for a brand-new install until its first check has answered.
 
 ### Model list
 

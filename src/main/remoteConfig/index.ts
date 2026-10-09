@@ -48,7 +48,7 @@ function stop(): void {
   client.uninstall();
   client.close();
   client = null;
-  setConfigReader(null); // CONFIG_DEFAULTS answer from here on (the web service stays allowed)
+  setConfigReader(null); // CONFIG_DEFAULTS answer from here on: the free web service is off (fails closed)
 }
 
 export async function installRemoteConfig(): Promise<void> {
