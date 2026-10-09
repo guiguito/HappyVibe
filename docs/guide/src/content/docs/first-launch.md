@@ -46,12 +46,12 @@ With both steps ticked, the window says "You're in." and "Your agent comes fully
 
 <!-- TODO(media): first-launch/onboarding-kit.png — The kit beat with its tiles, total and Start button -->
 
-Nothing happens on a timer. The window waits until you click **Start my first session**.
+Nothing here is final: you can change every choice later on those pages. Nothing happens on a timer either. The window waits until you click **Start my first session**.
 
-- **The tiles.** Each one is a group of abilities the agent has: Plan mode, Ask user, the agent's terminal, its browser, web tools, Memory, Schedules, Documents, Sub-agents, Workflows and Skills, plus Images when you have an OpenRouter key or sign-in, and **Core tools** and **Prompts**. Hover a tile to read what it does. Tick or untick the box to switch the group on or off.
-- **Core tools and Prompts** have no box of their own. Click the arrow beside them, and every tool or ready-made prompt opens to one tick each. Skills and Sub-agents open the same way, so you can drop single skills or agents. Prompts read "Ready-made prompts you start with /. They weigh nothing until you use one."
+- **The tiles.** Each one is a group of abilities the agent has: **Plan mode**, **Ask user**, **Agent terminal — 3 tools**, **Agent browser — 10 tools**, **Web tools — 4 tools**, **Memory — 3 tools**, **Schedules — 4 tools**, **Documents — 1 tool**, **Sub-agents — 4 tools**, **Workflows — 1 tool** and **Skills**, plus **Images — 1 tool** when you have an OpenRouter key or sign-in, and **Core tools** and **Prompts**. Hover a tile to read what it does. Tick or untick the box to switch the group on or off. **Ask user** stays ticked while **Plan mode** is ticked, because plan mode needs it. **Workflows** stays unticked while **Sub-agents** is unticked.
+- **Core tools and Prompts** have no box of their own. Click the ▸ and number beside them, and every tool or ready-made prompt opens to one tick each. **Skills** and **Sub-agents** open the same way, so you can drop single skills or agents. Prompts read "Ready-made prompts you start with /. They weigh nothing until you use one."
 - **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later.
-- **The total.** At the bottom, between the two buttons: "~13.2k tokens on every message", for whatever is ticked right now. It moves as you tick.
+- **The total.** At the bottom, between the two buttons: "~N tokens on every message", with N for whatever is ticked right now. It moves as you tick.
 - **Just the basics** unticks every group at once. Your ticks on **Core tools**, skills, agents and prompts stay as they were. The agent keeps the core tools and can still read, edit and run commands.
 - **The consent line.** "Anything that changes your files or runs a command asks you first."
 - **The footer.** "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each."
@@ -60,9 +60,9 @@ Nothing is saved until you start, apart from the small-model preset below.
 
 ### If your model has a small window
 
-Every model can read only so much at once, its context window ([what that is](/docs/first-session/#context-what-the-agent-can-see)). When the full set would take more than a quarter of your model's window, the window opens with **Just the basics** already applied, and says so: "Your model reads 8,192 tokens at a time and the full kit takes about 13.2k, so you're starting with just the basics." (The numbers are yours.) Click **Load everything anyway** to switch everything on. The line goes away once you do.
+Every model can read only so much at once, its context window ([what that is](/docs/first-session/#context-what-the-agent-can-see)). When the full set would take more than a quarter of your model's window, the window opens with **Just the basics** already applied, and says so: "Your model reads 8,192 tokens at a time and the full kit takes about 13.2k, so you're starting with just the basics." (The numbers here are examples; the window shows yours.) Click **Load everything anyway** to put every group back on, except **Workflows**, which starts off on a fresh install. The line goes away once you do.
 
-If the window is 16,384 tokens or smaller, the model has almost no room left for real work, and the line turns red: "Even the basics fill about 40% of it — too little room for real work." (or "Even the basics don't fit in it — too little room for real work." when they take it all). Click **Give your model more room ↗** to open [Give your model more room](/docs/connect-a-model/#give-your-model-more-room), which shows how.
+If the window is very small, no bigger than the room HappyVibe's agent keeps free for its own summarising, the agent starts condensing your conversation almost at once, so there's no room for real work. Then a red line appears: "Even the basics fill about 40% of it — too little room for real work." (The percentage is yours.) Or, when they take all of it: "Even the basics don't fit in it — too little room for real work."" Click **Give your model more room ↗** to open [Give your model more room](/docs/connect-a-model/#give-your-model-more-room), which shows how.
 
 ### Start
 

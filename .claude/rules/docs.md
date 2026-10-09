@@ -47,7 +47,8 @@ paths:
   |---|---|---|
   | `install/install-smartscreen.png` | `install` | Windows SmartScreen after clicking More info, with Run anyway visible |
   | `first-launch/onboarding-setup.png` | `first-launch` | The Setup step: step 1 "Connect a model" with its three choices, step 2 "Pick a project" |
-  | `models/models-populated.png` | `connect-a-model`, `models` | Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills |
+  | `first-launch/onboarding-kit.png` | `first-launch` | The kit beat with its tiles, total and Start button |
+| `models/models-populated.png` | `connect-a-model`, `models` | Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills |
   | `first-session/session-running.png` | `first-session` | A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button |
   | `approve-a-tool-call/permission-modal.png` | `approve-a-tool-call`, `permissions` | "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny |
   | `approve-a-tool-call/permission-approve.{webm,mp4,jpg}` | `approve-a-tool-call` | Ask to create hello.txt, the dialog appears, click Allow, and the card turns done with its approval mark |

@@ -77,6 +77,8 @@ To stop the agent, click the stop button beside the message box. Its tooltip rea
 
 In that same session, when the first turn ends, a note points at a small pill at the top of the session: "Everything the model knows is in the context gauge at the top — open it to see, and prune, what it holds." It answers a good question: what does the model actually know right now?
 
+One turn later, at the end of your second turn, a third note appears: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks." Its **Plugins** link opens [Plugins](/docs/plugins/). Like the gauge note, it shows once, in your first session only.
+
 - **Context** is everything the model can see right now: the instructions HappyVibe gives it, your messages, its replies, and what its tools returned. It knows nothing else about your session.
 - The **context window** is how much fits. Each model has its own size.
 - A **token** is the unit both are measured in, roughly four characters of text.
@@ -89,8 +91,6 @@ Running short on room? There are two ways to make some:
 2. **Compact.** Click **Compact now…**. The app explains: "Compaction replaces older turns with a summary so the agent has room to keep going. It keeps recent messages and important decisions, and your full session history stays on disk — nothing is lost." Click **Compact now** to go ahead.
 
 If you turned **Compact automatically** off on [Models](/docs/models/), a full context fails your next message instead of being summarized. The error card says "The conversation is longer than this model's context window." and "Automatic compaction is off. Compact now, or fork from an earlier message (hover it, then Fork)." Click **Compact now…** on the card, or [fork](/docs/session-view/#fork-from-a-message) from one of your earlier messages, then send your message again.
-
-One turn later, a third note appears at the end of your second turn: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks." Its **Plugins** link opens [Plugins](/docs/plugins/). Like the gauge note, it shows once, in your first session only.
 
 Beside the gauge, a second pill shows what this session has cost so far. Click it for the call-by-call breakdown ([Session view](/docs/session-view/#the-top-bar) explains its marks).
 
