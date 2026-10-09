@@ -73,8 +73,11 @@ Projects via **Start fresh…** (`~/Documents/HappyVibe/hv-kit-gui-*`, removed a
   too-small line, `defaultModel` still null. Every door, and a local runner found at boot, announces
   the provider before main sets the default, so the window read saw no default and settled as
   "unknown ⇒ full". Fixed: the read goes through `hv:ensure-default-model`, which fills a null default
-  first (free once set, always resolves); source-pinned in `tests/onboarding.test.ts`.
-- **GUI-3 — the footer total was clipped by the scrollbar.** Right padding on the kit's scroll content.
+  first (free once set, always resolves); source-pinned in `tests/onboarding.test.ts`. Re-checked on
+  the rebuilt app, same repro: opens on basics in ~1 s, "Your model reads 4,096 tokens … about 13.2k"
+  (no OpenRouter key, so no Images tile — the L-profile absence check), too-small line at 39%, preset
+  saved (MCP and intent on, coreOff []). Ticking one family hides the small-model line; unticking brings it back.
+- **GUI-3 — the footer total was clipped by the scrollbar.** Right padding on the kit's scroll content. Re-checked: not clipped.
 - Layout: Workflows nested inside the Sub-agents tile; footer buttons no longer wrap; expanded items
   show their weight when above 0.
 
