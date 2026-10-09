@@ -773,7 +773,7 @@ export function ModelsView({
                 aria-checked={autoCompact}
                 onClick={() => (autoCompact ? setConfirmCompactOff(true) : applyAutoCompact(true))}
                 className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
-                  autoCompact ? "bg-tangerine text-paper border-tangerine-deep" : "bg-card text-ink border-line hover:border-honey"
+                  autoCompact ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
                 }`}
               >
                 {autoCompact ? "On" : "Off"}
