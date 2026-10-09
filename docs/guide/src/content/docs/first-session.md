@@ -90,6 +90,8 @@ Running short on room? There are two ways to make some:
 
 If you turned **Compact automatically** off on [Models](/docs/models/), a full context fails your next message instead of being summarized. The error card says "The conversation is longer than this model's context window." and "Automatic compaction is off. Compact now, or fork from an earlier message (hover it, then Fork)." Click **Compact now…** on the card, or [fork](/docs/session-view/#fork-from-a-message) from one of your earlier messages, then send your message again.
 
+One turn later, a third note appears at the end of your second turn: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks." Its **Plugins** link opens [Plugins](/docs/plugins/). Like the gauge note, it shows once, in your first session only.
+
 Beside the gauge, a second pill shows what this session has cost so far. Click it for the call-by-call breakdown ([Session view](/docs/session-view/#the-top-bar) explains its marks).
 
 :::note[The fine print]

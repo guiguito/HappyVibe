@@ -46,6 +46,25 @@ The **Free, on this computer** choice only appears when HappyVibe finds one of t
 
 On the Models page, an app it finds shows as "running". If Ollama isn't found, the page says "Install from ollama.com and pull a model — HappyVibe picks it up automatically." Click **Check again** once it's running.
 
+## Give your model more room
+
+A model reads only so much at once: its context window. The agent's instructions and tools take a share of it before you type a word, and the full set takes about 13k tokens. A window of 4,096 or 8,192 tokens can't hold that, so there's nothing left for your messages. HappyVibe's setup window warns you when your model's window is that small, and its **Give your model more room ↗** link brings you here.
+
+Models on your own computer often start with a small window. Raise it, and the agent has space to work. A bigger window uses more memory, so check your computer can carry it.
+
+**Ollama**
+
+1. Open Ollama's settings and move the context length slider to a larger value. Ollama's own guidance for agents and coding tools is at least 64,000 tokens.
+2. If your Ollama has no such slider, set the `OLLAMA_CONTEXT_LENGTH` environment variable when you start the server, for example `OLLAMA_CONTEXT_LENGTH=64000 ollama serve`.
+3. Run `ollama ps`. Its `CONTEXT` column shows the size the model is running with.
+
+**LM Studio**
+
+1. Eject the model, then load it again with a bigger context length in its load settings. In the **My Models** tab, the gear beside a model saves its load settings for next time.
+2. Or load it from a terminal: `lms load <model> --context-length 32768`.
+
+HappyVibe asks the app for the window each time a session starts, preferring the size of the model that's loaded. Once your model is running with the new size, start a new session to use it. If Ollama hasn't loaded the model yet, HappyVibe can only assume Ollama's smallest default, so send a message first, or run it once.
+
 ## Paste an API key
 
 An API key is a private code from a provider's website. It lets HappyVibe use your account there, and the provider bills that account for what the agent uses. Treat it like a password.

@@ -3,7 +3,7 @@ title: First launch
 description: What HappyVibe shows the first time you open it, and the two setup steps that get you to your first session.
 ---
 
-The first time you open HappyVibe, it greets you with one small window in three beats: a hello, two setup steps, and a handover to your first session. This is step 2 of 5, and you can leave it whenever you like.
+The first time you open HappyVibe, it greets you with one small window in three beats: a hello, two setup steps, and a last look at everything your agent comes with. This is step 2 of 5, and you can leave it whenever you like.
 
 ## When you see it
 
@@ -40,19 +40,43 @@ The folder you pick becomes your first workspace. A workspace is how a project s
 
 On a Windows computer without Git for Windows, one more line appears under the steps: "Install Git for Windows for the best experience — HappyVibe will use its shell automatically, and sub-agents need it." In plain words: HappyVibe works best with Git for Windows, and subagents (helper agents the main agent hands work to) need it. Without it, the agent runs its commands in PowerShell instead.
 
-## Watch the handover
+## Check what your agent comes with
 
-With both steps ticked, the window says "You're in." and "Opening your first session…". A moment later it closes and opens a session in your new workspace, with a few suggested first prompts waiting above the message box.
+With both steps ticked, the window says "You're in." and "Your agent comes fully loaded." Under it: "Untick anything you don't want. You can change all of it later on Built-in tools, Skills, Agents and Prompts."
+
+<!-- TODO(media): first-launch/onboarding-kit.png — The kit beat with its tiles, total and Start button -->
+
+Nothing happens on a timer. The window waits until you click **Start my first session**.
+
+- **The tiles.** Each one is a group of abilities the agent has: Plan mode, Ask user, the agent's terminal, its browser, web tools, Memory, Schedules, Documents, Sub-agents, Workflows and Skills, plus Images when you have an OpenRouter key or sign-in, and **Core tools** and **Prompts**. Hover a tile to read what it does. Tick or untick the box to switch the group on or off.
+- **Core tools and Prompts** have no box of their own. Click the arrow beside them, and every tool or ready-made prompt opens to one tick each. Skills and Sub-agents open the same way, so you can drop single skills or agents. Prompts read "Ready-made prompts you start with /. They weigh nothing until you use one."
+- **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later.
+- **The total.** At the bottom, between the two buttons: "~13.2k tokens on every message", for whatever is ticked right now. It moves as you tick.
+- **Just the basics** unticks every group at once. Your ticks on **Core tools**, skills, agents and prompts stay as they were. The agent keeps the core tools and can still read, edit and run commands.
+- **The consent line.** "Anything that changes your files or runs a command asks you first."
+- **The footer.** "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each."
+
+Nothing is saved until you start, apart from the small-model preset below.
+
+### If your model has a small window
+
+Every model can read only so much at once, its context window ([what that is](/docs/first-session/#context-what-the-agent-can-see)). When the full set would take more than a quarter of your model's window, the window opens with **Just the basics** already applied, and says so: "Your model reads 8,192 tokens at a time and the full kit takes about 13.2k, so you're starting with just the basics." (The numbers are yours.) Click **Load everything anyway** to switch everything on. The line goes away once you do.
+
+If the window is 16,384 tokens or smaller, the model has almost no room left for real work, and the line turns red: "Even the basics fill about 40% of it — too little room for real work." (or "Even the basics don't fit in it — too little room for real work." when they take it all). Click **Give your model more room ↗** to open [Give your model more room](/docs/connect-a-model/#give-your-model-more-room), which shows how.
+
+### Start
+
+Click **Start my first session**. The window saves your choices, closes, and opens a session in your new workspace, with a few suggested first prompts waiting above the message box. Press **Esc** and you start the same way, with whatever is ticked.
 
 If you quit after the first step, the next launch opens with it already ticked.
 
 ## Setting up yourself instead
 
-The ✕ in the top-right corner is the way out. Its tooltip reads "I'll set up myself".
+The ✕ in the top-right corner is the way out while you're on the two setup steps. Its tooltip reads "I'll set up myself". It's gone from the last window, which has no ✕: you leave it by starting your session.
 
-On the keyboard, **Esc** closes the window. While the animation plays, the first **Esc** skips it and a second one closes the window. Clicking outside the window does nothing, so a stray click can't close it.
+On the keyboard, **Esc** closes the window during the setup steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On the last window, **Esc** means **Start my first session**. Clicking outside the window does nothing, so a stray click can't close it.
 
-Once closed, the setup window doesn't come back, and you don't need it to. Everything it offers lives elsewhere in the app:
+Once closed, the window doesn't come back, and you don't need it to. Everything it offers lives elsewhere in the app:
 
 - Models: the [Models](/docs/models/) page. Until a model is connected, HappyVibe opens that page for you.
 - Projects: **+ add** next to **workspaces** in the sidebar.
