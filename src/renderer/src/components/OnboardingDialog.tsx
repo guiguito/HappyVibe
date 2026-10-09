@@ -123,8 +123,11 @@ export function OnboardingDialog({
   onDone: (d: KitDraft) => Promise<void>;
   /** Docs in the app: the setup guide, in the system browser. */
   onOpenGuide: () => void;
-  /** The default model's context window, re-read after step 1. NOT `window` — that would shadow the global. */
-  contextWindow: number | null;
+  /**
+   * The default model's context window, re-read after step 1. NOT `window` — that would shadow the global.
+   * undefined = the re-read hasn't settled yet (the preset waits for it); null = unknown, which means full.
+   */
+  contextWindow: number | null | undefined;
   /** null while loading. */
   kitItems: KitItems | null;
   /** builtinsGet() after any preset write. */
@@ -186,14 +189,19 @@ export function OnboardingDialog({
   const [draft, setDraft] = useState<KitDraft | null>(null);
   const starting = useRef(false);
   const reported = useRef(false);
+  // "Load everything anyway" makes the small-model line false — it hides with its link.
+  const [loadedAll, setLoadedAll] = useState(false);
   const kitOpen = complete && !welcome;
+  const ctx = contextWindow ?? null;
 
   useEffect(() => {
-    if (!kitOpen || reported.current) return;
+    // Waits for the window re-read: step 1 may have JUST connected the model, and a
+    // not-yet-read window would open the full kit on a small model.
+    if (!kitOpen || reported.current || contextWindow === undefined) return;
     reported.current = true;
     onKitOpen(kitPreset(contextWindow, fullTotal(imagesAvailable)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the beat opens
-  }, [kitOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the beat opens and the window is known
+  }, [kitOpen, contextWindow]);
 
   useEffect(() => {
     if (kitSwitches && draft === null) setDraft({ switches: kitSwitches, skillsOff: [], agentsOff: [], promptsOff: [] });
@@ -207,13 +215,13 @@ export function OnboardingDialog({
       durationSec: Math.round((Date.now() - mountedAt.current) / 1000),
       skippedAnimation: skippedAnimation.current,
       kit: kitShape(draft),
-      smallModel: kitPreset(contextWindow, fullTotal(imagesAvailable)) === "basics",
+      smallModel: kitPreset(ctx, fullTotal(imagesAvailable)) === "basics",
     });
     void onDone(draft);
   };
 
   const full = fullTotal(imagesAvailable);
-  const smallModel = kitPreset(contextWindow, full) === "basics";
+  const smallModel = kitPreset(ctx, full) === "basics";
   const later = [GOTO_LABELS.builtinTools, GOTO_LABELS.skills, GOTO_LABELS.agents];
 
   const createFresh = async (): Promise<void> => {
@@ -399,23 +407,26 @@ export function OnboardingDialog({
                       <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
                       <p className="hv-done-body font-bold mt-1">{C.kitHeadline}</p>
                       <p className="text-sm text-ink-soft mt-1 leading-snug">
-                        {C.kitSubline} {C.kitLaterLead} {later.join(", ")} and {GOTO_LABELS.promptTemplates}.
+                        {C.kitSubline} {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.promptTemplates}.
                       </p>
-                      {draft && smallModel && contextWindow && (
+                      {draft && smallModel && ctx && !loadedAll && (
                         <div className="mt-2 text-xs text-ink-soft leading-snug">
-                          <p>{smallModelLine(contextWindow, full)}</p>
+                          <p>{smallModelLine(ctx, full)}</p>
                           <button
                             type="button"
-                            onClick={() => setDraft({ ...draft, switches: { ...DEFAULT_SWITCHES, coreOff: draft.switches.coreOff } })}
+                            onClick={() => {
+                              setLoadedAll(true);
+                              setDraft({ ...draft, switches: { ...DEFAULT_SWITCHES, coreOff: draft.switches.coreOff } });
+                            }}
                             className="mt-1 font-bold underline underline-offset-2 hover:text-ink cursor-pointer"
                           >
                             {C.kitLoadAll}
                           </button>
                         </div>
                       )}
-                      {kitItems && contextWindow !== null && tooSmall(contextWindow) && (
+                      {kitItems && ctx !== null && tooSmall(ctx) && (
                         <p className="mt-2 text-xs text-berry font-bold leading-snug">
-                          {tooSmallLine(basicsTotal(kitItems), contextWindow)}{" "}
+                          {tooSmallLine(basicsTotal(kitItems), ctx)}{" "}
                           <button type="button" onClick={onOpenRoomGuide} className="underline underline-offset-2 cursor-pointer">
                             {C.kitMoreRoom}
                           </button>
@@ -425,7 +436,7 @@ export function OnboardingDialog({
                         {draft && kitItems ? (
                           <OnboardingKit draft={draft} setDraft={setDraft} items={kitItems} />
                         ) : (
-                          <p className="text-sm text-ink-soft">Loading…</p>
+                          <p className="text-sm text-ink-soft">{C.kitLoading}</p>
                         )}
                       </div>
                       <p className="text-xs text-ink-soft mt-3 leading-snug">🔒 {C.kitConsent}</p>

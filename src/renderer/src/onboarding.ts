@@ -67,6 +67,8 @@ export const ONBOARDING_COPY = {
   kitSubline: "Untick anything you don't want.",
   // + the page names, rendered from GOTO_LABELS (builtinTools, skills, agents, promptTemplates), never typed here.
   kitLaterLead: "You can change all of it later on",
+  kitLaterAnd: " and ",
+  kitLoading: "Loading…",
   kitConsent: "Anything that changes your files or runs a command asks you first.",
   kitFooter: "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each.",
   kitStart: "Start my first session",

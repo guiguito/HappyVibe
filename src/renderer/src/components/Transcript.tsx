@@ -14,6 +14,8 @@ import { thinkingLabel } from "../thinkingLabel";
 import { busyStatus, type Activity, type ToolDraft } from "../busyStatus";
 import { toolLabel } from "../toolLabel";
 import { FORK_MARKER_PREFIX, forkMarkerCopy } from "../fork";
+import { GoTo } from "./GoTo";
+import type { View } from "./Sidebar";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -132,7 +134,7 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   // `title` is hover-only detail that must NOT widen the pill — round 16: the
   // provider's error message lives here, not in `text`.
-  | { kind: "notice"; text: string; pending?: boolean; title?: string }
+  | { kind: "notice"; text: string; pending?: boolean; title?: string; goTo?: View }
   // §7 round 16: the agent's own reasoning. Collapsed by default and
   // re-collapsed on every send — the flow still reads as high-level working
   // state, and the reasoning is one click away for the turn you care about.
@@ -394,14 +396,21 @@ const MessageItem = memo(function MessageItem({
         title={it.title}
         // Round 16: max-w + truncate is the STRUCTURAL guard — the text is
         // already short, and this is what stops a future notice re-exploding it.
-        className="flex items-center gap-2.5 self-center max-w-md rounded-full border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker"
+        // A linked notice (§22's third) is a sentence plus a page: it wraps instead of truncating.
+        className={`flex items-center gap-2.5 self-center max-w-md ${it.goTo ? "rounded-2xl" : "rounded-full"} border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker`}
       >
         {it.pending ? (
           <span className="size-2 rounded-full bg-honey animate-pulse shrink-0" />
         ) : (
           <span className="size-2 rounded-full bg-leaf shrink-0" />
         )}
-        <span className="truncate">{it.text}</span>
+        {it.goTo ? (
+          <span>
+            {it.text} <GoTo view={it.goTo} />
+          </span>
+        ) : (
+          <span className="truncate">{it.text}</span>
+        )}
       </div>
     );
   }

@@ -598,6 +598,15 @@ describe("the handover beat is actually visible", () => {
 
   it("the kit preset is reported once, when the beat opens", () => {
     expect(has(flat(DIALOG), "onKitOpen(kitPreset(contextWindow,"), "preset at open").toBe(true);
+    // undefined = the window re-read after step 1 hasn't settled; a stale null would open the full kit.
+    expect(has(flat(DIALOG), "contextWindow === undefined) return;"), "waits for the window").toBe(true);
+    expect(has(flat(APP), "contextWindow={kitInputsReady ? fallbackWindow : undefined}"), "App hands undefined while reading").toBe(true);
+  });
+
+  it("Load everything anyway hides the small-model line, which would no longer be true", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "setLoadedAll(true);"), "the link sets the flag").toBe(true);
+    expect(has(src, "smallModel && ctx && !loadedAll"), "the line reads it").toBe(true);
   });
 
   it("is settled instantly under reduced motion, like every other beat", () => {
