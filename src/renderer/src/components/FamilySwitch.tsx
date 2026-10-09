@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { TogglePill } from "./PromptRow";
-import { FAMILY_SWITCHES, RESPAWN_NOTE, type Family } from "../toolSwitches";
+import { BUNDLED_NOTE, FAMILY_SWITCHES, RESPAWN_NOTE, weightLabel, type Family } from "../toolSwitches";
+import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
 
 /** §13 round 26: one family switch as a row — Built-in tools renders it among its rows. */
 export function FamilySwitchRow({
@@ -18,6 +19,7 @@ export function FamilySwitchRow({
       <div className="flex-1 min-w-0">
         <span className="font-bold block">{copy.label}</span>
         <span className="text-xs text-ink-soft">{on ? copy.on : copy.off}</span>
+        {family === "mcp" ? null : <span className="text-xs text-ink-soft/80 block mt-0.5">{weightLabel(TOOL_WEIGHTS.families[family])} {BUNDLED_NOTE}</span>}
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
       <TogglePill on={on} onClick={() => onChange(!on)} />

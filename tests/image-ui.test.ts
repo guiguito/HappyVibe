@@ -25,5 +25,5 @@ test("the picker lists only the models main sends, with their measured price —
   for (const absent of ["flux", "recraft", "seedream", "gpt-image", "openrouter/auto", "per million tokens"]) expect(src.toLowerCase()).not.toContain(absent);
   expect(src).toContain("settings.models.map(");
   expect(src).toContain("fmtPerImage(m.perImage)");
-  expect(src).toContain("Images — 1 tool");
+  expect(src).toContain("FAMILY_COPY.images.label");
 });

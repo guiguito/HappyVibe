@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { FAMILY_COPY } from "../src/renderer/src/toolSwitches";
 import {
   DOCUMENT_TOOL, DOCUMENT_EXTENSIONS, DOCUMENT_FAMILIES, DOCUMENT_FAMILY_LIST, DOCUMENT_TOOL_DESCRIPTIONS,
   isDocumentPath, documentExtension, documentFamily, documentErrorSentence, documentReadRefusal, documentFactsLine,
@@ -144,14 +145,16 @@ describe("§31 the Documents settings row", () => {
     .join("\n");
 
   it("is called Documents, not Agent documents (decision J)", () => {
-    expect(src).toContain("Documents — 1 tool");
+    expect(src).toContain("FAMILY_COPY.document.label");
+    expect(FAMILY_COPY.document.label).toBe("Documents — 1 tool");
     // The `Agent …` prefix exists only to dodge a nav collision, and there is
     // no Documents page to collide with.
     expect(src).not.toContain("Agent documents");
   });
 
   it("derives its family list and carries the shared respawn note", () => {
-    expect(src).toContain("DOCUMENT_FAMILY_LIST");
+    expect(src).toContain("FAMILY_COPY.document.what");
+    expect(FAMILY_COPY.document.what).toContain(DOCUMENT_FAMILY_LIST);
     expect(src).toMatch(/DocumentsRow[\s\S]{0,1600}RESPAWN_NOTE/);
   });
 
@@ -160,7 +163,7 @@ describe("§31 the Documents settings row", () => {
   });
 
   it("says the conversion is local — the claim §31 makes to the user", () => {
-    expect(src).toMatch(/converted on this machine/);
-    expect(src).toMatch(/nothing is sent/);
+    expect(FAMILY_COPY.document.what).toMatch(/converted on this machine/);
+    expect(FAMILY_COPY.document.what).toMatch(/nothing is sent/);
   });
 });
