@@ -1,3 +1,6 @@
+import { TOOL_WEIGHTS } from "../../main/toolWeights.generated";
+import { fmtNum } from "./analytics-format";
+import { KIT_FAMILIES, type KitFamily } from "./toolSwitches";
 import { THIS_COMPUTER, YOUR_COMPUTER } from "./platformCopy";
 /**
  * §22 onboarding round (2026-09-01). Every first-run string in one place, plus
@@ -59,7 +62,20 @@ export const ONBOARDING_COPY = {
   // Docs in the app (2026-09-29): opens first-launch in the SYSTEM browser — setup is a modal.
   guideLink: "Read the setup guide ↗",
   doneTitle: "You're in.",
-  doneBody: "Opening your first session…",
+
+  kitHeadline: "Your agent comes fully loaded.",
+  kitSubline: "Untick anything you don't want.",
+  // + the page names, rendered from GOTO_LABELS (builtinTools, skills, agents, promptTemplates), never typed here.
+  kitLaterLead: "You can change all of it later on",
+  kitConsent: "Anything that changes your files or runs a command asks you first.",
+  kitFooter: "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each.",
+  kitStart: "Start my first session",
+  kitBasics: "Just the basics",
+  kitLoadAll: "Load everything anyway",
+  kitTotalTail: "tokens on every message",
+  kitPrompts: "Ready-made prompts you start with /. They weigh nothing until you use one.",
+  kitMoreRoom: "Give your model more room ↗",
+  noticeExtend: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks.",
 
   noticeTools: "Each card is a tool the agent ran — expand one to see exactly what it did.",
   noticeContext:
@@ -155,4 +171,98 @@ export function rankProviders<T extends { id: string; label: string; featured: b
   return rows
     .filter((r) => !q || `${r.label} ${r.id}`.toLowerCase().includes(q))
     .sort((a, b) => (a.featured !== b.featured ? (a.featured ? -1 : 1) : a.label.localeCompare(b.label)));
+}
+
+export const KIT_SERVICES = ["GitHub", "Linear", "Notion"] as const;
+
+export type KitSwitches = Record<KitFamily, boolean> & { coreOff: string[] };
+export interface KitItem { id: string; name: string; tokens: number }
+export interface KitItems { skills: KitItem[]; agents: KitItem[]; prompts: KitItem[]; imagesAvailable: boolean; core: string[] }
+export interface KitDraft { switches: KitSwitches; skillsOff: string[]; agentsOff: string[]; promptsOff: string[] }
+export interface KitTile { key: KitFamily | "core" | "prompts"; familyTick: boolean; items: "core" | "skills" | "agents" | "prompts" | null; nestedUnder: "subagents" | null }
+/** Structural, not `typeof TOOL_WEIGHTS` (whose `as const` literals would reject any other figures). */
+type Weights = { total: number; compactionReserve: number; families: Record<string, number>; core: Record<string, number> };
+
+/** A fresh install's switches (hv-builtins.ts parseBuiltins + images on): everything on but Workflows. */
+export const DEFAULT_SWITCHES: KitSwitches = { plan: true, askUser: true, terminal: true, browser: true, web: true, memory: true, schedules: true, document: true, images: true, subagents: true, workflows: false, skills: true, coreOff: [] };
+
+/** Just the basics: every kit family off. MCP, intent, core tools and items are never touched. */
+export function basicsPatch(): Record<KitFamily, false> {
+  return Object.fromEntries(KIT_FAMILIES.map((k) => [k, false])) as Record<KitFamily, false>;
+}
+
+/** Plan mode's prompt requires ask_user (Built-in tools locks it on the same way). */
+export function setFamily(d: KitDraft, k: KitFamily, on: boolean): KitDraft {
+  if (k === "askUser" && !on && d.switches.plan) return d;
+  const s = { ...d.switches, [k]: on };
+  if (k === "plan" && on) s.askUser = true;
+  return { ...d, switches: s };
+}
+
+const SHELL: Record<string, string> = { powershell: "bash" };
+
+/** Tokens on every message for this draft — the measured total, minus what is off, plus what is on that ships off. */
+export function kitTotal(d: KitDraft, items: KitItems, w: Weights = TOOL_WEIGHTS): number {
+  const s = d.switches;
+  const f = w.families;
+  let t = w.total;
+  for (const k of KIT_FAMILIES) {
+    if (k === "workflows" || k === "images") continue;
+    if (!s[k]) t -= f[k];
+  }
+  if (s.subagents && s.workflows) t += f.workflows;
+  if (items.imagesAvailable && s.images) t += f.images;
+  // normalizeCoreOff stores BOTH shell names when either is off — count the shell once.
+  for (const name of new Set(s.coreOff.map((n) => SHELL[n] ?? n))) t -= w.core[name] ?? 0;
+  if (s.skills) t -= items.skills.filter((i) => d.skillsOff.includes(i.id)).reduce((n, i) => n + i.tokens, 0);
+  if (s.subagents) t -= items.agents.filter((i) => d.agentsOff.includes(i.id)).reduce((n, i) => n + i.tokens, 0);
+  return t;
+}
+
+export function fullTotal(imagesAvailable: boolean, w: Weights = TOOL_WEIGHTS): number {
+  return w.total + (imagesAvailable ? w.families.images : 0);
+}
+
+export function basicsTotal(items: KitItems, w: Weights = TOOL_WEIGHTS): number {
+  return kitTotal({ switches: { ...DEFAULT_SWITCHES, ...basicsPatch(), coreOff: [] }, skillsOff: [], agentsOff: [], promptsOff: [] }, items, w);
+}
+
+/** More than a quarter of the window ⇒ basics. Unknown (null/0) counts as large, like Pi's own fallback. */
+export function kitPreset(ctx: number | null, full: number): "full" | "basics" {
+  return ctx && ctx > 0 && full > ctx / 4 ? "basics" : "full";
+}
+
+/** At or under Pi's compaction reserve, the window is past Pi's summarise line from the first message. */
+export function tooSmall(ctx: number | null, reserve: number = TOOL_WEIGHTS.compactionReserve): boolean {
+  return !!ctx && ctx > 0 && ctx <= reserve;
+}
+
+export function smallModelLine(ctx: number, full: number): string {
+  return `Your model reads ${ctx.toLocaleString("en-US")} tokens at a time and the full kit takes about ${fmtNum(full)}, so you're starting with just the basics.`;
+}
+
+export function tooSmallLine(basics: number, ctx: number): string {
+  const pct = Math.round((100 * basics) / ctx);
+  return pct >= 100
+    ? "Even the basics don't fit in it — too little room for real work."
+    : `Even the basics fill about ${pct}% of it — too little room for real work.`;
+}
+
+export function kitShape(d: KitDraft): "full" | "basics" | "custom" {
+  const s = d.switches;
+  const itemsTouched = d.skillsOff.length + d.agentsOff.length + d.promptsOff.length + s.coreOff.length > 0;
+  if (itemsTouched) return "custom";
+  if (KIT_FAMILIES.every((k) => s[k] === DEFAULT_SWITCHES[k])) return "full";
+  if (KIT_FAMILIES.every((k) => !s[k])) return "basics";
+  return "custom";
+}
+
+export function kitTiles(imagesAvailable: boolean): KitTile[] {
+  const tiles: KitTile[] = KIT_FAMILIES.filter((k) => k !== "images" || imagesAvailable).map((k) => ({
+    key: k,
+    familyTick: true,
+    items: k === "subagents" ? "agents" : k === "skills" ? "skills" : null,
+    nestedUnder: k === "workflows" ? "subagents" : null,
+  }));
+  return [...tiles, { key: "core", familyTick: false, items: "core", nestedUnder: null }, { key: "prompts", familyTick: false, items: "prompts", nestedUnder: null }];
 }
