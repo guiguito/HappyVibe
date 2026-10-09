@@ -8,7 +8,7 @@ export function onboardingStep(s: { welcome: boolean; modelReady: boolean; works
   if (s.welcome) return "welcome";
   if (!s.modelReady) return "setup_model";
   if (!s.workspaceReady) return "setup_workspace";
-  return "handover"; // an Esc during the 2.2 s celebration
+  return "handover"; // unreachable since the kit (Esc = Start, no ✕); kept so old events still validate
 }
 
 export function promptFlags(p: {

@@ -2,14 +2,33 @@ import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors, type KeyNote } from "./OnboardingDoors";
-import { ONBOARDING_COPY as C } from "../onboarding";
+import { OnboardingKit } from "./OnboardingKit";
+import { GOTO_LABELS } from "./GoTo";
+import {
+  ONBOARDING_COPY as C,
+  DEFAULT_SWITCHES,
+  basicsPatch,
+  basicsTotal,
+  fullTotal,
+  kitPreset,
+  kitShape,
+  kitTotal,
+  smallModelLine,
+  tooSmall,
+  tooSmallLine,
+  type KitDraft,
+  type KitItems,
+  type KitSwitches,
+} from "../onboarding";
+import { fmtNum } from "../analytics-format";
 import { ipcMessage } from "../ipcError";
 import { trackUi } from "../usage";
 import { onboardingStep } from "../usageUi";
 
 /**
  * §22 onboarding round (2026-09-01). One landscape dialog, three beats:
- * Welcome → Setup → Handover.
+ * Welcome → Setup → Kit. The kit (§22, 2026-10-09) waits for Start — no timer
+ * hands over, and Esc there means Start, never dismiss.
  *
  * It owns NO step state. `modelReady` and `workspaceReady` are the app's real
  * gates handed down (`hv:has-any-provider`, `workspaces.length`), which is
@@ -83,6 +102,12 @@ export function OnboardingDialog({
   onSkip,
   onDone,
   onOpenGuide,
+  contextWindow,
+  kitItems,
+  kitSwitches,
+  onKitOpen,
+  imagesAvailable,
+  onOpenRoomGuide,
 }: {
   modelReady: boolean;
   workspaceReady: boolean;
@@ -94,9 +119,22 @@ export function OnboardingDialog({
   onStartFresh: (name: string) => Promise<string | null>;
   onGoModels: () => void;
   onSkip: () => void;
-  onDone: () => void;
+  /** App writes the draft, then hands over. */
+  onDone: (d: KitDraft) => Promise<void>;
   /** Docs in the app: the setup guide, in the system browser. */
   onOpenGuide: () => void;
+  /** The default model's context window, re-read after step 1. NOT `window` — that would shadow the global. */
+  contextWindow: number | null;
+  /** null while loading. */
+  kitItems: KitItems | null;
+  /** builtinsGet() after any preset write. */
+  kitSwitches: KitSwitches | null;
+  /** App writes the preset (basics) and loads the lists. */
+  onKitOpen: (preset: "full" | "basics") => void;
+  /** Decides the Images tile and the preset before the lists load. */
+  imagesAvailable: boolean;
+  /** The too-small line's link, in the system browser. */
+  onOpenRoomGuide: () => void;
 }): React.JSX.Element {
   // Beat 1 is a timer, not a gate. Any click or key lands it early; a
   // reduced-motion user sees the settled frame from the first paint anyway
@@ -144,25 +182,39 @@ export function OnboardingDialog({
   const step1Done = modelReady && !keyNote?.rejected;
   const complete = step1Done && workspaceReady;
 
+  // The kit: the draft lives HERE (Esc must Start with it); OnboardingKit only renders it.
+  const [draft, setDraft] = useState<KitDraft | null>(null);
+  const starting = useRef(false);
+  const reported = useRef(false);
+  const kitOpen = complete && !welcome;
+
   useEffect(() => {
-    if (!complete || welcome) return;
-    // The success path hands over: it does the next thing itself rather than
-    // congratulating the user and leaving them on an empty screen.
-    // The pops finish at ~920ms. Handing over at 1600 cut the moment short;
-    // this leaves a beat to actually read it.
-    // §39: registered first, so it fires just before the handover's own timer.
-    const report = setTimeout(() => {
-      trackUi("onboarding_completed", {
-        durationSec: Math.round((Date.now() - mountedAt.current) / 1000),
-        skippedAnimation: skippedAnimation.current,
-      });
-    }, 2200);
-    const t = setTimeout(onDone, 2200);
-    return () => {
-      clearTimeout(report);
-      clearTimeout(t);
-    };
-  }, [complete, welcome, onDone]);
+    if (!kitOpen || reported.current) return;
+    reported.current = true;
+    onKitOpen(kitPreset(contextWindow, fullTotal(imagesAvailable)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the beat opens
+  }, [kitOpen]);
+
+  useEffect(() => {
+    if (kitSwitches && draft === null) setDraft({ switches: kitSwitches, skillsOff: [], agentsOff: [], promptsOff: [] });
+  }, [kitSwitches, draft]);
+
+  const start = (): void => {
+    if (!draft || starting.current) return;
+    starting.current = true;
+    setBusy(true);
+    trackUi("onboarding_completed", {
+      durationSec: Math.round((Date.now() - mountedAt.current) / 1000),
+      skippedAnimation: skippedAnimation.current,
+      kit: kitShape(draft),
+      smallModel: kitPreset(contextWindow, fullTotal(imagesAvailable)) === "basics",
+    });
+    void onDone(draft);
+  };
+
+  const full = fullTotal(imagesAvailable);
+  const smallModel = kitPreset(contextWindow, full) === "basics";
+  const later = [GOTO_LABELS.builtinTools, GOTO_LABELS.skills, GOTO_LABELS.agents];
 
   const createFresh = async (): Promise<void> => {
     if (!fresh || busy) return;
@@ -203,6 +255,8 @@ export function OnboardingDialog({
             // "last in the Escape chain" care, one dialog over.
             e.preventDefault();
             if (welcome) { setWelcome(false); return; }
+            // The kit has no ✕: Esc there is Start, with whatever the draft holds.
+            if (complete) { start(); return; }
             dismiss();
           }}
           onOpenAutoFocus={(e) => {
@@ -338,11 +392,60 @@ export function OnboardingDialog({
                     </div>
                   ) : (
                     /* The celebration lands in the RIGHT panel, so the brand
-                       column never moves and the dialog never resizes. */
-                    <div className="min-h-full flex flex-col items-center justify-center text-center">
-                      <div className="hv-burst text-6xl mb-4" aria-hidden>🎉</div>
+                       column never moves and the dialog never resizes. The kit
+                       scrolls inside it (min-h-full, round 25). */
+                    <div className="min-h-full flex flex-col items-center text-center py-1">
+                      <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
                       <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
-                      <p className="hv-done-body text-ink-soft mt-2">{C.kitHeadline}</p>
+                      <p className="hv-done-body font-bold mt-1">{C.kitHeadline}</p>
+                      <p className="text-sm text-ink-soft mt-1 leading-snug">
+                        {C.kitSubline} {C.kitLaterLead} {later.join(", ")} and {GOTO_LABELS.promptTemplates}.
+                      </p>
+                      {draft && smallModel && contextWindow && (
+                        <div className="mt-2 text-xs text-ink-soft leading-snug">
+                          <p>{smallModelLine(contextWindow, full)}</p>
+                          <button
+                            type="button"
+                            onClick={() => setDraft({ ...draft, switches: { ...DEFAULT_SWITCHES, coreOff: draft.switches.coreOff } })}
+                            className="mt-1 font-bold underline underline-offset-2 hover:text-ink cursor-pointer"
+                          >
+                            {C.kitLoadAll}
+                          </button>
+                        </div>
+                      )}
+                      {kitItems && contextWindow !== null && tooSmall(contextWindow) && (
+                        <p className="mt-2 text-xs text-berry font-bold leading-snug">
+                          {tooSmallLine(basicsTotal(kitItems), contextWindow)}{" "}
+                          <button type="button" onClick={onOpenRoomGuide} className="underline underline-offset-2 cursor-pointer">
+                            {C.kitMoreRoom}
+                          </button>
+                        </p>
+                      )}
+                      <div className="w-full mt-3">
+                        {draft && kitItems ? (
+                          <OnboardingKit draft={draft} setDraft={setDraft} items={kitItems} />
+                        ) : (
+                          <p className="text-sm text-ink-soft">Loading…</p>
+                        )}
+                      </div>
+                      <p className="text-xs text-ink-soft mt-3 leading-snug">🔒 {C.kitConsent}</p>
+                      <p className="text-xs text-ink-soft mt-1 leading-snug">{C.kitFooter}</p>
+                      <div className="w-full mt-3 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className={ghostBtn}
+                          disabled={busy || !draft}
+                          onClick={() => draft && setDraft({ ...draft, switches: { ...draft.switches, ...basicsPatch() } })}
+                        >
+                          {C.kitBasics}
+                        </button>
+                        {draft && kitItems && (
+                          <span className="text-xs text-ink-soft">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</span>
+                        )}
+                        <button type="button" className={primaryBtn} onClick={start} disabled={busy || !draft}>
+                          {C.kitStart}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

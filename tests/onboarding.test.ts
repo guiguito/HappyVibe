@@ -297,6 +297,8 @@ describe("the two wow notices", () => {
     expect(has(src, 'kind: "notice", text: ONBOARDING_COPY.noticeContext'), "context notice").toBe(true);
     expect(has(src, "wowShown.current.tools = true"), "once").toBe(true);
     expect(has(src, "wowShown.current.context = true"), "once").toBe(true);
+    expect(has(src, "ONBOARDING_COPY.noticeExtend"), "third notice").toBe(true);
+    expect(has(src, 'goTo: "plugins"'), "links to Plugins").toBe(true);
   });
 
   it("are scoped to the session the wizard opened, not to any first session", () => {
@@ -577,9 +579,25 @@ describe("the handover beat is actually visible", () => {
     }
   });
 
-  it("holds long enough to be read once the pops finish", () => {
-    // Staggered delays end ~920ms in; the handover must come after that.
-    expect(has(flat(DIALOG), "setTimeout(onDone, 2200)"), "dwell").toBe(true);
+  it("waits for Start — no timer hands over any more (§22, 2026-10-09)", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "setTimeout(onDone"), "timer").toBe(false);
+    expect(has(src, "C.kitStart"), "Start button").toBe(true);
+  });
+
+  it("Esc in the kit beat starts, it never dismisses", () => {
+    const src = flat(DIALOG);
+    const esc = src.slice(src.indexOf("onEscapeKeyDown"), src.indexOf("onOpenAutoFocus"));
+    expect(has(esc, "if (complete)"), "kit branch").toBe(true);
+    expect(has(esc, "start()"), "Esc = Start").toBe(true);
+  });
+
+  it("Start is guarded, so a double press writes once and opens one session", () => {
+    expect(has(flat(DIALOG), "starting.current"), "guard").toBe(true);
+  });
+
+  it("the kit preset is reported once, when the beat opens", () => {
+    expect(has(flat(DIALOG), "onKitOpen(kitPreset(contextWindow,"), "preset at open").toBe(true);
   });
 
   it("is settled instantly under reduced motion, like every other beat", () => {

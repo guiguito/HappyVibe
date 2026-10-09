@@ -4417,8 +4417,15 @@ export default function App(): React.JSX.Element {
           }}
           onGoModels={() => { dismissOnboarding(); navigate({ view: "models" }); }}
           onSkip={dismissOnboarding}
-          onDone={() => void finishOnboarding()}
+          onDone={() => finishOnboarding()}
           onOpenGuide={() => void window.hv.openExternal(docUrl("first-launch"))}
+          // Task 5 replaces these stubs (the kit's real wiring).
+          contextWindow={fallbackWindow ?? null}
+          kitItems={null}
+          kitSwitches={null}
+          onKitOpen={() => {}}
+          imagesAvailable={false}
+          onOpenRoomGuide={() => {}}
         />
       )}
       {/* §36: the star nudge. Not gated on onboarding — it cannot coincide,
