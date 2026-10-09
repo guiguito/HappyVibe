@@ -2672,10 +2672,11 @@ export default function App(): React.JSX.Element {
     try {
       // Written ONCE, before anything else, so quitting mid-beat leaves the safe preset (§22).
       if (preset === "basics") await window.hv.builtinsSet(basicsPatch());
-      const [b, sk, pt, shell] = await Promise.all([
-        window.hv.builtinsGet(), window.hv.skillsList(), window.hv.promptTemplatesList(), window.hv.agentShell(),
-      ]);
+      // The real switches FIRST: a list call failing below must not leave the catch's
+      // defaults in the draft, or Start would write them back over the user's settings.
+      const b = await window.hv.builtinsGet();
       setKitSwitches({ plan: b.plan, askUser: b.askUser, terminal: b.terminal, browser: b.browser, web: b.web, memory: b.memory, schedules: b.schedules, document: b.document, images: b.images, subagents: b.subagents, workflows: b.workflows, skills: b.skills, coreOff: b.coreOff });
+      const [sk, pt, shell] = await Promise.all([window.hv.skillsList(), window.hv.promptTemplatesList(), window.hv.agentShell()]);
       setKitItems({
         skills: sk.global.filter((s) => s.source === "bundled").map((s) => ({ id: s.id, name: s.name, tokens: s.estTokens.card })),
         prompts: pt.global.filter((p) => p.source === "bundled").map((p) => ({ id: p.id, name: p.name, tokens: 0 })),

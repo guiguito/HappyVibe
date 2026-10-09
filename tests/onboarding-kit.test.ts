@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
 import {
   basicsPatch, basicsTotal, DEFAULT_SWITCHES, fullTotal, KIT_SERVICES, kitPreset, kitShape, kitTiles, kitTotal,
   ONBOARDING_COPY, setFamily, smallModelLine, tooSmall, tooSmallLine, type KitDraft, type KitItems,

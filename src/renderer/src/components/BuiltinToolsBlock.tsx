@@ -49,13 +49,13 @@ interface Builtins {
 
 type ImageSettings = { available: boolean; model: string | null; models: { id: string; name: string; perImage: number }[] };
 
-/** §13 round 27 — generate_image. Registered only with an OpenRouter credential; the picker lists
-    only models the paid probe saw work through Pi, with what one test image cost (Pi's own rates
-    are text rates, 12–20× under — docs/validation/im1.md). Session cost shows the real charge. */
 function Weight({ tokens, note }: { tokens: number; note?: string }): React.JSX.Element {
   return <span className="text-xs text-ink-soft/80 block mt-0.5">{weightLabel(tokens)}{note ? ` ${note}` : ""}</span>;
 }
 
+/** §13 round 27 — generate_image. Registered only with an OpenRouter credential; the picker lists
+    only models the paid probe saw work through Pi, with what one test image cost (Pi's own rates
+    are text rates, 12–20× under — docs/validation/im1.md). Session cost shows the real charge. */
 function ImagesRow({ on, settings, onChange, onModel }: { on: boolean; settings: ImageSettings | null; onChange: (on: boolean) => void; onModel: (id: string) => void }): React.JSX.Element {
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-start gap-3">
