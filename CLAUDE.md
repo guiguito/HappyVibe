@@ -29,6 +29,7 @@ permission UX and context-window visibility as the differentiators.
   | `src/main/providerCatalog.generated.ts` | `npm run catalog:providers` | a Pi pin bump |
   | `src/main/plugins/catalog.generated.ts` | `npm run catalog:plugins` | any change to `plugins/classify.ts` or `plugins/scan.ts` |
   | `src/main/crash/safeMessages.generated.ts` | `npm run catalog:crash-messages` | adding a `throw new Error("…")` |
+  | `src/main/toolWeights.generated.ts` | `npm run catalog:tool-weights` | a Pi pin bump, or any change to a tool's schema, description or prompt line |
   | `build/icons/` | `npm run icons` | editing `build/icon.svg` (never hand-edit a PNG) |
 
 ## Tests
@@ -133,7 +134,7 @@ permission UX and context-window visibility as the differentiators.
 
 ## Import hygiene — each of these typechecks, runs in dev, and fails later
 - **Anything the renderer imports must not reach Node.** `schedules.ts`, `hv-paths.ts`,
-  `update/state.ts`, `usage/events.ts`, `remoteConfig/defaults.ts`, `providerError.ts`, `docsBase.ts`, `privacySwitches.ts` and `hv-images.ts` import nothing; `terminalSettings.ts` imports the platform seam TYPE-only. A
+  `update/state.ts`, `usage/events.ts`, `remoteConfig/defaults.ts`, `providerError.ts`, `docsBase.ts`, `privacySwitches.ts`, `toolWeights.generated.ts` and `hv-images.ts` import nothing; `terminalSettings.ts` imports the platform seam TYPE-only. A
   runtime import puts `node:*` in the browser bundle and only `npm run build` fails — *"X is not
   exported by __vite-browser-external"*, naming a file one hop from the real cause.
 - **Anything vitest imports must not reach `electron`.** `ipc.ts` never imports `./crash`, `./update`
