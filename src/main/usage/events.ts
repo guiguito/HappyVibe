@@ -28,7 +28,7 @@ const oneOf = <const V extends readonly string[]>(...values: V) => ({ type: "enu
 export const USAGE_EVENTS = {
   onboarding_started: { category: "activation", plain: "The first-run guide opened", params: { providerPrechecked: bool } },
   onboarding_dismissed: { category: "activation", plain: "The first-run guide was closed early, and at which step", params: { atStep: oneOf("welcome", "setup_model", "setup_workspace", "handover") } },
-  onboarding_completed: { category: "activation", plain: "The first-run guide finished, and how long it took", params: { durationSec: num, skippedAnimation: bool } },
+  onboarding_completed: { category: "activation", plain: "The first-run guide finished: how long it took, and whether the kit was kept, cut to the basics or changed", params: { durationSec: num, skippedAnimation: bool, kit: oneOf("full", "basics", "custom"), smallModel: bool } },
   provider_connected: { category: "activation", plain: "A model provider was connected, and how (key, sign-in, local runner or custom endpoint)", params: { provider: id, method: oneOf("api_key", "oauth", "local_runner", "custom_endpoint"), providerCount: num } },
   workspace_added: { category: "activation", plain: "A project folder was added, and whether it uses git", params: { isGitRepo: bool, workspaceCount: num } },
   session_opened: { category: "core", plain: "A chat session was created, or a schedule started one", params: { kind: oneOf("new", "scheduled"), inWorktree: bool } },

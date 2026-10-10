@@ -1,6 +1,8 @@
+import { FAMILY_COPY } from "./toolSwitches";
+
 /** §13 round 27 — the Images row and the generate_image prompt, as data (no DOM in the suite). */
 export const IMAGES_ROW_COPY = {
-  on: "Lets the agent make an image and save it as a new file in your project. Each image costs money on your OpenRouter account. The prices below were measured once and are approximate; Session cost shows what OpenRouter actually charged.",
+  on: `${FAMILY_COPY.images.what} Each image costs money on your OpenRouter account. The prices below were measured once and are approximate; Session cost shows what OpenRouter actually charged.`,
   needsOpenRouter: "Needs an OpenRouter key or sign-in. Add one on",
 } as const;
 

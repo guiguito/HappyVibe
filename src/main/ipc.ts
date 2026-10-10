@@ -2893,7 +2893,9 @@ export function registerIpc(
   };
 
   let mcpReloadTimer: ReturnType<typeof setTimeout> | undefined;
-  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null; reason: ReloadReason }> = [];
+  // `alive`: sessions live when the change was scheduled — one spawned after it
+  // already has the new config and must not be reloaded (mcpReloadScope.ts).
+  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null; reason: ReloadReason; alive: Set<string> }> = [];
   const runMcpReloadPass = async (): Promise<void> => {
     const scopes = pendingScopes.splice(0);
     const live: ReloadSession[] = manager
@@ -2901,8 +2903,8 @@ export function registerIpc(
       .map((id) => { const m = index.get(id); return m ? { id, workspaceId: m.workspaceId } : null; })
       .filter((s): s is ReloadSession => s !== null);
     const affected = new Set<string>();
-    for (const { scope, workspaceId, reason } of scopes)
-      for (const id of affectedSessionIds(scope, workspaceId, live)) { affected.add(id); reloadReasons.set(id, reason); }
+    for (const { scope, workspaceId, reason, alive } of scopes)
+      for (const id of affectedSessionIds(scope, workspaceId, live, alive)) { affected.add(id); reloadReasons.set(id, reason); }
     for (const id of affected) {
       if (activity.isIdle(id)) await reloadSession(id); // sequential — avoid a spawn burst
       else pendingMcpReload.add(id);
@@ -2912,7 +2914,7 @@ export function registerIpc(
   // single reload pass. §14 skills and §24 commands reuse the exact same
   // machinery (one mechanism, three config sources) — only the label differs.
   const scheduleRuntimeReload = (reason: ReloadReason, scope: "global" | "workspace", workspaceId: string | null): void => {
-    pendingScopes.push({ scope, workspaceId, reason });
+    pendingScopes.push({ scope, workspaceId, reason, alive: new Set(manager.activeIds()) });
     clearTimeout(mcpReloadTimer);
     mcpReloadTimer = setTimeout(() => { void runMcpReloadPass(); }, 500);
   };
@@ -4198,6 +4200,14 @@ export function registerIpc(
     clientFor(owner)?.respondUi(id, value === null ? { cancelled: true } : { value });
   });
 
+  // §22 kit: the context-window read that picks the kit preset must see the default
+  // model, and every door (and a local runner found at boot, which never passes
+  // through providersChanged) announces itself BEFORE ensureDefaultModel has set it.
+  // Free when a default exists; swallows failure, so it always resolves (null = unknown).
+  ipcMain.handle("hv:ensure-default-model", async () => {
+    await ensureDefaultModel();
+    return getDefaultModel();
+  });
   ipcMain.handle("hv:get-providers", () => {
     const status = providerKeyStatus();
     return {
@@ -4727,7 +4737,7 @@ export function registerIpc(
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.
   ipcMain.handle("hv:builtin-prompt", (_e, name: string) => {
-    if (name === "plan") return { text: buildPlanPrompt() };
+    if (name === "plan") return { text: buildPlanPrompt("", undefined, undefined, getBuiltinTools().askUser) };
     // §26: the Terminal group's resting cost is the steer line PLUS three tool
     // schemas, so showing only the steer line would understate what turning it
     // off saves. Descriptions come from the bridge's own registrations.

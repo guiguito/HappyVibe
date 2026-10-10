@@ -47,5 +47,9 @@ paths:
   click-catcher, which closes on click and is immune. A synthetic `.click()` never reproduces this —
   test with real CDP input.
 
+## Controls
+- Back controls: `BackButton` (icon-only chevron, label = tooltip + aria-label; BrowserTab's toolbar
+  draws its `BACK_PATH`). Never a text "← Back": every back reads the same (`tests/back-button.test.ts`).
+
 ## Tailwind
 - The JIT scanner never sees a computed class name — dynamic colours go in an inline `style`.

@@ -5,6 +5,10 @@ import { platform } from "./platform";
  * a workspace change (<ws>/.mcp.json) touches only sessions in that workspace.
  * Workspace paths are compared trailing-slash-insensitively (matching the
  * WorkspaceRegistry's normalization) so "/ws" and "/ws/" never diverge.
+ *
+ * `aliveAtChange`: the session ids alive when the change was made. A session
+ * spawned after it already read the new config, so reloading it is a spurious
+ * respawn (a first-run session reloaded right after it starts).
  */
 
 export interface ReloadSession {
@@ -20,7 +24,9 @@ export function affectedSessionIds(
   scope: "global" | "workspace",
   workspaceId: string | null,
   sessions: ReloadSession[],
+  aliveAtChange?: ReadonlySet<string>,
 ): string[] {
+  if (aliveAtChange) sessions = sessions.filter((s) => aliveAtChange.has(s.id));
   if (scope === "global") return sessions.map((s) => s.id);
   if (!workspaceId) return [];
   const target = norm(workspaceId);

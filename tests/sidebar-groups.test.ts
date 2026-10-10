@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { GROUPS, NAV, PINNED, groupFor } from "../src/renderer/src/components/Sidebar";
+import { FAMILY_COPY } from "../src/renderer/src/toolSwitches";
 
 /**
  * §16 round 18 — the flat 16-item list becomes four collapsible groups.
@@ -262,12 +263,14 @@ describe("no label means two different things", () => {
     // The nav has a `Terminal` page — the USER's shell and its settings. This
     // row is the AGENT's three terminal tools. Same word, two meanings.
     expect(NAV.map((n) => n.label)).toContain("Terminal");
-    expect(B).toContain('title="Agent terminal — 3 tools"');
+    expect(B).toContain("title={FAMILY_COPY.terminal.label}");
+    expect(FAMILY_COPY.terminal.label).toBe("Agent terminal — 3 tools");
     expect(B).not.toContain('title="Terminal — 3 tools"');
   });
 
   it("the browser row says whose browser it is too", () => {
-    expect(B).toContain("Agent browser — 10 tools");
+    expect(B).toContain("FAMILY_COPY.browser.label");
+    expect(FAMILY_COPY.browser.label).toBe("Agent browser — 10 tools");
   });
 });
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describeBrowserError, resolveTypedUrl } from "../browserError";
 import { paneIsCovered, paneViewRect, rectsOverlap, type Candidate } from "../browserCoverage";
+import { BACK_PATH } from "./BackButton";
 
 /** Half the divider drag strip, so the page never sits under it. */
 const DIVIDER_INSET = 6;
@@ -357,7 +358,7 @@ export function BrowserTab({
           (STRIP_PX, paneGrid.ts) instead of each being content-sized. */}
       <div className="flex items-center gap-1.5 border-b-2 border-line px-3 h-11 shrink-0">
         <BarButton label="Back" disabled={!info?.canGoBack} onClick={() => void window.hv.browserBack(browserId)}>
-          <path d="M15 18l-6-6 6-6" />
+          <path d={BACK_PATH} />
         </BarButton>
         <BarButton label="Forward" disabled={!info?.canGoForward} onClick={() => void window.hv.browserForward(browserId)}>
           <path d="M9 18l6-6-6-6" />

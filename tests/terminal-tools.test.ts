@@ -125,11 +125,10 @@ describe("builtins.terminal", () => {
     expect(parseBuiltins(JSON.stringify({ terminal: "no" })).terminal).toBe(true);
   });
 
-  // Unlike plan/askUser there is no coupling to repair: the three terminal
-  // tools are one group, and nothing outside it depends on them.
-  it("does not disturb the plan/askUser coupling", () => {
+  // The three terminal tools are one group, and nothing outside it depends on them.
+  it("does not disturb the other switches", () => {
     const b = parseBuiltins(JSON.stringify({ terminal: false, plan: true, askUser: false }));
-    expect(b.askUser).toBe(true);
+    expect(b.askUser).toBe(false);
     expect(b.plan).toBe(true);
   });
 });

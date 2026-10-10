@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
 import { HowItWorks } from "./HowItWorks";
 import { useWebDefaultPaused } from "../remoteConfig";
 import { usePrivacy } from "../privacy";
 import { LockLine } from "./LockLine";
-import { ALL_OFF_COPY, allToolsOff, RESPAWN_NOTE, toggleCore } from "../toolSwitches";
+import { ALL_OFF_COPY, allToolsOff, FAMILY_COPY, RESPAWN_NOTE, toggleCore, weightLabel } from "../toolSwitches";
+import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
 import { FamilySwitchRow } from "./FamilySwitch";
 import { coreToolNames } from "../../../../pi-runtime/extensions/hv-builtins";
 import { GoTo } from "./GoTo";
@@ -49,6 +49,10 @@ interface Builtins {
 
 type ImageSettings = { available: boolean; model: string | null; models: { id: string; name: string; perImage: number }[] };
 
+function Weight({ tokens, note }: { tokens: number; note?: string }): React.JSX.Element {
+  return <span className="text-xs text-ink-soft/80 block mt-0.5">{weightLabel(tokens)}{note ? ` ${note}` : ""}</span>;
+}
+
 /** §13 round 27 — generate_image. Registered only with an OpenRouter credential; the picker lists
     only models the paid probe saw work through Pi, with what one test image cost (Pi's own rates
     are text rates, 12–20× under — docs/validation/im1.md). Session cost shows the real charge. */
@@ -56,8 +60,9 @@ function ImagesRow({ on, settings, onChange, onModel }: { on: boolean; settings:
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-start gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Images — 1 tool</span>
+        <span className="font-bold block">{FAMILY_COPY.images.label}</span>
         <span className="text-xs text-ink-soft">{IMAGES_ROW_COPY.on}</span>
+        <Weight tokens={TOOL_WEIGHTS.families.images} />
         {settings && !settings.available && (
           <span className="text-xs font-semibold block mt-1">{IMAGES_ROW_COPY.needsOpenRouter} <GoTo view="models" />.</span>
         )}
@@ -85,12 +90,12 @@ function WorkflowsRow({ on, parentOn, onChange }: { on: boolean; parentOn: boole
   return (
     <div className="border-b border-line last:border-b-0 pl-10 pr-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Workflows — 1 tool</span>
+        <span className="font-bold block">{FAMILY_COPY.workflows.label}</span>
         <span className="text-xs text-ink-soft">
-          Lets the agent run a scripted workflow of several sub-agents. It is the heaviest tool the agent carries
-          (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost. It is off until you turn it on.
+          {FAMILY_COPY.workflows.what} It is the heaviest tool the agent carries, so turning it off keeps delegation and drops the cost. It is off until you turn it on.
           {!parentOn && " Sub-agents are off, so this is off too."}
         </span>
+        <Weight tokens={TOOL_WEIGHTS.families.workflows} />
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
       <TogglePill on={on && parentOn} disabled={!parentOn} onClick={() => onChange(!on)} />
@@ -102,11 +107,12 @@ function WorkflowsRow({ on, parentOn, onChange }: { on: boolean; parentOn: boole
 function CoreToolsRow({ names, off, onChange }: { names: string[]; off: string[]; onChange: (off: string[]) => void }): React.JSX.Element {
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3">
-      <span className="font-bold block">Core tools — {names.length} tools</span>
+      <span className="font-bold block">{FAMILY_COPY.core.label} — {names.length} tools</span>
       <span className="text-xs text-ink-soft">
-        Pi&apos;s own tools for reading, searching and changing files and running commands. A tool you turn off is
+        {FAMILY_COPY.core.what} A tool you turn off is
         gone from the agent and from every sub-agent it starts.
       </span>
+      <Weight tokens={Object.values<number>(TOOL_WEIGHTS.core).reduce((a, b) => a + b, 0)} />
       <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       <div className="mt-2 flex flex-wrap gap-2">
         {names.map((n) => {
@@ -156,8 +162,8 @@ function PlanModeRow({
   return (
     <>
       <PromptRow
-        title="Plan mode"
-        subtitle="Lets the agent draft and track a step-by-step plan before acting."
+        title={FAMILY_COPY.plan.label}
+        subtitle={<>{FAMILY_COPY.plan.what}<Weight tokens={TOOL_WEIGHTS.families.plan} /></>}
         on={builtins.plan}
         // Turning it OFF asks first: it unregisters three tools and respawns
         // live sessions, so the toggle hands the intent back rather than acting.
@@ -214,33 +220,23 @@ function PlanModeRow({
 
 /** Ask user has no injected prompt to show (per brief: no prompt editing for
     it) — just a toggle, no expand, no confirm (not consequential like plan).
-    Important 3: while Plan mode is on, this toggle is disabled — Plan mode's
-    prompt and its required-tools list both hard-depend on ask_user, so letting
-    the user turn it off here would silently leave the model told to use a tool
-    that no longer exists (parseBuiltins repairs the pair defensively, but the
-    UI shouldn't invite the broken state in the first place). */
+    Free with Plan mode on too: the plan prompt then asks in the reply. */
 function AskUserRow({
   on,
-  planOn,
   onChange,
 }: {
   on: boolean;
-  planOn: boolean;
   onChange: (on: boolean) => void;
 }): React.JSX.Element {
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Ask user</span>
-        <span className="text-xs text-ink-soft">Lets the agent pause mid-turn to ask you a clarifying question.</span>
-        {planOn && (
-          <span className="text-xs text-ink-soft block mt-0.5">
-            Locked on — Plan mode depends on it. Turn off Plan mode first if you want to disable this.
-          </span>
-        )}
-        {!planOn && <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>}
+        <span className="font-bold block">{FAMILY_COPY.askUser.label}</span>
+        <span className="text-xs text-ink-soft">{FAMILY_COPY.askUser.what}</span>
+        <Weight tokens={TOOL_WEIGHTS.families.askUser} />
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
-      <TogglePill on={on} disabled={planOn} onClick={() => !planOn && onChange(!on)} />
+      <TogglePill on={on} onClick={() => onChange(!on)} />
     </div>
   );
 }
@@ -268,12 +264,13 @@ function IntentRow({
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Tool intent</span>
+        <span className="font-bold block">{FAMILY_COPY.intent.label}</span>
         <span className="text-xs text-ink-soft">
-          The one-line &ldquo;why&rdquo; the model writes for each tool card. Turning it off saves the tokens it
+          {FAMILY_COPY.intent.what} Turning it off saves the tokens it
           costs to write; cards fall back to a factual label built from the call itself. Permission prompts are
           unaffected — they always show the factual action, never this sentence.
         </span>
+        <Weight tokens={TOOL_WEIGHTS.families.intent} />
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
       <TogglePill on={on} onClick={() => onChange(!on)} />
@@ -311,16 +308,17 @@ function TerminalRow({
       // "Terminal" is also a nav page — the USER's shell, its font and its
       // settings. This row is the AGENT's three terminal tools. Same word, two
       // meanings, so this one says whose.
-      title="Agent terminal — 3 tools"
+      title={FAMILY_COPY.terminal.label}
       // Honest about the trade: this is not a safety improvement. With the group
       // off the model does not stop wanting a dev server — it goes back to
       // `npm run dev &> /tmp/log &`, where you cannot see or stop it. Round 6's
       // driver was context, so say what it costs.
       subtitle={
         <>
-          Lets the agent run long-running commands in terminals you can watch, type into and stop. Turning this off
+          {FAMILY_COPY.terminal.what} Turning this off
           doesn&apos;t stop it wanting to — it goes back to backgrounding commands in bash, where you can neither see
           nor stop them. Saves the context cost of three tool schemas.
+          <Weight tokens={TOOL_WEIGHTS.families.terminal} />
         </>
       }
       on={on}
@@ -352,12 +350,12 @@ function BrowserRow({
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Agent browser — 10 tools</span>
+        <span className="font-bold block">{FAMILY_COPY.browser.label}</span>
         <span className="text-xs text-ink-soft">
-          Lets the agent open a page in a sandboxed browser tab, read it, screenshot it, click and type in it, and
-          watch its console and network traffic. It can reach localhost freely; every other site asks you first,
+          {FAMILY_COPY.browser.what} It can reach localhost freely; every other site asks you first,
           and that gate is enforced on the network itself, not on the agent&apos;s good behaviour.
         </span>
+        <Weight tokens={TOOL_WEIGHTS.families.browser} />
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
         <button
           type="button"
@@ -415,12 +413,14 @@ function MemoryRow({
 }): React.JSX.Element {
   return (
     <PromptRow
-      title="Memory — 3 tools"
+      title={FAMILY_COPY.memory.label}
       subtitle={
         <>
-          Lets the agent remember durable facts about you and about each project, across sessions. Saving and
+          {FAMILY_COPY.memory.what} Saving and
           forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
-          saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
+          saves the policy and three tool schemas from every turn.
+          <Weight tokens={TOOL_WEIGHTS.families.memory} />
+          <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
         </>
       }
       on={on}
@@ -504,12 +504,12 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
     <div className="border-b border-line last:border-b-0 px-4 py-3">
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <span className="font-bold block">Web tools — 4 tools</span>
+          <span className="font-bold block">{FAMILY_COPY.web.label}</span>
           <span className="text-xs text-ink-soft">
-            Lets the agent search the web and read any public page as clean text, list a site&apos;s pages, or read a
-            whole section of one. Reading a new site asks you first, under the same rules as the agent&apos;s browser.
+            {FAMILY_COPY.web.what} Reading a new site asks you first, under the same rules as the agent&apos;s browser.
             Turning this off saves the context cost of four tool schemas.
           </span>
+          <Weight tokens={TOOL_WEIGHTS.families.web} />
           <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
         </div>
         <TogglePill on={on} onClick={() => onChange(!on)} />
@@ -613,12 +613,12 @@ function DocumentsRow({
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Documents — 1 tool</span>
+        <span className="font-bold block">{FAMILY_COPY.document.label}</span>
         <span className="text-xs text-ink-soft">
-          Lets the agent read {DOCUMENT_FAMILY_LIST} files as Markdown, converted on this machine — nothing is sent
-          anywhere. Also turns on <span className="font-semibold">Attach document</span> in the chat bar. Scanned PDF
+          {FAMILY_COPY.document.what} Also turns on <span className="font-semibold">Attach document</span> in the chat bar. Scanned PDF
           pages can&apos;t be read, and the agent is told which ones they are. Saves the context cost of one tool schema.
         </span>
+        <Weight tokens={TOOL_WEIGHTS.families.document} />
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
       <TogglePill on={on} onClick={() => onChange(!on)} />
@@ -641,12 +641,13 @@ function SchedulesRow({
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Schedules — 4 tools</span>
+        <span className="font-bold block">{FAMILY_COPY.schedules.label}</span>
         <span className="text-xs text-ink-soft">
-          Lets the agent list this workspace&apos;s schedules and propose new ones. Creating, changing and deleting always
+          {FAMILY_COPY.schedules.what} Creating, changing and deleting always
           open the drawer or a permission prompt for you first — the agent never writes a schedule on its own. Turning
           this off takes the four tools away from the agent; your schedules keep running.
         </span>
+        <Weight tokens={TOOL_WEIGHTS.families.schedules} />
         <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
       <TogglePill on={on} onClick={() => onChange(!on)} />
@@ -702,7 +703,6 @@ export function BuiltinToolsBlock({
         <PlanModeRow builtins={builtins} onChange={patch} />
         <AskUserRow
           on={builtins.askUser}
-          planOn={builtins.plan}
           onChange={(on) => {
             setAskUserError(null);
             void window.hv.builtinsSet({ askUser: on }).then(

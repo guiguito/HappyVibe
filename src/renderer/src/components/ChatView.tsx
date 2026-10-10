@@ -1134,7 +1134,7 @@ export function ChatView({
                 onClick={() =>
                   void window.hv.promptSession(
                     sessionId,
-                    "Finalize the implementation plan now. If a material decision remains, ask me via ask_user. Otherwise call plan_complete alone as your final action with the complete decision-ready plan.",
+                    "Finalize the implementation plan now. If a material decision remains, ask me. Otherwise call plan_complete alone as your final action with the complete decision-ready plan.",
                   )
                 }
                 title="Ask the agent to finalize the plan now"

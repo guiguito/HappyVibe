@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { FormPageView, type CaptureOffer, type ImageItem } from "./FormRenderer";
 import { BrandLogo } from "./BrandLogo";
+import { BackButton } from "./BackButton";
 import { FEEDBACK_COPY as C } from "./feedbackCopy";
 import { answersFor, isKnown, pageComplete, pageIndexOf, unknownRequired, type FormState } from "../feedbackForm";
 
@@ -224,14 +225,7 @@ export function FeedbackDialog({
       "rounded-xl bg-tangerine text-paper font-bold px-4 py-1.5 text-sm border-2 border-tangerine-deep shadow-pop cursor-pointer hover:brightness-105 disabled:opacity-40 disabled:cursor-default disabled:shadow-none";
     return (
       <div className="flex items-center gap-2 pt-4 shrink-0">
-        <button
-          type="button"
-          disabled={step === 0}
-          onClick={() => setStep((s) => s - 1)}
-          className="rounded-xl border-2 border-line px-3 py-1.5 text-sm font-bold cursor-pointer hover:border-honey disabled:opacity-40 disabled:cursor-default"
-        >
-          {C.back}
-        </button>
+        <BackButton label={C.back} disabled={step === 0} onClick={() => setStep((s) => s - 1)} />
         <div className="flex-1" />
         {last ? (
           <button type="button" disabled={!canNext || sending || blocked.length > 0} onClick={() => void send()} className={primary}>

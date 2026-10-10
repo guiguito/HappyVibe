@@ -335,7 +335,7 @@ export function gatePlanCall(toolName: string, input: unknown, opts?: { mcpReadO
 
 const PLAN_PROMPT_MARKER = "[HAPPYVIBE PLAN MODE ACTIVE]";
 
-export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>, agentShell: string = AGENT_SHELL): string {
+export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>, agentShell: string = AGENT_SHELL, askUser = true): string {
   // A3 (Improve-prompts round, 2026-09-10) — the blocked list is DERIVED, and
   // filtered to tools that exist this session.
   //
@@ -359,6 +359,22 @@ export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>,
 boundary first, and a read-only explorer is the most useful thing a planning
 session can do.`
     : "";
+  // 2026-10-10: Ask user can be off with Plan on, so the phases ask in the reply when it is.
+  // `askUser` lets the settings panel (no tool list) show the variant the agent really gets.
+  const ask = askUser && (!have || have.has("ask_user"));
+  const phase2 = ask
+    ? `- Use the ask_user tool for genuine decisions, tradeoffs, or missing product
+  intent that exploration cannot resolve (1-4 concise questions, 2-4 real
+  options each). If a high-impact ambiguity remains, ask rather than guess.`
+    : `- Ask genuine decisions, tradeoffs, or missing product intent that
+  exploration cannot resolve in your reply (1-4 concise questions, 2-4 real
+  options each), then stop. If a high-impact ambiguity remains, ask rather
+  than guess.`;
+  const phase3 = ask
+    ? `- Finish with plan_complete once no decision is open; if one is, ask it with
+  ask_user. Do not end a turn by only announcing the plan — submit it.`
+    : `- Finish with plan_complete once no decision is open; if one is, ask it in
+  your reply and stop. Do not end a turn by only announcing the plan — submit it.`;
   const body = `${PLAN_PROMPT_MARKER}
 # Plan Mode (read-only)
 
@@ -372,13 +388,10 @@ you. Blocked while planning: ${blocked.join(", ")}${shellClause}.${delegateClaus
 - Do not ask what the repository or system can answer.
 
 ## Phase 2 — Clarify intent
-- Use the ask_user tool for genuine decisions, tradeoffs, or missing product
-  intent that exploration cannot resolve (1-4 concise questions, 2-4 real
-  options each). If a high-impact ambiguity remains, ask rather than guess.
+${phase2}
 
 ## Phase 3 — Finalize
-- Finish with plan_complete once no decision is open; if one is, ask it with
-  ask_user. Do not end a turn by only announcing the plan — submit it.
+${phase3}
 - If the user later requests revisions, call plan_complete again with a
   complete replacement plan, not a delta.
 

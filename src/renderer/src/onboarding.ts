@@ -1,3 +1,7 @@
+import { TOOL_WEIGHTS } from "../../main/toolWeights.generated";
+import { parseBuiltins } from "../../../pi-runtime/extensions/hv-builtins";
+import { fmtNum } from "./analytics-format";
+import { KIT_FAMILIES, type KitFamily } from "./toolSwitches";
 import { THIS_COMPUTER, YOUR_COMPUTER } from "./platformCopy";
 /**
  * §22 onboarding round (2026-09-01). Every first-run string in one place, plus
@@ -44,6 +48,9 @@ export const ONBOARDING_COPY = {
   step2FreshLabel: "Name your project",
   step2FreshCreate: "Create it",
   step2FreshWhere: "Created in your Documents folder, under HappyVibe.",
+
+  // Step 3 (2026-10-10): the kit, as a step. Its body is kitHeadline + kitSubline.
+  step3Title: "Personalize your agent",
   /**
    * §4 Windows round. Shown ONLY when the shell probe answers "powershell" — i.e. a
    * Windows machine with no Git Bash. One line, no persistence, no nag, and never a
@@ -59,7 +66,25 @@ export const ONBOARDING_COPY = {
   // Docs in the app (2026-09-29): opens first-launch in the SYSTEM browser — setup is a modal.
   guideLink: "Read the setup guide ↗",
   doneTitle: "You're in.",
-  doneBody: "Opening your first session…",
+
+  kitHeadline: "Your agent comes fully loaded.",
+  kitSubline: "Untick anything you don't want.",
+  // + the page names, rendered from GOTO_LABELS (builtinTools, skills, agents), never typed here.
+  kitLaterLead: "You can change all of it later on",
+  kitLaterAnd: " and ",
+  kitLoading: "Loading…",
+  kitConsent: "Anything that changes your files or runs a command asks you first.",
+  kitFooter: "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each.",
+  kitStart: "Start my first session",
+  kitContinue: "Continue",
+  // The tooltip + accessible name of the BackButton icon — the chevron IS the arrow.
+  kitBack: "Back",
+  kitLoadAll: "Load everything anyway",
+  kitPrompts: "Ready-made prompts you start with /. They weigh nothing until you use one.",
+  kitPromptsShort: "Ready-made prompts you start with /.",
+  kitTotalTail: "tokens on every message",
+  kitMoreRoom: "Give your model more room ↗",
+  noticeExtend: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks.",
 
   noticeTools: "Each card is a tool the agent ran — expand one to see exactly what it did.",
   noticeContext:
@@ -155,4 +180,120 @@ export function rankProviders<T extends { id: string; label: string; featured: b
   return rows
     .filter((r) => !q || `${r.label} ${r.id}`.toLowerCase().includes(q))
     .sort((a, b) => (a.featured !== b.featured ? (a.featured ? -1 : 1) : a.label.localeCompare(b.label)));
+}
+
+export const KIT_SERVICES = ["GitHub", "Linear", "Notion"] as const;
+
+export type KitSwitches = Record<KitFamily, boolean> & { coreOff: string[] };
+/** `description` is the item's own one-liner (its frontmatter), shown under its name in the drill-in. */
+export interface KitItem { id: string; name: string; tokens: number; description: string }
+/** `core` only names the shell for the no-tools line — the kit never switches a core tool. */
+export interface KitItems { skills: KitItem[]; agents: KitItem[]; prompts: KitItem[]; imagesAvailable: boolean; core: string[] }
+export interface KitDraft { switches: KitSwitches; skillsOff: string[]; agentsOff: string[]; promptsOff: string[] }
+/** Prompts has no master switch (PRD §13 round 26), so its tile has no family tick — only its list. */
+export interface KitTile { key: KitFamily | "prompts"; familyTick: boolean; items: "skills" | "agents" | "prompts" | null }
+/** Structural, not `typeof TOOL_WEIGHTS` (whose `as const` literals would reject any other figures). */
+type Weights = { total: number; compactionReserve: number; families: Record<string, number>; core: Record<string, number> };
+
+const { plan, askUser, terminal, browser, web, memory, schedules, document, subagents, workflows, skills } = parseBuiltins(undefined);
+/** A fresh install's switches: hv-builtins.ts's own defaults (derived, never retyped) + images on. */
+export const DEFAULT_SWITCHES: KitSwitches = { plan, askUser, terminal, browser, web, memory, schedules, document, images: true, subagents, workflows, skills, coreOff: [] };
+
+/** The small-model preset: every kit family off. MCP, intent, core tools and items are never touched. */
+export function basicsPatch(): Record<KitFamily, false> {
+  return Object.fromEntries(KIT_FAMILIES.map((k) => [k, false])) as Record<KitFamily, false>;
+}
+
+export function setFamily(d: KitDraft, k: KitFamily, on: boolean): KitDraft {
+  return { ...d, switches: { ...d.switches, [k]: on } };
+}
+
+const SHELL: Record<string, string> = { powershell: "bash" };
+
+/** Tokens on every message for this draft — the measured total, minus what is off, plus what is on that ships off. */
+export function kitTotal(d: KitDraft, items: KitItems, w: Weights = TOOL_WEIGHTS): number {
+  const s = d.switches;
+  const f = w.families;
+  let t = w.total;
+  for (const k of KIT_FAMILIES) {
+    if (k === "workflows" || k === "images") continue;
+    if (!s[k]) t -= f[k];
+  }
+  if (s.subagents && s.workflows) t += f.workflows;
+  if (items.imagesAvailable && s.images) t += f.images;
+  // normalizeCoreOff stores BOTH shell names when either is off — count the shell once.
+  for (const name of new Set(s.coreOff.map((n) => SHELL[n] ?? n))) t -= w.core[name] ?? 0;
+  if (s.skills) t -= items.skills.filter((i) => d.skillsOff.includes(i.id)).reduce((n, i) => n + i.tokens, 0);
+  if (s.subagents) t -= items.agents.filter((i) => d.agentsOff.includes(i.id)).reduce((n, i) => n + i.tokens, 0);
+  return t;
+}
+
+export function fullTotal(imagesAvailable: boolean, w: Weights = TOOL_WEIGHTS): number {
+  return w.total + (imagesAvailable ? w.families.images : 0);
+}
+
+export function basicsTotal(items: KitItems, w: Weights = TOOL_WEIGHTS): number {
+  return kitTotal({ switches: { ...DEFAULT_SWITCHES, ...basicsPatch(), coreOff: [] }, skillsOff: [], agentsOff: [], promptsOff: [] }, items, w);
+}
+
+/** More than a quarter of the window ⇒ basics. Unknown (null/0) counts as large, like Pi's own fallback. */
+export function kitPreset(ctx: number | null, full: number): "full" | "basics" {
+  return ctx && ctx > 0 && full > ctx / 4 ? "basics" : "full";
+}
+
+/** At or under Pi's compaction reserve, the window is past Pi's summarise line from the first message. */
+export function tooSmall(ctx: number | null, reserve: number = TOOL_WEIGHTS.compactionReserve): boolean {
+  return !!ctx && ctx > 0 && ctx <= reserve;
+}
+
+export function smallModelLine(ctx: number, full: number): string {
+  return `Your model reads ${ctx.toLocaleString("en-US")} tokens at a time and the full kit takes about ${fmtNum(full)}, so you're starting with just the basics.`;
+}
+
+export function tooSmallLine(basics: number, ctx: number): string {
+  const pct = Math.round((100 * basics) / ctx);
+  return pct >= 100
+    ? "Even the basics don't fit in it — too little room for real work."
+    : `Even the basics fill about ${pct}% of it — too little room for real work.`;
+}
+
+export function kitShape(d: KitDraft): "full" | "basics" | "custom" {
+  const s = d.switches;
+  const itemsTouched = d.skillsOff.length + d.agentsOff.length + d.promptsOff.length + s.coreOff.length > 0;
+  if (itemsTouched) return "custom";
+  if (KIT_FAMILIES.every((k) => s[k] === DEFAULT_SWITCHES[k])) return "full";
+  if (KIT_FAMILIES.every((k) => !s[k])) return "basics";
+  return "custom";
+}
+
+/**
+ * Built-in tools' order, minus what the kit doesn't show (2026-10-10): Workflows ships off and
+ * isn't in context, and Images needs an OpenRouter credential. Core tools are always there, so
+ * they're no tile. `basicsPatch` still switches Workflows off. Prompts comes LAST: it weighs
+ * nothing and has no master switch, so it's only a list of ticks.
+ */
+export function kitTiles(imagesAvailable: boolean): KitTile[] {
+  const families: KitTile[] = KIT_FAMILIES.filter((k) => k !== "workflows" && (k !== "images" || imagesAvailable)).map((k) => ({
+    key: k,
+    familyTick: true,
+    items: k === "subagents" ? "agents" : k === "skills" ? "skills" : null,
+  }));
+  return [...families, { key: "prompts", familyTick: false, items: "prompts" }];
+}
+
+/** A drill-in item's one line: its description up to the first ". " (period kept) or " — " (dropped). */
+export function firstClause(text: string): string {
+  const cuts = [text.indexOf(". "), text.indexOf(" — ")].filter((i) => i >= 0);
+  if (!cuts.length) return text;
+  const at = Math.min(...cuts);
+  return at === text.indexOf(". ") ? text.slice(0, at + 1) : text.slice(0, at);
+}
+
+export type OnboardingScreen = "welcome" | "setup" | "personalize" | "done";
+
+/** Which screen shows (2026-10-10): steps 1–2 until both gates hold, then step 3, then "You're in." after Continue. */
+export function onboardingScreen(s: { welcome: boolean; complete: boolean; continued: boolean }): OnboardingScreen {
+  if (s.welcome) return "welcome";
+  if (!s.complete) return "setup";
+  return s.continued ? "done" : "personalize";
 }

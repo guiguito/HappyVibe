@@ -21,6 +21,8 @@ Below it is one list, under the heading **Built-in Custom Tools**. Each row has 
 
 Change a row, and your conversation stays. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
 
+Under each row's description, a grey line says what that row adds to every message, like "~1.1k tokens". It counts the descriptions the agent is given for that row's tools, measured on HappyVibe's own set, so it's a good estimate rather than a bill. **Skills** and **Sub-agents** read "with the bundled ones on", because the figure covers the skills and agents that come with the app. Yours add to it. **MCP** shows no figure: its weight is whatever your servers bring. Switch a row off and its weight leaves your next message. The first-run window shows the same figures ([Personalize your agent](/docs/first-launch/#personalize-your-agent)).
+
 Some rows mention the context cost of tool schemas. Every tool the agent can call comes with a short description (a schema) that sits in its context, what it can see on every turn. A tool you switch off takes its schema out ([more on context](/docs/first-session/#context-what-the-agent-can-see)).
 
 ### Plan mode
@@ -40,7 +42,7 @@ The note beside the box says why the prompt stays fixed: "The built-in prompt ab
 
 "Lets the agent pause mid-turn to ask you a clarifying question."
 
-While Plan mode is on, this switch is greyed out and reads: "Locked on — Plan mode depends on it. Turn off Plan mode first if you want to disable this." Plan mode relies on it, so the two go together.
+You can switch it off whether Plan mode is on or not. With it off, plan mode still asks you what it needs to know, in its reply, and waits for your answer. Either way, plan mode stays read-only.
 
 ### Agent terminal — 3 tools
 
@@ -98,7 +100,7 @@ Before each image, the approval dialog reads "This makes an image with" the mode
 
 ### Workflows — 1 tool
 
-This row sits under **Sub-agents** and switches one of its tools: the one that runs a scripted workflow of several subagents. "It is the heaviest tool the agent carries (about 5.5k tokens on every request), so turning it off keeps delegation and drops the cost. It is off until you turn it on." While **Sub-agents** is off, this switch is greyed out and reads: "Sub-agents are off, so this is off too."
+This row sits under **Sub-agents** and switches one of its tools: the one that runs a scripted workflow of several subagents. "It is the heaviest tool the agent carries, so turning it off keeps delegation and drops the cost. It is off until you turn it on." Its weight shows beneath. While **Sub-agents** is off, this switch is greyed out and reads: "Sub-agents are off, so this is off too."
 
 ### Skills
 

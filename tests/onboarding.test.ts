@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { chipsFor, folderHasCode, keyRejectedNote, noteAfterEdit, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
+import { chipsFor, folderHasCode, keyRejectedNote, noteAfterEdit, ONBOARDING_COPY, onboardingScreen, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
 
 /**
  * §22 onboarding round (2026-09-01).
@@ -297,11 +297,25 @@ describe("the two wow notices", () => {
     expect(has(src, 'kind: "notice", text: ONBOARDING_COPY.noticeContext'), "context notice").toBe(true);
     expect(has(src, "wowShown.current.tools = true"), "once").toBe(true);
     expect(has(src, "wowShown.current.context = true"), "once").toBe(true);
+    expect(has(src, "ONBOARDING_COPY.noticeExtend"), "third notice").toBe(true);
+    expect(has(src, 'goTo: "plugins"'), "links to Plugins").toBe(true);
   });
 
   it("are scoped to the session the wizard opened, not to any first session", () => {
     const src = flat(APP);
     expect((src.match(/sid === firstRunSession\.current/g) ?? []).length, "both gated").toBe(2);
+  });
+
+  it("land after the agent's reply, not above it", () => {
+    const src = flat(APP);
+    const end = src.indexOf('if (e.type === "agent_end")');
+    expect(end, "agent_end block").toBeGreaterThan(-1);
+    const stream = src.indexOf("commitStream(sid)", end);
+    const extend = src.indexOf("ONBOARDING_COPY.noticeExtend", end);
+    expect(stream, "commitStream in agent_end").toBeGreaterThan(end);
+    expect(extend, "reply committed before the notice").toBeGreaterThan(stream);
+    expect(has(src, "firstRunTurns.current >= 2"), "one turn later").toBe(true);
+    expect(has(src, 'goTo: "plugins"'), "links to Plugins").toBe(true);
   });
 });
 
@@ -577,9 +591,53 @@ describe("the handover beat is actually visible", () => {
     }
   });
 
-  it("holds long enough to be read once the pops finish", () => {
-    // Staggered delays end ~920ms in; the handover must come after that.
-    expect(has(flat(DIALOG), "setTimeout(onDone, 2200)"), "dwell").toBe(true);
+  it("waits for Start — no timer hands over any more (§22, 2026-10-09)", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "setTimeout(onDone"), "timer").toBe(false);
+    expect(has(src, "C.kitStart"), "Start button").toBe(true);
+  });
+
+  it("Esc moves forward from step 3 on — Continue, then Start — and never dismisses there", () => {
+    const src = flat(DIALOG);
+    const esc = src.slice(src.indexOf("onEscapeKeyDown"), src.indexOf("onOpenAutoFocus"));
+    expect(has(esc, 'if (screen === "personalize") { if (drill) setDrill(null); else next(); return; }'), "step 3 = Continue; drill-in = Back").toBe(true);
+    expect(has(esc, 'if (screen === "done") { start(); return; }'), "last screen = Start").toBe(true);
+    // The ✕ only exists while steps 1–2 are incomplete.
+    expect(has(src, "{!complete && ( <button type=\"button\" onClick={dismiss}"), "no ✕ from step 3 on").toBe(true);
+  });
+
+  it("Start is guarded, so a double press writes once and opens one session", () => {
+    expect(has(flat(DIALOG), "starting.current"), "guard").toBe(true);
+  });
+
+  it("the kit preset is reported once, when the beat opens", () => {
+    expect(has(flat(DIALOG), "onKitOpen(kitPreset(contextWindow,"), "preset at open").toBe(true);
+    // undefined = the window re-read after step 1 hasn't settled; a stale null would open the full kit.
+    expect(has(flat(DIALOG), "contextWindow === undefined) return;"), "waits for the window").toBe(true);
+    expect(has(flat(APP), "contextWindow={kitInputsReady ? fallbackWindow : undefined}"), "App hands undefined while reading").toBe(true);
+  });
+
+  it("the kit never switches a core tool (2026-10-10); prompts came back as a tile (see onboarding-kit)", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    for (const gone of ["toggleCore", "coreWeight"]) expect(has(kit, gone), gone).toBe(false);
+    expect(has(kit, "C.kitPrompts"), "Prompts tile hover title").toBe(true);
+  });
+
+  it("the small-model line shows only while no family is ticked — derived, never a flag", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k])"), "derived from the draft").toBe(true);
+    expect(has(src, "loadedAll"), "no separate flag to drift").toBe(false);
+  });
+
+  it("the kit's window read waits for the default model (C1: a fresh Ollama 4k install opened full)", () => {
+    // Every door — and a local runner found at boot — announces the provider BEFORE main
+    // has set the default; reading getProviders().defaultModel there saw null, settled
+    // kitInputsReady with no window, and the kit opened full on a 4,096 model.
+    const load = flat(APP).slice(flat(APP).indexOf("const loadFallbackWindow"), flat(APP).indexOf("const [imagesAvailable"));
+    expect(has(load, "await window.hv.ensureDefaultModel()"), "waits for the default").toBe(true);
+    expect(has(load, "getProviders"), "not the racy read").toBe(false);
+    const ipc = flat(fs.readFileSync(path.resolve(__dirname, "../src/main/ipc.ts"), "utf8"));
+    expect(has(ipc, 'ipcMain.handle("hv:ensure-default-model", async () => { await ensureDefaultModel(); return getDefaultModel(); });'), "main fills it first").toBe(true);
   });
 
   it("is settled instantly under reduced motion, like every other beat", () => {
@@ -587,6 +645,97 @@ describe("the handover beat is actually visible", () => {
     for (const c of ["hv-burst", "hv-done-title", "hv-done-body"]) {
       expect(has(block, c), c).toBe(true);
     }
+  });
+});
+
+describe("step 3 Personalize and the last screen (2026-10-10)", () => {
+  it("which screen shows: setup until both gates hold, step 3, then You're in. after Continue", () => {
+    expect(onboardingScreen({ welcome: true, complete: true, continued: true })).toBe("welcome");
+    expect(onboardingScreen({ welcome: false, complete: false, continued: false })).toBe("setup");
+    expect(onboardingScreen({ welcome: false, complete: true, continued: false })).toBe("personalize");
+    expect(onboardingScreen({ welcome: false, complete: true, continued: true })).toBe("done");
+  });
+
+  it("step 3 is titled from the copy and its compact line re-uses the step titles", () => {
+    const src = flat(DIALOG);
+    expect(ONBOARDING_COPY.step3Title).toBe("Personalize your agent");
+    expect(has(src, "{C.step3Title}"), "step 3 title").toBe(true);
+    expect(has(flat(DIALOG), 'n="3" done={false} active={false} title={C.step3Title}'), "setup list shows step 3 as upcoming").toBe(true);
+    expect(has(src, "const doneSteps = [C.step1Title, C.step2Title];"), "steps 1–2 not re-typed").toBe(true);
+    expect(has(src, "{C.kitHeadline} {C.kitSubline}"), "body").toBe(true);
+  });
+
+  it("Continue leads to the last screen; Start lives only there", () => {
+    const src = flat(DIALOG);
+    expect(ONBOARDING_COPY.kitContinue).toBe("Continue");
+    expect(src.indexOf("{C.kitContinue}"), "Continue before the last screen").toBeLessThan(src.indexOf("{C.doneTitle}"));
+    expect(src.indexOf("{C.kitStart}"), "Start after You're in.").toBeGreaterThan(src.indexOf("{C.doneTitle}"));
+  });
+
+  it("Just the basics is gone", () => {
+    expect("kitBasics" in ONBOARDING_COPY).toBe(false);
+    expect(has(flat(DIALOG), "basicsPatch"), "no button left using it").toBe(false);
+    expect(/Just the basics/.test(DIALOG + read("components/OnboardingKit.tsx"))).toBe(false);
+  });
+
+  it("step 3 and the last screen take the full width; the brand stays for Radix only", () => {
+    const src = flat(DIALOG);
+    expect(has(src, 'kitOpen ? "grid-cols-[minmax(0,1fr)]"'), "one column").toBe(true);
+    expect(has(src, 'kitOpen ? "sr-only"'), "brand hidden, Title kept").toBe(true);
+  });
+
+  it("Skills, Sub-agents and Prompts open as a drill-in with a Back control, not inline", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    expect(has(kit, "{C.kitBack}"), "Back").toBe(true);
+    expect(has(kit, "setOpen(null); }}"), "Back returns to the grid").toBe(true);
+    expect(has(kit, "col-span-2"), "no inline expansion").toBe(false);
+    expect(has(kit, "grid grid-cols-3"), "3 columns").toBe(true);
+    expect(has(kit, "aria-label={label(t.key)}"), "▸ N names its family").toBe(true);
+    expect(has(kit, "if (open) backRef.current?.focus({ focusVisible: byKeyboard.current }); else if (last.current) opener.current[last.current]?.focus({ focusVisible: byKeyboard.current });"), "focus follows").toBe(true);
+  });
+
+  it("the drill-in header: Back alone on top, then the family as a heading with its weight", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    const back = kit.indexOf("<BackButton ref={backRef} label={C.kitBack}");
+    const title = kit.indexOf('<h3 className="font-black text-lg tracking-tight">{label(drill.key)}</h3>');
+    expect(back, "Back").toBeGreaterThan(-1);
+    expect(title, "heading after Back").toBeGreaterThan(back);
+    expect(kit.indexOf("{weightLabel(weight(drill.key))}"), "weight after the heading").toBeGreaterThan(title);
+    expect(ONBOARDING_COPY.kitBack).toBe("Back");
+  });
+
+  it("tiles and list items are two lines each; the list is 2 columns; the small-model line yields to a drill-in", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    expect(has(kit, "{short(t.key)}"), "tile one-liner").toBe(true);
+    expect(has(kit, "{firstClause(r.description)}"), "item one-liner").toBe(true);
+    expect(has(kit, "grid grid-cols-2"), "2-column list").toBe(true);
+    expect(has(flat(DIALOG), "draft && !drill && smallModel"), "hidden inside a drill-in").toBe(true);
+  });
+
+  it("step 3 is top-anchored and its done steps are not a list", () => {
+    const src = flat(DIALOG);
+    const step3 = src.slice(src.indexOf('screen === "personalize" ? ('), src.indexOf("{C.doneTitle}"));
+    expect(has(step3, '<div className="min-h-full flex flex-col">'), "top-anchored").toBe(true);
+    expect(/<ol|<li/.test(step3), "no two-item list").toBe(false);
+  });
+
+  it("step 3's footer is pinned bottom-right and carries the later-line", () => {
+    const src = flat(DIALOG);
+    const step3 = src.slice(src.indexOf('screen === "personalize" ? ('), src.indexOf("{C.doneTitle}"));
+    const footer = step3.slice(step3.indexOf("mt-auto"));
+    expect(step3.indexOf("mt-auto"), "pinned with mt-auto").toBeGreaterThan(-1);
+    expect(footer.indexOf("{C.kitLaterLead}"), "later-line in the footer").toBeGreaterThan(-1);
+    expect(footer.indexOf("{C.kitLaterLead}"), "left of the total").toBeLessThan(footer.indexOf("{C.kitTotalTail}"));
+    expect(footer.indexOf("{C.kitTotalTail}"), "total, then Continue").toBeLessThan(footer.indexOf("{C.kitContinue}"));
+  });
+
+  it("the last screen: Back first, then You're in., then consent, footer and Start — no later-line", () => {
+    const src = flat(DIALOG);
+    const done = src.slice(src.indexOf("min-h-full flex flex-col text-center"));
+    const order = ["{C.kitBack}", "{C.doneTitle}", "{C.kitConsent}", "{C.kitFooter}", "{C.kitStart}"].map((k) => done.indexOf(k));
+    expect(order.every((i) => i > -1), "all present").toBe(true);
+    expect([...order].sort((a, b) => a - b), "in that order").toEqual(order);
+    expect(has(done, "C.kitLaterLead"), "later-line moved to step 3").toBe(false);
   });
 });
 

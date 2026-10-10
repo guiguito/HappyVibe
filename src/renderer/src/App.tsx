@@ -60,7 +60,7 @@ import { dialogHost } from "./paneDialog";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
-import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, agentTokenCost, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant, indexTools } from "./streaming";
 import { sendOutcome } from "./sendOutcome";
 import { parseDocumentChips, stripInjectedBlocks } from "./mentions";
@@ -95,7 +95,8 @@ import { DocsLink, OpenDocsContext } from "./components/DocsLink";
 import { usePrivacy } from "./privacy";
 import { GuideView } from "./components/GuideView";
 import { docUrl, docsIndexUrl } from "./docsLinks";
-import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
+import { basicsPatch, chipsFor, DEFAULT_SWITCHES, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding, type KitDraft, type KitItems, type KitSwitches } from "./onboarding";
+import { coreToolNames } from "../../../pi-runtime/extensions/hv-builtins";
 import { ipcMessage } from "./ipcError";
 import { screenView, trackUi } from "./usage";
 import type { UsageParams } from "../../main/usage/events";
@@ -203,6 +204,36 @@ export default function App(): React.JSX.Element {
   // it is permanent: §7 round 8 deleted the Help entry and §22 round 17
   // confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
+  // B5: default model's context window feeds the estimated-gauge fallback.
+  const loadFallbackWindow = async (): Promise<void> => {
+    try {
+      // ensureDefaultModel, not getProviders: step 1's doors (and a local runner found at
+      // boot) announce the provider BEFORE main has picked the default, and a null here
+      // used to settle the kit as "full" on a 4k model.
+      const defaultModel = await window.hv.ensureDefaultModel();
+      if (!defaultModel) return;
+      const models = await window.hv.listModels();
+      const m = models.find((x) => x.provider === defaultModel.provider && x.id === defaultModel.modelId);
+      if (m?.contextWindow) setFallbackWindow(m.contextWindow);
+    } catch { /* no provider configured yet — gauge just shows nothing */ }
+  };
+  // §22 kit: what the preset is decided from. Both change when step 1 connects a
+  // model (images = an OpenRouter key), so both are re-read then, and the dialog is
+  // handed `undefined` as its window until they have SETTLED — never a stale null.
+  const [imagesAvailable, setImagesAvailable] = useState(false);
+  const [kitInputsReady, setKitInputsReady] = useState(false);
+  const [kitItems, setKitItems] = useState<KitItems | null>(null);
+  const [kitSwitches, setKitSwitches] = useState<KitSwitches | null>(null);
+  // §22 kit: the window has to be known AFTER step 1 connects the model, not just at boot.
+  // Also keeps the gauge's estimated fallback right for the first session.
+  useEffect(() => {
+    if (keyState !== "present") { setKitInputsReady(false); return; }
+    void Promise.all([
+      loadFallbackWindow(),
+      onboarding ? window.hv.imageSettings().then((i) => setImagesAvailable(i.available)).catch(() => {}) : null,
+    ]).then(() => { if (onboarding) setKitInputsReady(true); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadFallbackWindow only calls a setter
+  }, [keyState, onboarding]);
   /**
    * §36: the star nudge. Armed by a timer below, not by a render-driven
    * decision — unlike §34's pulse it depends on nothing but wall time.
@@ -576,7 +607,8 @@ export default function App(): React.JSX.Element {
    * neither must a reopened one.
    */
   const firstRunSession = useRef<string | null>(null);
-  const wowShown = useRef<{ tools: boolean; context: boolean }>({ tools: false, context: false });
+  const wowShown = useRef<{ tools: boolean; context: boolean; extend: boolean }>({ tools: false, context: false, extend: false });
+  const firstRunTurns = useRef(0);
   const streaming = useRef<Record<string, boolean>>({});
   // Round 11: sessions whose turn the user aborted. Stop closes the bubble
   // immediately, but deltas still in flight land after that — while this is set
@@ -1009,17 +1041,6 @@ export default function App(): React.JSX.Element {
     // §34: does this build have a feedback channel? Decides the sidebar icon
     // and the session pulse, both of which are absent without a key.
     void window.hv.feedbackInfo().then(setFeedbackInfo);
-
-    // B5: default model's context window feeds the estimated-gauge fallback.
-    void (async () => {
-      try {
-        const { defaultModel } = await window.hv.getProviders();
-        if (!defaultModel) return;
-        const models = await window.hv.listModels();
-        const m = models.find((x) => x.provider === defaultModel.provider && x.id === defaultModel.modelId);
-        if (m?.contextWindow) setFallbackWindow(m.contextWindow);
-      } catch { /* no provider configured yet — gauge just shows nothing */ }
-    })();
 
     const offSessions = window.hv.onSessionsChanged(setSessions);
 
@@ -1761,16 +1782,24 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         toolDraftRef.current[sid] = null;
-        // §22: the second wow, once — after a whole turn, when there is
-        // something in the window worth opening the gauge for.
-        if (sid === firstRunSession.current && !wowShown.current.context) {
-          wowShown.current.context = true;
-          appendItem(sid, { kind: "notice", text: ONBOARDING_COPY.noticeContext });
-        }
         // A turn that thought and then said nothing still keeps its reasoning.
         commitThinking(sid);
         commitStream(sid); // finalize the live bubble into the transcript
         stampTurnEnd(sid); // round 15: "· 34s" on that bubble, now that it exists
+        // §22: the second wow, once — after a whole turn, when there is
+        // something in the window worth opening the gauge for. AFTER the reply
+        // is committed and stamped, so the notice lands below it, not above.
+        if (sid === firstRunSession.current) {
+          firstRunTurns.current += 1;
+          if (!wowShown.current.context) {
+            wowShown.current.context = true;
+            appendItem(sid, { kind: "notice", text: ONBOARDING_COPY.noticeContext });
+          } else if (firstRunTurns.current >= 2 && !wowShown.current.extend) {
+            // §22 (2026-10-09): one turn later, so two notices never land at once.
+            wowShown.current.extend = true;
+            appendItem(sid, { kind: "notice", text: ONBOARDING_COPY.noticeExtend, goTo: "plugins" });
+          }
+        }
         delete aborted.current[sid]; // the abort window closes with the turn
         // Flush a deferred provider error that was NOT retried (or exhausted its
         // retries) as the single hard error card for the turn.
@@ -2641,12 +2670,50 @@ export default function App(): React.JSX.Element {
     setStarNudge(false); // the 3-day stamp landed at show
   };
 
+  /** §22 kit: the beat opened. Writes the small-model preset, then loads what the kit lists. */
+  const openKit = async (preset: "full" | "basics"): Promise<void> => {
+    try {
+      // Written ONCE, before anything else, so quitting mid-beat leaves the safe preset (§22).
+      if (preset === "basics") await window.hv.builtinsSet(basicsPatch());
+      // The real switches FIRST: a list call failing below must not leave the catch's
+      // defaults in the draft, or Start would write them back over the user's settings.
+      const b = await window.hv.builtinsGet();
+      setKitSwitches({ plan: b.plan, askUser: b.askUser, terminal: b.terminal, browser: b.browser, web: b.web, memory: b.memory, schedules: b.schedules, document: b.document, images: b.images, subagents: b.subagents, workflows: b.workflows, skills: b.skills, coreOff: b.coreOff });
+      const [sk, pt, shell] = await Promise.all([window.hv.skillsList(), window.hv.promptTemplatesList(), window.hv.agentShell()]);
+      setKitItems({
+        skills: sk.global.filter((s) => s.source === "bundled").map((s) => ({ id: s.id, name: s.name, tokens: s.estTokens.card, description: s.description })),
+        prompts: pt.global.filter((p) => p.source === "bundled").map((p) => ({ id: p.id, name: p.name, tokens: 0, description: p.description })),
+        agents: [], // filled from the hv.agents notify (the `agents` state) at the call site
+        imagesAvailable,
+        core: coreToolNames(shell.shell),
+      });
+      // AFTER the preset write: builtinsSet restarts the utility client, which would drop a pending /hv-agents.
+      void window.hv.listAgents();
+    } catch (err) {
+      surface(err);
+      // The kit beat has no ✕ — without a draft Start would never enable. Fall back to the preset it meant.
+      setKitSwitches((p) => p ?? { ...DEFAULT_SWITCHES, ...(preset === "basics" ? basicsPatch() : {}) });
+      setKitItems((p) => p ?? { skills: [], agents: [], prompts: [], imagesAvailable, core: coreToolNames(agentShell ?? "bash") });
+    }
+  };
+
   /**
    * The wizard's handover (§22 round 19). It closes by DOING the next thing:
    * creating the session it just set the user up for, with chips chosen from
    * what the folder actually holds.
    */
-  const finishOnboarding = async (): Promise<void> => {
+  const finishOnboarding = async (d: KitDraft): Promise<void> => {
+    // One builtins write (each one restarts the utility client), then only the items the user unticked.
+    // All awaited BEFORE newSession, or the first session spawns with the old switches.
+    try {
+      await window.hv.builtinsSet(d.switches);
+      for (const id of d.skillsOff) await window.hv.skillsSetEnabled(id, false);
+      for (const name of d.agentsOff) await window.hv.setAgentEnabled(name, false);
+      for (const id of d.promptsOff) await window.hv.promptTemplatesSetEnabled(id, false);
+    } catch (err) {
+      surface(err); // the session still opens; Built-in tools shows what actually saved
+    }
+    // Never rejects past this point either: fsList is caught and newSession catches its own.
     const ws = workspaces[0];
     dismissOnboarding();
     if (!ws) return;
@@ -4417,8 +4484,14 @@ export default function App(): React.JSX.Element {
           }}
           onGoModels={() => { dismissOnboarding(); navigate({ view: "models" }); }}
           onSkip={dismissOnboarding}
-          onDone={() => void finishOnboarding()}
+          onDone={finishOnboarding}
           onOpenGuide={() => void window.hv.openExternal(docUrl("first-launch"))}
+          contextWindow={kitInputsReady ? fallbackWindow : undefined}
+          kitItems={kitItems && agents ? { ...kitItems, agents: agents.filter((a) => a.source === "bundled").map((a) => ({ id: a.name, name: a.name, tokens: agentTokenCost(a), description: a.description })) } : null}
+          kitSwitches={kitSwitches}
+          onKitOpen={(p) => void openKit(p)}
+          imagesAvailable={imagesAvailable}
+          onOpenRoomGuide={() => void window.hv.openExternal(docUrl("connect-a-model", "give-your-model-more-room"))}
         />
       )}
       {/* §36: the star nudge. Not gated on onboarding — it cannot coincide,

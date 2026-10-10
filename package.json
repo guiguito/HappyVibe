@@ -33,7 +33,8 @@
     "icons": "electron scripts/icons.mjs",
     "catalog:plugins": "node --experimental-strip-types --import jiti/register tools/plugin-catalog/build.ts",
     "catalog:crash-messages": "node scripts/catalog-crash-messages.mjs",
-    "catalog:providers": "node --experimental-strip-types --import jiti/register tools/provider-catalog/build.ts"
+    "catalog:providers": "node --experimental-strip-types --import jiti/register tools/provider-catalog/build.ts",
+    "catalog:tool-weights": "node --experimental-strip-types --import jiti/register tools/tool-weights/build.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

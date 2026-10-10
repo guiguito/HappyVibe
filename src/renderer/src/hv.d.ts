@@ -993,6 +993,8 @@ interface HvApi {
   onUiUnhandled(cb: (info: { sessionId: string; method?: string }) => void): () => void;
   // B3: providers & onboarding
   respondInput(id: string, value: string | null): void;
+  /** §22 kit: fills a null default from the configured providers first, then returns it (null = none). */
+  ensureDefaultModel(): Promise<{ provider: string; modelId: string } | null>;
   getProviders(): Promise<{
     byok: HvByokProvider[];
     /** Sign-in providers. Owned by main (providers.ts) — never re-listed here. */

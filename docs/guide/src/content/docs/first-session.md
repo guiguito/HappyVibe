@@ -77,6 +77,8 @@ To stop the agent, click the stop button beside the message box. Its tooltip rea
 
 In that same session, when the first turn ends, a note points at a small pill at the top of the session: "Everything the model knows is in the context gauge at the top — open it to see, and prune, what it holds." It answers a good question: what does the model actually know right now?
 
+One turn later, at the end of your second turn, a third note appears: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks." Its **Plugins** link opens [Plugins](/docs/plugins/). Like the gauge note, it shows once, in your first session only.
+
 - **Context** is everything the model can see right now: the instructions HappyVibe gives it, your messages, its replies, and what its tools returned. It knows nothing else about your session.
 - The **context window** is how much fits. Each model has its own size.
 - A **token** is the unit both are measured in, roughly four characters of text.

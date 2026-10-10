@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { setBuiltinTools } from "../main/config";
 
 /** §34. Same reason as the voice DTOs below: preload cannot see hv.d.ts. These
     two are the only feedback payloads with a shape worth naming — the rest are
@@ -298,6 +299,7 @@ contextBridge.exposeInMainWorld("hv", {
   // ── B3: providers & onboarding (additive; existing signatures unchanged) ──
   respondInput: (id: string, value: string | null) => ipcRenderer.send("hv:respond-input", id, value),
   getProviders: () => ipcRenderer.invoke("hv:get-providers"),
+  ensureDefaultModel: () => ipcRenderer.invoke("hv:ensure-default-model"),
   setProviderKey: (provider: string, key: string) => ipcRenderer.invoke("hv:set-provider-key", provider, key),
   removeProviderKey: (provider: string) => ipcRenderer.invoke("hv:remove-provider-key", provider),
   authLogin: (provider: string) => ipcRenderer.invoke("hv:auth-login", provider),
@@ -422,7 +424,7 @@ contextBridge.exposeInMainWorld("hv", {
 
   // ── §13 round 6: configurable built-in custom tools (additive) ────
   builtinsGet: () => ipcRenderer.invoke("hv:builtins-get"),
-  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean }) =>
+  builtinsSet: (t: Parameters<typeof setBuiltinTools>[0]) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
   // ── §32: the web service the web tools call (read per call, no respawn) ────

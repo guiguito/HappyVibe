@@ -46,6 +46,29 @@ The **Free, on this computer** choice only appears when HappyVibe finds one of t
 
 On the Models page, an app it finds shows as "running". If Ollama isn't found, the page says "Install from ollama.com and pull a model — HappyVibe picks it up automatically." Click **Check again** once it's running.
 
+## Give your model more room
+
+A model reads only so much at once: its context window, counted in tokens (a token is a few characters of text). The agent's instructions and tools take a share of it before you type a word, more than a small window holds. A window of a few thousand tokens leaves almost nothing for your messages. When your model's window is very small, HappyVibe's setup window shows a red line and **Give your model more room ↗**, and the link brings you here.
+
+Models on your own computer often start with a small window. Raise it, and the agent has space to work. A bigger window uses more memory, so check your computer can carry it. This section covers Ollama, LM Studio and llama.cpp.
+
+**Ollama**
+
+1. Open Ollama's settings and move the context length slider to a larger value. Ollama's own guidance for agents and coding tools is at least 64,000 tokens.
+2. If your Ollama has no such slider, quit the Ollama app, then set the `OLLAMA_CONTEXT_LENGTH` environment variable when you start the server yourself, for example `OLLAMA_CONTEXT_LENGTH=64000 ollama serve`.
+3. Run `ollama ps`. Its `CONTEXT` column shows the size the model is running with.
+
+**LM Studio**
+
+1. Eject the model, then load it again with a bigger context length in its load settings. In the **My Models** tab, the gear beside a model saves its load settings for next time.
+2. Or load it from a terminal: `lms load <model> --context-length 32768`.
+
+**llama.cpp**
+
+Start `llama-server` with a bigger window: `-c 32768` (long form `--ctx-size 32768`).
+
+HappyVibe asks the app for the window each time a session starts. For Ollama it uses what Ollama reports for your model while it's loaded; if the model isn't loaded, the smallest window among other loaded models; and if nothing is loaded, 4,096. So once your model is running with the new size, start a new session to use it, and if Ollama hasn't loaded the model yet, run it once first.
+
 ## Paste an API key
 
 An API key is a private code from a provider's website. It lets HappyVibe use your account there, and the provider bills that account for what the agent uses. Treat it like a password.
