@@ -116,3 +116,7 @@ PRD §22 "Decision (Kit follow-up, 2026-10-10) — Personalize is step 3…". Bu
 - Start: one session, settings saved as drafted, no reload notice.
 - Quitting at step 3 does not reopen the wizard (step 2 already added the project); the small-model
   preset written at step 3's open is what remains (R1, unchanged).
+- Layout pass (user screenshots): step 3's total + Continue pinned bottom-right (30 px from both
+  edges, grid and drill-in alike), the later-line moved to step 3's bottom row; the last screen has
+  ← Back top-left, 🎉 + "You're in." centred, consent + footer then Start at the bottom. No overflow
+  on either screen in the worst case; Start opens one session.
