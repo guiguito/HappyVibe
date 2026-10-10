@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ALL_OFF_COPY, BUNDLED_NOTE, FAMILY_COPY, allToolsOff, weightLabel } from "../toolSwitches";
 import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
-import { kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
+import { ONBOARDING_COPY as C, kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
 
 const flip = (list: string[], id: string): string[] => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
@@ -23,7 +23,6 @@ export function OnboardingKit({
 }): React.JSX.Element {
   const [open, setOpen] = useState<KitTile["key"] | null>(null);
   const s = draft.switches;
-
 
   /** One row per item of a tile's list: checked = not in its off-list. */
   const rows = (t: KitTile): { id: string; name: string; tokens: number; on: boolean; disabled: boolean; toggle: () => void }[] => {
@@ -67,23 +66,58 @@ export function OnboardingKit({
     />
   );
 
+  // Skills ▸ N / Sub-agents ▸ N swap the grid for their list (a drill-in): expanding inline
+  // grew the step past the fixed frame (2026-10-10, nothing scrolls).
+  const drill = open ? kitTiles(items.imagesAvailable).find((t) => t.key === open) : undefined;
+  if (drill) {
+    return (
+      <div className="text-left">
+        <div className="flex items-baseline gap-3 mb-2">
+          <button type="button" onClick={() => setOpen(null)} className="text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer">
+            {C.kitBack}
+          </button>
+          <span className="text-sm font-bold">{FAMILY_COPY[drill.key].label}</span>
+          <span className="text-xs text-ink-soft">{weightLabel(TOOL_WEIGHTS.families[drill.key])} {BUNDLED_NOTE}</span>
+        </div>
+        <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
+          {rows(drill).map((r) => (
+            <label
+              key={r.id}
+              className={`flex items-center gap-1.5 text-xs min-w-0 ${r.disabled ? "text-ink-soft/60" : "cursor-pointer"}`}
+            >
+              <input
+                type="checkbox"
+                className="shrink-0 accent-tangerine"
+                checked={r.on}
+                disabled={r.disabled}
+                onChange={r.toggle}
+              />
+              <span className="truncate">{r.name}</span>
+              {r.tokens > 0 && <span className="shrink-0 text-ink-soft/80">{weightLabel(r.tokens)}</span>}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="text-left">
-      <div className="grid grid-cols-2 gap-2">
+      {/* 3 columns, two text lines per tile: 11 tiles = 4 rows of ~52px, measured into the
+          fixed 864×544 frame with both small-window lines showing. */}
+      <div className="grid grid-cols-3 gap-1.5">
         {kitTiles(items.imagesAvailable).map((t) => {
-          const list = rows(t);
-          const expanded = open === t.key;
           const on = s[t.key];
           return (
             <div
               key={t.key}
-              className={`rounded-xl border-2 px-3 py-2 ${expanded ? "col-span-2" : ""} ${on ? "border-line bg-card" : "border-line/60 bg-paper-deep"}`}
+              className={`rounded-xl border-2 px-2.5 py-1.5 ${on ? "border-line bg-card" : "border-line/60 bg-paper-deep"}`}
             >
               <div className="flex items-start gap-2" title={FAMILY_COPY[t.key].what}>
                 {tick(t, on)}
                 <div className="min-w-0 flex-1">
-                  <div className={`text-sm font-bold leading-snug ${on ? "" : "text-ink-soft"}`}>{FAMILY_COPY[t.key].label}</div>
-                  <div className="text-xs text-ink-soft">
+                  <div className={`text-sm font-bold leading-snug truncate ${on ? "" : "text-ink-soft"}`}>{FAMILY_COPY[t.key].label}</div>
+                  <div className="text-xs text-ink-soft leading-snug">
                     {weightLabel(TOOL_WEIGHTS.families[t.key])}
                     {(t.key === "skills" || t.key === "subagents") && ` ${BUNDLED_NOTE}`}
                   </div>
@@ -91,39 +125,18 @@ export function OnboardingKit({
                 {t.items && (
                   <button
                     type="button"
-                    onClick={() => setOpen(expanded ? null : t.key)}
-                    aria-expanded={expanded}
+                    onClick={() => setOpen(t.key)}
                     className="shrink-0 text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1"
                   >
-                    {expanded ? "▾" : "▸"} {list.length}
+                    ▸ {rows(t).length}
                   </button>
                 )}
               </div>
-              {expanded && list.length > 0 && (
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
-                  {list.map((r) => (
-                    <label
-                      key={r.id}
-                      className={`flex items-center gap-1.5 text-xs min-w-0 ${r.disabled ? "text-ink-soft/60" : "cursor-pointer"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="shrink-0 accent-tangerine"
-                        checked={r.on}
-                        disabled={r.disabled}
-                        onChange={r.toggle}
-                      />
-                      <span className="truncate">{r.name}</span>
-                      {r.tokens > 0 && <span className="shrink-0 text-ink-soft/80">{weightLabel(r.tokens)}</span>}
-                    </label>
-                  ))}
-                </div>
-              )}
             </div>
           );
         })}
       </div>
-      {noTools && <p className="text-xs text-berry font-bold mt-2">{ALL_OFF_COPY}</p>}
+      {noTools && <p className="text-xs text-berry font-bold mt-1.5">{ALL_OFF_COPY}</p>}
     </div>
   );
 }

@@ -48,6 +48,9 @@ export const ONBOARDING_COPY = {
   step2FreshLabel: "Name your project",
   step2FreshCreate: "Create it",
   step2FreshWhere: "Created in your Documents folder, under HappyVibe.",
+
+  // Step 3 (2026-10-10): the kit, as a step. Its body is kitHeadline + kitSubline.
+  step3Title: "Personalize your agent",
   /**
    * §4 Windows round. Shown ONLY when the shell probe answers "powershell" — i.e. a
    * Windows machine with no Git Bash. One line, no persistence, no nag, and never a
@@ -73,7 +76,8 @@ export const ONBOARDING_COPY = {
   kitConsent: "Anything that changes your files or runs a command asks you first.",
   kitFooter: "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each.",
   kitStart: "Start my first session",
-  kitBasics: "Just the basics",
+  kitContinue: "Continue",
+  kitBack: "← Back",
   kitLoadAll: "Load everything anyway",
   kitTotalTail: "tokens on every message",
   kitMoreRoom: "Give your model more room ↗",
@@ -190,7 +194,7 @@ const { plan, askUser, terminal, browser, web, memory, schedules, document, suba
 /** A fresh install's switches: hv-builtins.ts's own defaults (derived, never retyped) + images on. */
 export const DEFAULT_SWITCHES: KitSwitches = { plan, askUser, terminal, browser, web, memory, schedules, document, images: true, subagents, workflows, skills, coreOff: [] };
 
-/** Just the basics: every kit family off. MCP, intent, core tools and items are never touched. */
+/** The small-model preset: every kit family off. MCP, intent, core tools and items are never touched. */
 export function basicsPatch(): Record<KitFamily, false> {
   return Object.fromEntries(KIT_FAMILIES.map((k) => [k, false])) as Record<KitFamily, false>;
 }
@@ -267,4 +271,13 @@ export function kitTiles(imagesAvailable: boolean): KitTile[] {
     key: k,
     items: k === "subagents" ? "agents" : k === "skills" ? "skills" : null,
   }));
+}
+
+export type OnboardingScreen = "welcome" | "setup" | "personalize" | "done";
+
+/** Which screen shows (2026-10-10): steps 1–2 until both gates hold, then step 3, then "You're in." after Continue. */
+export function onboardingScreen(s: { welcome: boolean; complete: boolean; continued: boolean }): OnboardingScreen {
+  if (s.welcome) return "welcome";
+  if (!s.complete) return "setup";
+  return s.continued ? "done" : "personalize";
 }

@@ -8,12 +8,12 @@ import { KIT_FAMILIES } from "../toolSwitches";
 import {
   ONBOARDING_COPY as C,
   DEFAULT_SWITCHES,
-  basicsPatch,
   basicsTotal,
   fullTotal,
   kitPreset,
   kitShape,
   kitTotal,
+  onboardingScreen,
   smallModelLine,
   tooSmall,
   tooSmallLine,
@@ -27,9 +27,10 @@ import { trackUi } from "../usage";
 import { onboardingStep } from "../usageUi";
 
 /**
- * §22 onboarding round (2026-09-01). One landscape dialog, three beats:
- * Welcome → Setup → Kit. The kit (§22, 2026-10-09) waits for Start — no timer
- * hands over, and Esc there means Start, never dismiss.
+ * §22 onboarding round (2026-09-01). One landscape dialog: Welcome → steps 1–2
+ * → step 3 "Personalize" (the kit) → "You're in." (2026-10-10). Step 3 and the
+ * last screen take the full width; nothing waits on a timer, and from step 3 on
+ * Esc moves forward (Continue, then Start), never dismisses.
  *
  * It owns NO step state. `modelReady` and `workspaceReady` are the app's real
  * gates handed down (`hv:has-any-provider`, `workspaces.length`), which is
@@ -38,7 +39,7 @@ import { onboardingStep } from "../usageUi";
  * anywhere flips the checkmark, and a machine where a model already resolves is
  * honestly one step long instead of staging re-earned theatre.
  *
- * The only state here is which beat is on screen.
+ * The only state here is which beat is on screen (`welcome`, `continued`).
  *
  * On first run App suppresses its no-provider redirect to the Models page, so
  * what sits behind this scrim is the real app — not a second copy of the three
@@ -49,6 +50,12 @@ const primaryBtn =
   "rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
 const ghostBtn =
   "rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
+
+/** The step number / checkmark square — shared by StepRow and step 3's compact line. */
+const badge = (done: boolean): string =>
+  `shrink-0 size-6 rounded-lg border-2 flex items-center justify-center font-black text-xs ${
+    done ? "bg-leaf text-paper border-leaf" : "bg-card text-ink-soft border-line"
+  }`;
 
 function StepRow({
   n,
@@ -71,12 +78,7 @@ function StepRow({
   return (
     <div className={`rounded-2xl border-2 px-5 py-4 ${active ? "border-ink/70 bg-paper" : "border-line bg-card"}`}>
       <div className="flex items-start gap-3">
-        <div
-          className={`shrink-0 size-6 rounded-lg border-2 flex items-center justify-center font-black text-xs ${
-            done ? "bg-leaf text-paper border-leaf" : "bg-card text-ink-soft border-line"
-          }`}
-          aria-hidden
-        >
+        <div className={badge(done)} aria-hidden>
           {done ? "✓" : n}
         </div>
         <div className="min-w-0 flex-1">
@@ -190,7 +192,10 @@ export function OnboardingDialog({
   const [draft, setDraft] = useState<KitDraft | null>(null);
   const starting = useRef(false);
   const reported = useRef(false);
-  const kitOpen = complete && !welcome;
+  const [continued, setContinued] = useState(false);
+  const screen = onboardingScreen({ welcome, complete, continued });
+  const kitOpen = screen === "personalize" || screen === "done";
+  const next = (): void => { if (draft) setContinued(true); };
   const ctx = contextWindow ?? null;
 
   useEffect(() => {
@@ -222,6 +227,7 @@ export function OnboardingDialog({
   const full = fullTotal(imagesAvailable);
   const smallModel = kitPreset(ctx, full) === "basics";
   const later = [GOTO_LABELS.builtinTools, GOTO_LABELS.skills];
+  const doneSteps = [C.step1Title, C.step2Title];
 
   const createFresh = async (): Promise<void> => {
     if (!fresh || busy) return;
@@ -262,8 +268,9 @@ export function OnboardingDialog({
             // "last in the Escape chain" care, one dialog over.
             e.preventDefault();
             if (welcome) { setWelcome(false); return; }
-            // The kit has no ✕: Esc there is Start, with whatever the draft holds.
-            if (complete) { start(); return; }
+            // Step 3 and the last screen have no ✕: Esc moves forward with whatever the draft holds.
+            if (screen === "personalize") { next(); return; }
+            if (screen === "done") { start(); return; }
             dismiss();
           }}
           onOpenAutoFocus={(e) => {
@@ -298,10 +305,13 @@ export function OnboardingDialog({
               `h-full` resolved to the GROWN height, it never scrolled, and the
               dialog's overflow-hidden silently ate 121px of step 1 — measured. A
               row that cannot exceed the frame is what pushes the scroll inward. */}
-          <div className="grid h-full grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] gap-7">
-            {/* LEFT — the brand. Constant across all three beats, which is what
-                makes the dialog feel like one place rather than three screens. */}
-            <div className="flex flex-col justify-center min-w-0 min-h-0">
+          <div
+            className={`grid h-full grid-rows-[minmax(0,1fr)] gap-7 ${kitOpen ? "grid-cols-[minmax(0,1fr)]" : "grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]"}`}
+          >
+            {/* LEFT — the brand, through the welcome and steps 1–2. Step 3 and the
+                last screen need the width (2026-10-10), so it goes screen-reader-only
+                there: Radix still finds its Title and Description. */}
+            <div className={kitOpen ? "sr-only" : "flex flex-col justify-center min-w-0 min-h-0"}>
               <div className="flex items-center gap-3">
                 <div className={welcome ? "hv-logo-travel" : undefined}>
                   <div className={welcome ? "hv-logo-hop" : "hv-logo-settled"}>
@@ -335,7 +345,7 @@ export function OnboardingDialog({
                 has the full width to travel across. */}
             <div className="min-w-0 min-h-0">
               {!welcome && (
-                <div className="hv-rise-in h-full overflow-y-auto">
+                <div key={screen} className="hv-rise-in h-full overflow-y-auto">
                   {!complete ? (
                     // Centred, not top-anchored: the stack is shorter than the
                     // panel and pinning it to the top left a dead strip along
@@ -397,63 +407,83 @@ export function OnboardingDialog({
                           <p className="text-xs text-ink-soft mt-4 leading-snug">{C.gitForWindows}</p>
                         )}
                     </div>
-                  ) : (
-                    /* The celebration lands in the RIGHT panel, so the brand
-                       column never moves and the dialog never resizes. The kit
-                       scrolls inside it (min-h-full, round 25). */
-                    <div className="min-h-full flex flex-col items-center text-center py-1 pr-3">
-                      <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
-                      <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
-                      <p className="hv-done-body font-bold mt-1">{C.kitHeadline}</p>
-                      <p className="text-sm text-ink-soft mt-1 leading-snug">
-                        {C.kitSubline} {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.agents}.
-                      </p>
+                  ) : screen === "personalize" ? (
+                    /* Step 3, full width. Nothing scrolls at the fixed frame (2026-10-10):
+                       line 32 + title/body 56 + small-model 41 + too-small 21 + 4 tile rows
+                       ~254 + footer 52 ≈ 456px of the 484px inside. `overflow-y-auto` above
+                       is only the tiny-window safety net; `min-h-full`, not `h-full` (round 25). */
+                    <div className="min-h-full flex flex-col justify-center">
+                      <ol className="flex items-center gap-4 text-sm font-bold mb-3">
+                        {doneSteps.map((t) => (
+                          <li key={t} className="flex items-center gap-2">
+                            <span className={badge(true)} aria-hidden>✓</span>
+                            <span className="text-ink-soft line-through decoration-2">{t}</span>
+                          </li>
+                        ))}
+                      </ol>
+                      <div className="flex items-center gap-3">
+                        <span className={badge(false)} aria-hidden>3</span>
+                        <h2 className="font-black text-2xl tracking-tight">{C.step3Title}</h2>
+                      </div>
+                      <p className="text-sm text-ink-soft leading-snug mt-1">{C.kitHeadline} {C.kitSubline}</p>
                       {/* Only while nothing is ticked: "Load everything anyway" (or any tick) makes the line false. */}
                       {draft && smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k]) && (
-                        <div className="mt-2 text-xs text-ink-soft leading-snug">
-                          <p>{smallModelLine(ctx, full)}</p>
+                        <p className="mt-2 text-xs text-ink-soft leading-snug">
+                          {smallModelLine(ctx, full)}{" "}
                           <button
                             type="button"
                             onClick={() => setDraft({ ...draft, switches: { ...DEFAULT_SWITCHES, coreOff: draft.switches.coreOff } })}
-                            className="mt-1 font-bold underline underline-offset-2 hover:text-ink cursor-pointer"
+                            className="font-bold underline underline-offset-2 hover:text-ink cursor-pointer"
                           >
                             {C.kitLoadAll}
                           </button>
-                        </div>
+                        </p>
                       )}
                       {kitItems && ctx !== null && tooSmall(ctx) && (
-                        <p className="mt-2 text-xs text-berry font-bold leading-snug">
+                        <p className="mt-1 text-xs text-berry font-bold leading-snug">
                           {tooSmallLine(basicsTotal(kitItems), ctx)}{" "}
                           <button type="button" onClick={onOpenRoomGuide} className="underline underline-offset-2 cursor-pointer">
                             {C.kitMoreRoom}
                           </button>
                         </p>
                       )}
-                      <div className="w-full mt-3">
+                      <div className="mt-3">
                         {draft && kitItems ? (
                           <OnboardingKit draft={draft} setDraft={setDraft} items={kitItems} />
                         ) : (
                           <p className="text-sm text-ink-soft">{C.kitLoading}</p>
                         )}
                       </div>
-                      <p className="text-xs text-ink-soft mt-3 leading-snug">🔒 {C.kitConsent}</p>
-                      <p className="text-xs text-ink-soft mt-1 leading-snug">{C.kitFooter}</p>
-                      {draft && kitItems && (
-                        <p className="w-full mt-3 text-xs text-ink-soft text-right">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</p>
-                      )}
-                      <div className="w-full mt-1 flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          className={`${ghostBtn} whitespace-nowrap`}
-                          disabled={busy || !draft}
-                          onClick={() => draft && setDraft({ ...draft, switches: { ...draft.switches, ...basicsPatch() } })}
-                        >
-                          {C.kitBasics}
-                        </button>
-                        <button type="button" className={`${primaryBtn} whitespace-nowrap`} onClick={start} disabled={busy || !draft}>
-                          {C.kitStart}
+                      <div className="mt-3 flex items-center justify-end gap-4">
+                        {draft && kitItems && (
+                          <p className="text-xs text-ink-soft">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</p>
+                        )}
+                        <button type="button" className={`${primaryBtn} whitespace-nowrap`} onClick={next} disabled={!draft}>
+                          {C.kitContinue}
                         </button>
                       </div>
+                    </div>
+                  ) : (
+                    /* The last screen: centred, full width, waits for Start (no timer). */
+                    <div className="min-h-full flex flex-col items-center justify-center text-center">
+                      <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
+                      <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
+                      <p className="hv-done-body text-sm text-ink-soft mt-2 leading-snug">
+                        {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.agents}.
+                      </p>
+                      <p className="text-xs text-ink-soft mt-4 leading-snug">🔒 {C.kitConsent}</p>
+                      <p className="text-xs text-ink-soft mt-1 leading-snug">{C.kitFooter}</p>
+                      <button type="button" className={`${primaryBtn} whitespace-nowrap mt-6`} onClick={start} disabled={busy || !draft}>
+                        {C.kitStart}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContinued(false)}
+                        disabled={busy}
+                        className="mt-3 text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer"
+                      >
+                        {C.kitBack}
+                      </button>
                     </div>
                   )}
                 </div>

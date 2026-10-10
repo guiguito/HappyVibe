@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { chipsFor, folderHasCode, keyRejectedNote, noteAfterEdit, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
+import { chipsFor, folderHasCode, keyRejectedNote, noteAfterEdit, ONBOARDING_COPY, onboardingScreen, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
 
 /**
  * §22 onboarding round (2026-09-01).
@@ -597,11 +597,13 @@ describe("the handover beat is actually visible", () => {
     expect(has(src, "C.kitStart"), "Start button").toBe(true);
   });
 
-  it("Esc in the kit beat starts, it never dismisses", () => {
+  it("Esc moves forward from step 3 on — Continue, then Start — and never dismisses there", () => {
     const src = flat(DIALOG);
     const esc = src.slice(src.indexOf("onEscapeKeyDown"), src.indexOf("onOpenAutoFocus"));
-    expect(has(esc, "if (complete)"), "kit branch").toBe(true);
-    expect(has(esc, "start()"), "Esc = Start").toBe(true);
+    expect(has(esc, 'if (screen === "personalize") { next(); return; }'), "step 3 = Continue").toBe(true);
+    expect(has(esc, 'if (screen === "done") { start(); return; }'), "last screen = Start").toBe(true);
+    // The ✕ only exists while steps 1–2 are incomplete.
+    expect(has(src, "{!complete && ( <button type=\"button\" onClick={dismiss}"), "no ✕ from step 3 on").toBe(true);
   });
 
   it("Start is guarded, so a double press writes once and opens one session", () => {
@@ -643,6 +645,50 @@ describe("the handover beat is actually visible", () => {
     for (const c of ["hv-burst", "hv-done-title", "hv-done-body"]) {
       expect(has(block, c), c).toBe(true);
     }
+  });
+});
+
+describe("step 3 Personalize and the last screen (2026-10-10)", () => {
+  it("which screen shows: setup until both gates hold, step 3, then You're in. after Continue", () => {
+    expect(onboardingScreen({ welcome: true, complete: true, continued: true })).toBe("welcome");
+    expect(onboardingScreen({ welcome: false, complete: false, continued: false })).toBe("setup");
+    expect(onboardingScreen({ welcome: false, complete: true, continued: false })).toBe("personalize");
+    expect(onboardingScreen({ welcome: false, complete: true, continued: true })).toBe("done");
+  });
+
+  it("step 3 is titled from the copy and its compact line re-uses the step titles", () => {
+    const src = flat(DIALOG);
+    expect(ONBOARDING_COPY.step3Title).toBe("Personalize your agent");
+    expect(has(src, "{C.step3Title}"), "step 3 title").toBe(true);
+    expect(has(src, "const doneSteps = [C.step1Title, C.step2Title];"), "steps 1–2 not re-typed").toBe(true);
+    expect(has(src, "{C.kitHeadline} {C.kitSubline}"), "body").toBe(true);
+  });
+
+  it("Continue leads to the last screen; Start lives only there", () => {
+    const src = flat(DIALOG);
+    expect(ONBOARDING_COPY.kitContinue).toBe("Continue");
+    expect(src.indexOf("{C.kitContinue}"), "Continue before the last screen").toBeLessThan(src.indexOf("{C.doneTitle}"));
+    expect(src.indexOf("{C.kitStart}"), "Start after You're in.").toBeGreaterThan(src.indexOf("{C.doneTitle}"));
+  });
+
+  it("Just the basics is gone", () => {
+    expect("kitBasics" in ONBOARDING_COPY).toBe(false);
+    expect(has(flat(DIALOG), "basicsPatch"), "no button left using it").toBe(false);
+    expect(/Just the basics/.test(DIALOG + read("components/OnboardingKit.tsx"))).toBe(false);
+  });
+
+  it("step 3 and the last screen take the full width; the brand stays for Radix only", () => {
+    const src = flat(DIALOG);
+    expect(has(src, 'kitOpen ? "grid-cols-[minmax(0,1fr)]"'), "one column").toBe(true);
+    expect(has(src, 'kitOpen ? "sr-only"'), "brand hidden, Title kept").toBe(true);
+  });
+
+  it("Skills and Sub-agents open as a drill-in with a Back control, not inline", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    expect(has(kit, "{C.kitBack}"), "Back").toBe(true);
+    expect(has(kit, "onClick={() => setOpen(null)}"), "Back returns to the grid").toBe(true);
+    expect(has(kit, "col-span-2"), "no inline expansion").toBe(false);
+    expect(has(kit, "grid grid-cols-3"), "3 columns").toBe(true);
   });
 });
 

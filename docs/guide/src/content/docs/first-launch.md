@@ -1,9 +1,9 @@
 ---
 title: First launch
-description: What HappyVibe shows the first time you open it, and the two setup steps that get you to your first session.
+description: What HappyVibe shows the first time you open it, and the three setup steps that get you to your first session.
 ---
 
-The first time you open HappyVibe, it greets you with one small window in three beats: a hello, two setup steps, and a last look at everything your agent comes with. This is step 2 of 5, and you can leave it whenever you like.
+The first time you open HappyVibe, it greets you with one small window: a hello, three setup steps, and a last "You're in." before your first session. This is step 2 of 5, and you can leave it whenever you like.
 
 ## When you see it
 
@@ -40,41 +40,43 @@ The folder you pick becomes your first workspace. A workspace is how a project s
 
 On a Windows computer without Git for Windows, one more line appears under the steps: "Install Git for Windows for the best experience — HappyVibe will use its shell automatically, and sub-agents need it." In plain words: HappyVibe works best with Git for Windows, and subagents (helper agents the main agent hands work to) need it. Without it, the agent runs its commands in PowerShell instead.
 
-## Check what your agent comes with
+## Personalize your agent
 
-With both steps ticked, the window says "You're in." and "Your agent comes fully loaded." Under it: "Untick anything you don't want. You can change all of it later on Built-in tools, Skills and Agents."
+With the first two steps ticked, the window widens and step 3 takes all of it. A line at the top shows the two finished steps with their ✓, and under it the third step reads "Personalize your agent": "Your agent comes fully loaded. Untick anything you don't want."
 
-<!-- TODO(media): first-launch/onboarding-kit.png — The kit beat with its tiles, total and Start button -->
+<!-- TODO(media): first-launch/onboarding-kit.png — Step 3 "Personalize your agent" with its tiles, total and Continue button -->
 
-Nothing here is final: you can change every choice later on those pages. Nothing happens on a timer either. The window waits until you click **Start my first session**.
+Nothing here is final, and nothing happens on a timer. You can change every choice later.
 
 - **The tiles.** Each one is a group of abilities the agent has: **Plan mode**, **Ask user**, **Agent terminal — 3 tools**, **Agent browser — 10 tools**, **Web tools — 4 tools**, **Memory — 3 tools**, **Schedules — 4 tools**, **Documents — 1 tool**, **Sub-agents — 4 tools** and **Skills**, plus **Images — 1 tool** when you have an OpenRouter key or sign-in. Hover a tile to read what it does. Tick or untick the box to switch the group on or off. **Workflows** isn't a tile here: it starts off, and you can turn it on later from **Built-in tools**.
-- **Skills and Sub-agents** open to a list. Click the ▸ and number beside them, and every skill or agent gets a tick of its own, so you can drop single ones.
-- **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later. Open one of them and each skill or agent shows its own weight beside its name.
-- **The total.** At the bottom, above the two buttons: "~N tokens on every message", with N for whatever is ticked right now, plus the core tools the agent always has for reading, editing and running commands. It moves as you tick.
-- **Just the basics** unticks every group at once. Your ticks on single skills and agents stay as they were. The agent keeps the core tools and can still read, edit and run commands.
-- **The consent line.** "Anything that changes your files or runs a command asks you first."
-- **The footer.** "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each."
+- **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later.
+- **Skills and Sub-agents** each have a ▸ and a number. Click it and the tiles make way for that list: every skill or agent gets a tick of its own and its own weight, so you can drop single ones. Click **← Back** to return to the tiles. While the group itself is unticked, its list is greyed out.
+- **The total.** At the bottom, beside **Continue**: "~N tokens on every message", with N for whatever is ticked right now, plus the core tools the agent always has for reading, editing and running commands. It moves as you tick.
 
-Nothing is saved until you start, apart from the small-model preset below.
+Nothing is saved yet, apart from the small-model preset below. Click **Continue** when you're happy.
 
 ### If your model has a small window
 
-Every model can read only so much at once, its context window ([what that is](/docs/first-session/#context-what-the-agent-can-see)). When the full set would take more than a quarter of your model's window, the window opens with **Just the basics** already applied, and says so: "Your model reads 8,192 tokens at a time and the full kit takes about 13.2k, so you're starting with just the basics." (The numbers here are examples; the window shows yours.) Click **Load everything anyway** to put every tile back on. The line goes away once you do.
+Every model can read only so much at once, its context window ([what that is](/docs/first-session/#context-what-the-agent-can-see)). When the full set would take more than a quarter of your model's window, step 3 opens with every tile unticked, and says so: "Your model reads 8,192 tokens at a time and the full kit takes about 13.2k, so you're starting with just the basics." (The numbers here are examples; the window shows yours.) The agent keeps the core tools and can still read, edit and run commands. Click **Load everything anyway** to put every tile back on. The line goes away once you do, or as soon as you tick any tile.
 
 If the window is very small, no bigger than the room HappyVibe's agent keeps free for its own summarising, the agent starts condensing your conversation almost at once, so there's no room for real work. Then a red line appears: "Even the basics fill about 40% of it — too little room for real work." (The percentage is yours.) Or, when they take all of it: "Even the basics don't fit in it — too little room for real work." Click **Give your model more room ↗** to open [Give your model more room](/docs/connect-a-model/#give-your-model-more-room), which shows how.
 
-### Start
+## You're in
 
-Click **Start my first session**. The window saves your choices, closes, and opens a session in your new workspace, with a few suggested first prompts waiting above the message box. Press **Esc** and you start the same way, with whatever is ticked.
+After **Continue**, the window says "You're in." and "You can change all of it later on Built-in tools, Skills and Agents." Under it:
+
+- **The consent line.** "Anything that changes your files or runs a command asks you first."
+- **The footer.** "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each."
+
+Click **Start my first session**. The window saves your choices, closes, and opens a session in your new workspace, with a few suggested first prompts waiting above the message box. Changed your mind about a tile? **← Back** under the button takes you to step 3 again.
 
 If you quit after the first step, the next launch opens with it already ticked.
 
 ## Setting up yourself instead
 
-The ✕ in the top-right corner is the way out while you're on the two setup steps. Its tooltip reads "I'll set up myself". It's gone from the last window, which has no ✕: you leave it by starting your session.
+The ✕ in the top-right corner is the way out while you're on the first two steps. Its tooltip reads "I'll set up myself". It's gone from step 3 and from "You're in.": you leave those by starting your session.
 
-On the keyboard, **Esc** closes the window during the setup steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On the last window, **Esc** means **Start my first session**. Clicking outside the window does nothing, so a stray click can't close it.
+On the keyboard, **Esc** closes the window during the first two steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On step 3, **Esc** means **Continue**, and on "You're in." it means **Start my first session**, with whatever is ticked. Clicking outside the window does nothing, so a stray click can't close it.
 
 Once closed, the window doesn't come back, and you don't need it to. Everything it offers lives elsewhere in the app:
 
