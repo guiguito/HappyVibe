@@ -18,6 +18,16 @@ describe("BackButton", () => {
     expect(/\b(absolute|fixed)\b/.test(src.replace(/\/\*[\s\S]*?\*\//g, "")), "no overlay classes").toBe(false);
   });
 
+  it("its ring is keyboard-only and inset, so no scroll box clips it", () => {
+    const src = read("BackButton.tsx");
+    expect(src).toContain("focus-visible:ring-2 focus-visible:ring-inset");
+    expect(/(^|\s)focus:ring/.test(src), "no ring on mouse focus").toBe(false);
+    for (const f of ["OnboardingKit.tsx", "OnboardingDialog.tsx", "ContextPanel.tsx", "FeedbackDialog.tsx"]) {
+      const uses = read(f).match(/<BackButton [^>]*>/g) ?? [];
+      for (const u of uses) expect(/-m[lx]-/.test(u), `${f}: a negative margin pushes it past the clip edge`).toBe(false);
+    }
+  });
+
   it("every back control renders it; the browser toolbar draws the same glyph", () => {
     for (const f of ["OnboardingKit.tsx", "OnboardingDialog.tsx", "ContextPanel.tsx", "FeedbackDialog.tsx"]) {
       const src = read(f);

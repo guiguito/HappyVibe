@@ -484,7 +484,7 @@ export function OnboardingDialog({
                     /* The last screen, full width, waits for Start (no timer): Back top-left,
                        🎉 centred in the space above, consent + footer + Start at the bottom. */
                     <div className="min-h-full flex flex-col text-center">
-                      <BackButton label={C.kitBack} onClick={() => setContinued(false)} disabled={busy} className="self-start -ml-2" />
+                      <BackButton label={C.kitBack} onClick={() => setContinued(false)} disabled={busy} className="self-start" />
                       <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
                         <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>

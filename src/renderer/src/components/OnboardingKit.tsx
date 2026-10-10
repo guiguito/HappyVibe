@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { ALL_OFF_COPY, BUNDLED_NOTE, FAMILY_COPY, allToolsOff, weightLabel, type KitFamily } from "../toolSwitches";
 import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
-import { ONBOARDING_COPY as C, kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
+import { ONBOARDING_COPY as C, firstClause, kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
 import { GOTO_LABELS } from "./GoTo";
 import { BackButton } from "./BackButton";
 
@@ -35,9 +35,12 @@ export function OnboardingKit({
   const backRef = useRef<HTMLButtonElement | null>(null);
   const opener = useRef<Partial<Record<TileKey, HTMLButtonElement | null>>>({});
   const last = useRef<TileKey | null>(null);
+  const byKeyboard = useRef(false);
   useEffect(() => {
-    if (open) backRef.current?.focus();
-    else if (last.current) opener.current[last.current]?.focus();
+    // Focus always moves (a11y); the ring shows only when ▸/Back was pressed from the keyboard
+    // (`detail === 0`) — programmatic focus after a click would otherwise wear one.
+    if (open) backRef.current?.focus({ focusVisible: byKeyboard.current });
+    else if (last.current) opener.current[last.current]?.focus({ focusVisible: byKeyboard.current });
     last.current = open;
   }, [open]);
 
@@ -112,10 +115,10 @@ export function OnboardingKit({
   const drill = open ? kitTiles(items.imagesAvailable).find((t) => t.key === open) : undefined;
   if (drill) {
     return (
-      <div className="text-left">
-        {/* Back alone on its own line, then the family as a heading (2026-10-10). `-ml-2` lines the
-            chevron up with the text below it (the hit area is wider than the glyph). */}
-        <BackButton ref={backRef} label={C.kitBack} onClick={() => setOpen(null)} className="-ml-2" />
+      <div className="text-left" onKeyDown={(e) => { if (e.key === "Escape") byKeyboard.current = true; }}>
+        {/* Back alone on its own line, then the family as a heading (2026-10-10). No negative margin:
+            the step's scroll box clips anything left of its edge, ring included. */}
+        <BackButton ref={backRef} label={C.kitBack} onClick={(e) => { byKeyboard.current = e.detail === 0; setOpen(null); }} />
         <div className="flex items-baseline gap-3 mt-1 mb-3">
           <h3 className="font-black text-lg tracking-tight">{label(drill.key)}</h3>
           <span className="text-xs text-ink-soft">{weightLabel(weight(drill.key))}{bundled(drill.key) && ` ${BUNDLED_NOTE}`}</span>
@@ -141,7 +144,7 @@ export function OnboardingKit({
                   <span className="truncate font-bold">{r.name}</span>
                   {r.tokens > 0 && <span className="shrink-0 text-ink-soft/80">{weightLabel(r.tokens)}</span>}
                 </span>
-                <span className="block truncate text-ink-soft">{r.description}</span>
+                <span className="block truncate text-ink-soft">{firstClause(r.description)}</span>
               </span>
             </label>
           ))}
@@ -172,7 +175,7 @@ export function OnboardingKit({
                   <button
                     ref={(el) => { opener.current[t.key] = el; }}
                     type="button"
-                    onClick={() => setOpen(t.key)}
+                    onClick={(e) => { byKeyboard.current = e.detail === 0; setOpen(t.key); }}
                     aria-label={label(t.key)}
                     className="shrink-0 text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1"
                   >

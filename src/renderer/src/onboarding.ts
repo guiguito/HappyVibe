@@ -281,6 +281,14 @@ export function kitTiles(imagesAvailable: boolean): KitTile[] {
   return [...families, { key: "prompts", familyTick: false, items: "prompts" }];
 }
 
+/** A drill-in item's one line: its description up to the first ". " (period kept) or " — " (dropped). */
+export function firstClause(text: string): string {
+  const cuts = [text.indexOf(". "), text.indexOf(" — ")].filter((i) => i >= 0);
+  if (!cuts.length) return text;
+  const at = Math.min(...cuts);
+  return at === text.indexOf(". ") ? text.slice(0, at + 1) : text.slice(0, at);
+}
+
 export type OnboardingScreen = "welcome" | "setup" | "personalize" | "done";
 
 /** Which screen shows (2026-10-10): steps 1–2 until both gates hold, then step 3, then "You're in." after Continue. */

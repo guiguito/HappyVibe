@@ -262,7 +262,7 @@ export function ContextPanel({
 
           {snapshot && drilled && (
             <section>
-              <BackButton label="All categories" onClick={() => setDrill(null)} className="mb-1 -ml-2" />
+              <BackButton label="All categories" onClick={() => setDrill(null)} className="mb-1" />
               <GroupHeader label={drilled.label} est={drilled.estTokens} />
 
               {drilled.key === "system" && snapshot.system && (

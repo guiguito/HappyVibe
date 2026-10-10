@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  basicsPatch, basicsTotal, DEFAULT_SWITCHES, fullTotal, KIT_SERVICES, kitPreset, kitShape, kitTiles, kitTotal,
+  basicsPatch, basicsTotal, DEFAULT_SWITCHES, firstClause, fullTotal, KIT_SERVICES, kitPreset, kitShape, kitTiles, kitTotal,
   ONBOARDING_COPY, setFamily, smallModelLine, tooSmall, tooSmallLine, type KitDraft, type KitItems,
 } from "../src/renderer/src/onboarding";
 import { FAMILY_COPY, KIT_FAMILIES } from "../src/renderer/src/toolSwitches";
@@ -168,6 +168,20 @@ describe("one line on every tile and every list item (2026-10-10)", () => {
     expect(kit).toContain("tokens: s.estTokens.card, description: s.description");
     expect(kit).toContain("tokens: 0, description: p.description");
     expect(app).toContain("tokens: agentTokenCost(a), description: a.description");
+  });
+});
+
+describe("firstClause — a list item's one line", () => {
+  it("cuts at the first sentence end (period kept) or dash (dropped), whichever comes first", () => {
+    expect(firstClause("Read-only codebase investigator. Delegate to it to map architecture, trace flows.")).toBe("Read-only codebase investigator.");
+    expect(firstClause("Summarize a document — the takeaway")).toBe("Summarize a document");
+    expect(firstClause("Review a diff — find bugs. Then fix.")).toBe("Review a diff");
+    expect(firstClause("Plan first. Then act — carefully")).toBe("Plan first.");
+  });
+  it("leaves a single clause (and a version number like 1.5) alone", () => {
+    expect(firstClause("Writes tests")).toBe("Writes tests");
+    expect(firstClause("Upgrades to v1.5 safely")).toBe("Upgrades to v1.5 safely");
+    expect(firstClause("")).toBe("");
   });
 });
 

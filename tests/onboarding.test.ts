@@ -686,11 +686,11 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
   it("Skills, Sub-agents and Prompts open as a drill-in with a Back control, not inline", () => {
     const kit = flat(read("components/OnboardingKit.tsx"));
     expect(has(kit, "{C.kitBack}"), "Back").toBe(true);
-    expect(has(kit, "onClick={() => setOpen(null)}"), "Back returns to the grid").toBe(true);
+    expect(has(kit, "setOpen(null); }}"), "Back returns to the grid").toBe(true);
     expect(has(kit, "col-span-2"), "no inline expansion").toBe(false);
     expect(has(kit, "grid grid-cols-3"), "3 columns").toBe(true);
     expect(has(kit, "aria-label={label(t.key)}"), "▸ N names its family").toBe(true);
-    expect(has(kit, "if (open) backRef.current?.focus(); else if (last.current) opener.current[last.current]?.focus();"), "focus follows").toBe(true);
+    expect(has(kit, "if (open) backRef.current?.focus({ focusVisible: byKeyboard.current }); else if (last.current) opener.current[last.current]?.focus({ focusVisible: byKeyboard.current });"), "focus follows").toBe(true);
   });
 
   it("the drill-in header: Back alone on top, then the family as a heading with its weight", () => {
@@ -706,7 +706,7 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
   it("tiles and list items are two lines each; the list is 2 columns; the small-model line yields to a drill-in", () => {
     const kit = flat(read("components/OnboardingKit.tsx"));
     expect(has(kit, "{short(t.key)}"), "tile one-liner").toBe(true);
-    expect(has(kit, "{r.description}"), "item one-liner").toBe(true);
+    expect(has(kit, "{firstClause(r.description)}"), "item one-liner").toBe(true);
     expect(has(kit, "grid grid-cols-2"), "2-column list").toBe(true);
     expect(has(flat(DIALOG), "draft && !drill && smallModel"), "hidden inside a drill-in").toBe(true);
   });
