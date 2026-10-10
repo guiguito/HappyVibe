@@ -89,3 +89,16 @@ Projects via **Start fresh…** (`~/Documents/HappyVibe/hv-kit-gui-*`, removed a
   spec keeps it).
 - Calibration: no real 4k/32k/128k runner was used — seeded windows only. The quarter rule behaved as
   specified at all three.
+
+## Follow-up (2026-10-10): kit trimmed, Ask user unlocked
+
+PRD §13/§22 "Decision (Kit follow-up, 2026-10-10)". Checked on the built app, throwaway profiles:
+- The kit shows 11 family tiles (Plan mode … Skills, Images with an OpenRouter key); no Core tools,
+  Prompts or Workflows tile. Total unchanged at 13.4k (core still counted). *Just the basics* → 1.6k.
+- Ask user unticks with Plan mode on (total −365); Start saves `plan: true, askUser: false`; Built-in
+  tools shows a normal Ask user switch, no "Locked on" note.
+- Found on screen before the fix: main's `getBuiltinTools()` still forced `askUser` on whenever
+  `plan` was on, so the switch looked unlocked and snapped back on save. Fixed in `config.ts`, pinned
+  by `tests/workflows-default.test.ts`.
+- Live batch (required: `pi-runtime/extensions` changed): 90/91 green in 16 min (slow provider);
+  the one failure, `readonly-bridge.test.ts`, is the known batch-only flake and passed alone in 5.6 s.

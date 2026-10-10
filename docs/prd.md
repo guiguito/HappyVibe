@@ -747,6 +747,8 @@ The first magical moment combines: (1) **visible agent work** — the user watch
 
 **Decision (Kit follow-up, 2026-10-10) — the kit shows only what costs context and can be switched (amends the 2026-10-09 kit):** **Core tools**, **Prompts** and **Workflows** are no longer tiles. Core tools are expected and always there; prompts are not injected into context until used; Workflows ships off, so it costs nothing on day one. Each keeps its permanent home on Built-in tools or Prompts. The total by the button still counts the core tools, because every message carries them. *Just the basics* still switches every family off.
 
+**Decision (Kit follow-up, 2026-10-10) — Personalize is step 3, "You're in." is the last screen, and nothing scrolls (amends the 2026-10-09 kit placement):** the kit sat inside the celebration panel, in half the frame, and had to scroll. It becomes **step 3, "Personalize your agent"**, after Connect a model and Pick a project: it takes the full width of the same fixed frame, the two done steps shrink to one line, the tiles sit in three compact columns, and Skills and Sub-agents open as a list in place of the grid with a way back, rather than growing the panel. **Continue** ends step 3, and **"You're in."** becomes the last screen on its own: the consent line, the plugins footer and **Start my first session**, which still writes everything once. **Just the basics** goes: the small-model preset still opens on the basics, and *Load everything anyway* still undoes it. Esc continues on step 3 and starts on the last screen; neither has a ✕.
+
 ## 23. Plan Mode
 
 **Decision (2026-07-19, locked)** — full proposal in Notion ("Plan mode proposal", page `3a0d33dfffca80848f85c0ff0b6df04f`).
