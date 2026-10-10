@@ -50,9 +50,9 @@ With the first two steps ticked, the hello panel on the left steps aside and ste
 
 Nothing here is final, and nothing happens on a timer. You can change every choice later.
 
-- **The tiles.** Each one is a group of abilities the agent has: **Plan mode**, **Ask user**, **Agent terminal — 3 tools**, **Agent browser — 10 tools**, **Web tools — 4 tools**, **Memory — 3 tools**, **Schedules — 4 tools**, **Documents — 1 tool**, **Sub-agents — 4 tools** and **Skills**, plus **Images — 1 tool** when you have an OpenRouter key or sign-in. Hover a tile to read what it does. Tick or untick the box to switch the group on or off. **Workflows** isn't a tile here: it starts off, and you can turn it on later from **Built-in tools**.
+- **The tiles.** Each one is a group of abilities the agent has: **Plan mode**, **Ask user**, **Agent terminal — 3 tools**, **Agent browser — 10 tools**, **Web tools — 4 tools**, **Memory — 3 tools**, **Schedules — 4 tools**, **Documents — 1 tool**, **Sub-agents — 4 tools** and **Skills**, plus **Images — 1 tool** when you have an OpenRouter key or sign-in. **Prompts** comes last. Hover a tile to read what it does. Tick or untick the box to switch the group on or off. Prompts has no box: there's nothing to switch off as a group, because prompts weigh nothing until you use one. **Workflows** isn't a tile here: it starts off, and you can turn it on later from **Built-in tools**.
 - **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later.
-- **Skills and Sub-agents** each have a ▸ and a number. Click it and the tiles make way for that list: every skill or agent gets a tick of its own and its own weight, so you can drop single ones. Click **← Back**, or press **Esc**, to return to the tiles. While the group itself is unticked, its list is greyed out.
+- **Skills, Sub-agents and Prompts** each have a ▸ and a number. Click it and the tiles make way for that list: every skill or agent gets a tick of its own and its own weight, so you can drop single ones. Prompts are the ready-made messages you start with /. Unticking one switches it off, and **Prompts** in the sidebar turns it back on. Click **← Back**, or press **Esc**, to return to the tiles. While the group itself is unticked, its list is greyed out.
 - **The total.** In the bottom-right corner, beside **Continue**: "~N tokens on every message", with N for whatever is ticked right now, plus the core tools the agent always has for reading, editing and running commands. It moves as you tick, and stays put when a list opens.
 - **The reminder.** On the left of that row: "You can change all of it later on Built-in tools, Skills and Agents."
 
@@ -77,9 +77,9 @@ Under those two lines, click **Start my first session**. The window saves your c
 
 The ✕ in the top-right corner is the way out while you're on the first two steps. Its tooltip reads "I'll set up myself". It's gone from step 3 and from "You're in.": you leave those by starting your session.
 
-On the keyboard, **Esc** closes the window during the first two steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On step 3, **Esc** means **Continue** (inside a Skills or Sub-agents list, it takes you back to the tiles), and on "You're in." it means **Start my first session**, with whatever is ticked. Clicking outside the window does nothing, so a stray click can't close it.
+On the keyboard, **Esc** closes the window during the first two steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On step 3, **Esc** means **Continue** (inside a Skills, Sub-agents or Prompts list, it takes you back to the tiles), and on "You're in." it means **Start my first session**, with whatever is ticked. Clicking outside the window does nothing, so a stray click can't close it.
 
-Quit on step 3 or on "You're in." and the window doesn't come back either: your project is already added, so the next launch opens straight into the app. Your ticks on step 3 aren't saved, and you can set them any time on **Built-in tools**, **Skills** and **Agents**.
+Quit on step 3 or on "You're in." and the window doesn't come back either: your project is already added, so the next launch opens straight into the app. Your ticks on step 3 aren't saved, and you can set them any time on **Built-in tools**, **Skills**, **Agents** and **Prompts**.
 
 Once closed, the window doesn't come back, and you don't need it to. Everything it offers lives elsewhere in the app:
 

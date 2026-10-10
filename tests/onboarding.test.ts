@@ -617,10 +617,10 @@ describe("the handover beat is actually visible", () => {
     expect(has(flat(APP), "contextWindow={kitInputsReady ? fallbackWindow : undefined}"), "App hands undefined while reading").toBe(true);
   });
 
-  it("the kit never switches a core tool or a prompt (2026-10-10) — Start writes neither", () => {
+  it("the kit never switches a core tool (2026-10-10); prompts came back as a tile (see onboarding-kit)", () => {
     const kit = flat(read("components/OnboardingKit.tsx"));
-    for (const gone of ["toggleCore", "promptTemplates", "coreWeight"]) expect(has(kit, gone), gone).toBe(false);
-    expect(has(flat(APP), "promptTemplatesSetEnabled(id, false)"), "no prompt write at Start").toBe(false);
+    for (const gone of ["toggleCore", "coreWeight"]) expect(has(kit, gone), gone).toBe(false);
+    expect(has(kit, "C.kitPrompts"), "Prompts tile hover title").toBe(true);
   });
 
   it("the small-model line shows only while no family is ticked — derived, never a flag", () => {
@@ -683,13 +683,13 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
     expect(has(src, 'kitOpen ? "sr-only"'), "brand hidden, Title kept").toBe(true);
   });
 
-  it("Skills and Sub-agents open as a drill-in with a Back control, not inline", () => {
+  it("Skills, Sub-agents and Prompts open as a drill-in with a Back control, not inline", () => {
     const kit = flat(read("components/OnboardingKit.tsx"));
     expect(has(kit, "{C.kitBack}"), "Back").toBe(true);
     expect(has(kit, "onClick={() => setOpen(null)}"), "Back returns to the grid").toBe(true);
     expect(has(kit, "col-span-2"), "no inline expansion").toBe(false);
     expect(has(kit, "grid grid-cols-3"), "3 columns").toBe(true);
-    expect(has(kit, "aria-label={FAMILY_COPY[t.key].label}"), "▸ N names its family").toBe(true);
+    expect(has(kit, "aria-label={label(t.key)}"), "▸ N names its family").toBe(true);
     expect(has(kit, "if (open) backRef.current?.focus(); else if (last.current) opener.current[last.current]?.focus();"), "focus follows").toBe(true);
   });
 

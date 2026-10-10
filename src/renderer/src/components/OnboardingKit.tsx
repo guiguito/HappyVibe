@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { ALL_OFF_COPY, BUNDLED_NOTE, FAMILY_COPY, allToolsOff, weightLabel, type KitFamily } from "../toolSwitches";
 import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
 import { ONBOARDING_COPY as C, kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
+import { GOTO_LABELS } from "./GoTo";
+
+type TileKey = KitTile["key"];
 
 const flip = (list: string[], id: string): string[] => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
@@ -23,19 +26,25 @@ export function OnboardingKit({
   setDraft: (d: KitDraft) => void;
   items: KitItems;
   /** The drill-in on screen. Owned by the dialog: Esc inside it means Back, not Continue. */
-  open: KitFamily | null;
-  setOpen: (k: KitFamily | null) => void;
+  open: TileKey | null;
+  setOpen: (k: TileKey | null) => void;
 }): React.JSX.Element {
   const s = draft.switches;
   // Focus follows the drill-in: into its ← Back on open, back to the ▸ it came from on close.
   const backRef = useRef<HTMLButtonElement | null>(null);
-  const opener = useRef<Partial<Record<KitFamily, HTMLButtonElement | null>>>({});
-  const last = useRef<KitFamily | null>(null);
+  const opener = useRef<Partial<Record<TileKey, HTMLButtonElement | null>>>({});
+  const last = useRef<TileKey | null>(null);
   useEffect(() => {
     if (open) backRef.current?.focus();
     else if (last.current) opener.current[last.current]?.focus();
     last.current = open;
   }, [open]);
+
+  // Prompts is the one tile that isn't a family: no switch, weighs nothing, labelled from the sidebar.
+  const label = (k: TileKey): string => (k === "prompts" ? GOTO_LABELS.promptTemplates : FAMILY_COPY[k].label);
+  const what = (k: TileKey): string => (k === "prompts" ? C.kitPrompts : FAMILY_COPY[k].what);
+  const weight = (k: TileKey): number => (k === "prompts" ? 0 : TOOL_WEIGHTS.families[k]);
+  const isOn = (k: TileKey): boolean => (k === "prompts" ? true : draft.switches[k]);
 
   /** One row per item of a tile's list: checked = not in its off-list. */
   const rows = (t: KitTile): { id: string; name: string; tokens: number; on: boolean; disabled: boolean; toggle: () => void }[] => {
@@ -58,6 +67,15 @@ export function OnboardingKit({
           disabled: !s.subagents,
           toggle: () => setDraft({ ...draft, agentsOff: flip(draft.agentsOff, i.id) }),
         }));
+      case "prompts":
+        return items.prompts.map((i) => ({
+          id: i.id,
+          name: i.name,
+          tokens: i.tokens,
+          on: !draft.promptsOff.includes(i.id),
+          disabled: false,
+          toggle: () => setDraft({ ...draft, promptsOff: flip(draft.promptsOff, i.id) }),
+        }));
       default:
         return [];
     }
@@ -69,13 +87,13 @@ export function OnboardingKit({
     items.core.includes("powershell") ? "powershell" : "bash",
   );
 
-  const tick = (t: KitTile, on: boolean): React.JSX.Element => (
+  const tick = (k: KitFamily, on: boolean): React.JSX.Element => (
     <input
       type="checkbox"
       className="mt-1 shrink-0 accent-tangerine cursor-pointer"
       checked={on}
-      onChange={(e) => setDraft(setFamily(draft, t.key, e.target.checked))}
-      aria-label={FAMILY_COPY[t.key].label}
+      onChange={(e) => setDraft(setFamily(draft, k, e.target.checked))}
+      aria-label={FAMILY_COPY[k].label}
     />
   );
 
@@ -89,8 +107,8 @@ export function OnboardingKit({
           <button ref={backRef} type="button" onClick={() => setOpen(null)} className="text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer">
             {C.kitBack}
           </button>
-          <span className="text-sm font-bold">{FAMILY_COPY[drill.key].label}</span>
-          <span className="text-xs text-ink-soft">{weightLabel(TOOL_WEIGHTS.families[drill.key])} {BUNDLED_NOTE}</span>
+          <span className="text-sm font-bold">{label(drill.key)}</span>
+          <span className="text-xs text-ink-soft">{weightLabel(weight(drill.key))}{drill.key !== "prompts" && ` ${BUNDLED_NOTE}`}</span>
         </div>
         <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
           {rows(drill).map((r) => (
@@ -116,22 +134,22 @@ export function OnboardingKit({
 
   return (
     <div className="text-left">
-      {/* 3 columns, two text lines per tile: 11 tiles = 4 rows of ~52px, measured into the
+      {/* 3 columns, two text lines per tile: 12 tiles (Prompts last) = 4 full rows of ~52px, measured into the
           fixed 864×544 frame with both small-window lines showing. */}
       <div className="grid grid-cols-3 gap-1.5">
         {kitTiles(items.imagesAvailable).map((t) => {
-          const on = s[t.key];
+          const on = isOn(t.key);
           return (
             <div
               key={t.key}
               className={`rounded-xl border-2 px-2.5 py-1.5 ${on ? "border-line bg-card" : "border-line/60 bg-paper-deep"}`}
             >
-              <div className="flex items-start gap-2" title={FAMILY_COPY[t.key].what}>
-                {tick(t, on)}
+              <div className="flex items-start gap-2" title={what(t.key)}>
+                {t.familyTick && t.key !== "prompts" && tick(t.key, on)}
                 <div className="min-w-0 flex-1">
-                  <div className={`text-sm font-bold leading-snug truncate ${on ? "" : "text-ink-soft"}`}>{FAMILY_COPY[t.key].label}</div>
+                  <div className={`text-sm font-bold leading-snug truncate ${on ? "" : "text-ink-soft"}`}>{label(t.key)}</div>
                   <div className="text-xs text-ink-soft leading-snug">
-                    {weightLabel(TOOL_WEIGHTS.families[t.key])}
+                    {weightLabel(weight(t.key))}
                     {(t.key === "skills" || t.key === "subagents") && ` ${BUNDLED_NOTE}`}
                   </div>
                 </div>
@@ -140,7 +158,7 @@ export function OnboardingKit({
                     ref={(el) => { opener.current[t.key] = el; }}
                     type="button"
                     onClick={() => setOpen(t.key)}
-                    aria-label={FAMILY_COPY[t.key].label}
+                    aria-label={label(t.key)}
                     className="shrink-0 text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1"
                   >
                     ▸ {rows(t).length}

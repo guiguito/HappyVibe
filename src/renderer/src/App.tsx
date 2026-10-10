@@ -2679,9 +2679,10 @@ export default function App(): React.JSX.Element {
       // defaults in the draft, or Start would write them back over the user's settings.
       const b = await window.hv.builtinsGet();
       setKitSwitches({ plan: b.plan, askUser: b.askUser, terminal: b.terminal, browser: b.browser, web: b.web, memory: b.memory, schedules: b.schedules, document: b.document, images: b.images, subagents: b.subagents, workflows: b.workflows, skills: b.skills, coreOff: b.coreOff });
-      const [sk, shell] = await Promise.all([window.hv.skillsList(), window.hv.agentShell()]);
+      const [sk, pt, shell] = await Promise.all([window.hv.skillsList(), window.hv.promptTemplatesList(), window.hv.agentShell()]);
       setKitItems({
         skills: sk.global.filter((s) => s.source === "bundled").map((s) => ({ id: s.id, name: s.name, tokens: s.estTokens.card })),
+        prompts: pt.global.filter((p) => p.source === "bundled").map((p) => ({ id: p.id, name: p.name, tokens: 0 })),
         agents: [], // filled from the hv.agents notify (the `agents` state) at the call site
         imagesAvailable,
         core: coreToolNames(shell.shell),
@@ -2692,7 +2693,7 @@ export default function App(): React.JSX.Element {
       surface(err);
       // The kit beat has no ✕ — without a draft Start would never enable. Fall back to the preset it meant.
       setKitSwitches((p) => p ?? { ...DEFAULT_SWITCHES, ...(preset === "basics" ? basicsPatch() : {}) });
-      setKitItems((p) => p ?? { skills: [], agents: [], imagesAvailable, core: coreToolNames(agentShell ?? "bash") });
+      setKitItems((p) => p ?? { skills: [], agents: [], prompts: [], imagesAvailable, core: coreToolNames(agentShell ?? "bash") });
     }
   };
 
@@ -2708,6 +2709,7 @@ export default function App(): React.JSX.Element {
       await window.hv.builtinsSet(d.switches);
       for (const id of d.skillsOff) await window.hv.skillsSetEnabled(id, false);
       for (const name of d.agentsOff) await window.hv.setAgentEnabled(name, false);
+      for (const id of d.promptsOff) await window.hv.promptTemplatesSetEnabled(id, false);
     } catch (err) {
       surface(err); // the session still opens; Built-in tools shows what actually saved
     }

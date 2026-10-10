@@ -4,7 +4,7 @@ import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors, type KeyNote } from "./OnboardingDoors";
 import { OnboardingKit } from "./OnboardingKit";
 import { GOTO_LABELS } from "./GoTo";
-import { KIT_FAMILIES, type KitFamily } from "../toolSwitches";
+import { KIT_FAMILIES } from "../toolSwitches";
 import {
   ONBOARDING_COPY as C,
   DEFAULT_SWITCHES,
@@ -20,6 +20,7 @@ import {
   type KitDraft,
   type KitItems,
   type KitSwitches,
+  type KitTile,
 } from "../onboarding";
 import { fmtNum } from "../analytics-format";
 import { ipcMessage } from "../ipcError";
@@ -193,7 +194,7 @@ export function OnboardingDialog({
   const starting = useRef(false);
   const reported = useRef(false);
   const [continued, setContinued] = useState(false);
-  const [drill, setDrill] = useState<KitFamily | null>(null);
+  const [drill, setDrill] = useState<KitTile["key"] | null>(null);
   const screen = onboardingScreen({ welcome, complete, continued });
   const kitOpen = screen === "personalize" || screen === "done";
   const next = (): void => { if (draft) setContinued(true); };
@@ -209,7 +210,7 @@ export function OnboardingDialog({
   }, [kitOpen, contextWindow]);
 
   useEffect(() => {
-    if (kitSwitches && draft === null) setDraft({ switches: kitSwitches, skillsOff: [], agentsOff: [] });
+    if (kitSwitches && draft === null) setDraft({ switches: kitSwitches, skillsOff: [], agentsOff: [], promptsOff: [] });
   }, [kitSwitches, draft]);
 
   const start = (): void => {
@@ -270,7 +271,7 @@ export function OnboardingDialog({
             e.preventDefault();
             if (welcome) { setWelcome(false); return; }
             // Step 3 and the last screen have no ✕: Esc moves forward with whatever the draft holds.
-            // Inside a Skills/Sub-agents drill-in, Esc is its ← Back.
+            // Inside a Skills/Sub-agents/Prompts drill-in, Esc is its Back.
             if (screen === "personalize") { if (drill) setDrill(null); else next(); return; }
             if (screen === "done") { start(); return; }
             dismiss();

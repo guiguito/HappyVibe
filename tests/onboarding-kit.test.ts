@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   basicsPatch, basicsTotal, DEFAULT_SWITCHES, fullTotal, KIT_SERVICES, kitPreset, kitShape, kitTiles, kitTotal,
@@ -19,10 +21,11 @@ const W = {
 const items: KitItems = {
   skills: [{ id: "/s/a", name: "a", tokens: 100 }, { id: "/s/b", name: "b", tokens: 50 }],
   agents: [{ id: "x", name: "x", tokens: 40 }],
+  prompts: [{ id: "/p/x", name: "x", tokens: 0 }],
   imagesAvailable: false,
   core: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 };
-const full = (): KitDraft => ({ switches: { ...DEFAULT_SWITCHES, coreOff: [] }, skillsOff: [], agentsOff: [] });
+const full = (): KitDraft => ({ switches: { ...DEFAULT_SWITCHES, coreOff: [] }, skillsOff: [], agentsOff: [], promptsOff: [] });
 
 describe("DEFAULT_SWITCHES", () => {
   it("is parseBuiltins' own defaults (images on, nothing core off), so a flipped default can't go stale here", () => {
@@ -115,21 +118,39 @@ describe("basics and shape", () => {
     expect(kitShape({ ...full(), switches: { ...full().switches, ...basicsPatch() } })).toBe("basics");
     expect(kitShape(setFamily(full(), "web", false))).toBe("custom");
     expect(kitShape({ ...full(), agentsOff: ["x"] })).toBe("custom");
+    expect(kitShape({ ...full(), promptsOff: ["/p/x"] })).toBe("custom");
   });
 });
 
 describe("kitTiles", () => {
-  it("no Core tools, Prompts or Workflows (2026-10-10), and nothing the kit can't switch: no MCP, no intent", () => {
+  it("no Core tools or Workflows (2026-10-10), and nothing the kit can't switch: no MCP, no intent", () => {
     const keys: string[] = kitTiles(true).map((x) => x.key);
-    for (const k of ["core", "prompts", "workflows", "mcp", "intent"]) expect(keys, k).not.toContain(k);
+    for (const k of ["core", "workflows", "mcp", "intent"]) expect(keys, k).not.toContain(k);
     expect(kitTiles(false).map((x) => x.key)).not.toContain("images");
   });
-  it("follows Built-in tools' order, minus Workflows, minus Images without OpenRouter", () => {
-    expect(kitTiles(true).map((x) => x.key)).toEqual(KIT_FAMILIES.filter((k) => k !== "workflows"));
-    expect(kitTiles(false).map((x) => x.key)).toEqual(KIT_FAMILIES.filter((k) => k !== "workflows" && k !== "images"));
+  it("follows Built-in tools' order, minus Workflows, minus Images without OpenRouter, then Prompts", () => {
+    expect(kitTiles(true).map((x) => x.key)).toEqual([...KIT_FAMILIES.filter((k) => k !== "workflows"), "prompts"]);
+    expect(kitTiles(false).map((x) => x.key)).toEqual([...KIT_FAMILIES.filter((k) => k !== "workflows" && k !== "images"), "prompts"]);
   });
-  it("only Sub-agents and Skills open a list", () => {
-    expect(kitTiles(true).filter((x) => x.items).map((x) => [x.key, x.items])).toEqual([["subagents", "agents"], ["skills", "skills"]]);
+  it("12 tiles at most: 4 full rows of 3", () => {
+    expect(kitTiles(true)).toHaveLength(12);
+  });
+  it("Prompts comes back last (2026-10-10): no family tick — it has no master switch — only its list", () => {
+    expect(kitTiles(true).at(-1)).toEqual({ key: "prompts", familyTick: false, items: "prompts" });
+    expect(kitTiles(true).slice(0, -1).every((t) => t.familyTick)).toBe(true);
+  });
+  it("only Sub-agents, Skills and Prompts open a list", () => {
+    expect(kitTiles(true).filter((x) => x.items).map((x) => [x.key, x.items])).toEqual([["subagents", "agents"], ["skills", "skills"], ["prompts", "prompts"]]);
+  });
+  it("prompts weigh nothing: unticking one leaves the total alone", () => {
+    expect(kitTotal({ ...full(), promptsOff: ["/p/x"] }, items, W)).toBe(kitTotal(full(), items, W));
+  });
+  it("Start writes the unticked prompts, awaited before the first session", () => {
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    const fin = app.slice(app.indexOf("const finishOnboarding"), app.indexOf("await newSession(ws)", app.indexOf("const finishOnboarding")));
+    expect(fin).toContain("for (const id of d.promptsOff) await window.hv.promptTemplatesSetEnabled(id, false);");
+    const kit = app.slice(app.indexOf("const openKit"), app.indexOf("const finishOnboarding"));
+    expect(kit).toContain('pt.global.filter((p) => p.source === "bundled")');
   });
 });
 
