@@ -413,10 +413,7 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean; mcp: boolean; subagents: boolean; workflows: boolean; images: boolean; skills: boolean; coreOff: string[] } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
-  // Plan mode's prompt tells the model to resolve decisions with ask_user, so
-  // the bridge force-couples them (hv-builtins parseBuiltins). Apply
-  // the SAME clamp here or the settings row would read "off" for a tool that is
-  // in fact registered — the UI must not disagree with the runtime.
+  // Ask user is independent of Plan mode (2026-10-10): the plan prompt asks in the reply without it.
   // §26's terminal group has no such coupling: the three tools depend on each
   // other and on nothing else, which is why they are one entry.
   // §13 round 12: `intent` is a cost/taste switch with no coupling — the
@@ -430,7 +427,7 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §33's Memory is three tools over one store, coupled to each other and to nothing else —
   // same grouping argument as the terminal, so one entry.
   // §13 round 27: Workflows ships off (≈5.5k tok/request); an absent key is a user who never chose.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? false, images: t?.images ?? true, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
+  return { plan, askUser: t?.askUser ?? true, planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "", schedules: t?.schedules ?? true, mcp: t?.mcp ?? true, subagents: t?.subagents ?? true, workflows: t?.workflows ?? false, images: t?.images ?? true, skills: t?.skills ?? true, coreOff: normalizeCoreOff(t?.coreOff) };
 }
 
 export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean; mcp?: boolean; subagents?: boolean; workflows?: boolean; images?: boolean; skills?: boolean; coreOff?: string[] }): void {

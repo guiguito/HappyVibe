@@ -4737,7 +4737,7 @@ export function registerIpc(
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.
   ipcMain.handle("hv:builtin-prompt", (_e, name: string) => {
-    if (name === "plan") return { text: buildPlanPrompt() };
+    if (name === "plan") return { text: buildPlanPrompt("", undefined, undefined, getBuiltinTools().askUser) };
     // §26: the Terminal group's resting cost is the steer line PLUS three tool
     // schemas, so showing only the steer line would understate what turning it
     // off saves. Descriptions come from the bridge's own registrations.

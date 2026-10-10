@@ -33,6 +33,12 @@ test("touching another switch does not turn Workflows on", async () => {
   expect(getBuiltinTools().workflows).toBe(false);
 });
 
+test("Ask user off holds with Plan mode on (2026-10-10) — no plan→askUser clamp", async () => {
+  const { getBuiltinTools, setBuiltinTools } = await import("../src/main/config");
+  setBuiltinTools({ plan: true, askUser: false });
+  expect(getBuiltinTools()).toMatchObject({ plan: true, askUser: false });
+});
+
 test("the bridge's own fallback agrees: no HV_BUILTINS, or a corrupt one, means off", () => {
   expect(parseBuiltins(undefined).workflows).toBe(false);
   expect(parseBuiltins("{not json").workflows).toBe(false);
