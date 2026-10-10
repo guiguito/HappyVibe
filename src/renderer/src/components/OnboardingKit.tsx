@@ -60,9 +60,8 @@ export function OnboardingKit({
   const tick = (t: KitTile, on: boolean): React.JSX.Element => (
     <input
       type="checkbox"
-      className="mt-1 shrink-0 accent-tangerine cursor-pointer disabled:cursor-not-allowed"
+      className="mt-1 shrink-0 accent-tangerine cursor-pointer"
       checked={on}
-      disabled={t.key === "askUser" && s.plan}
       onChange={(e) => setDraft(setFamily(draft, t.key, e.target.checked))}
       aria-label={FAMILY_COPY[t.key].label}
     />

@@ -230,6 +230,17 @@ describe("buildPlanPrompt", () => {
     expect(buildPlanPrompt("", ["read", "powershell"], "bash")).not.toMatch(/powershell|\bbash\b/);
   });
 
+  test("2026-10-10 — names ask_user only when it is registered; without it, asks in the reply", () => {
+    const withAsk = buildPlanPrompt("", ["read", "ask_user", "plan_complete"]);
+    expect(withAsk).toContain("ask_user");
+    const noAsk = buildPlanPrompt("", ["read", "plan_complete"]);
+    expect(noAsk).not.toContain("ask_user");
+    expect(noAsk).toMatch(/in your reply \(1-4 concise questions/);
+    expect(noAsk).toMatch(/ask it in\s+your reply and stop/);
+    // No tool list (settings panel): today's text, ask_user named.
+    expect(buildPlanPrompt()).toContain("Use the ask_user tool");
+  });
+
   test("A3 — one delimiter, the marker inside it, and the calm register", () => {
     const p = buildPlanPrompt();
     expect(p.startsWith("<happyvibe_plan_mode>\n[HAPPYVIBE PLAN MODE ACTIVE]")).toBe(true);

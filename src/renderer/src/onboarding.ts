@@ -195,12 +195,8 @@ export function basicsPatch(): Record<KitFamily, false> {
   return Object.fromEntries(KIT_FAMILIES.map((k) => [k, false])) as Record<KitFamily, false>;
 }
 
-/** Plan mode's prompt requires ask_user (Built-in tools locks it on the same way). */
 export function setFamily(d: KitDraft, k: KitFamily, on: boolean): KitDraft {
-  if (k === "askUser" && !on && d.switches.plan) return d;
-  const s = { ...d.switches, [k]: on };
-  if (k === "plan" && on) s.askUser = true;
-  return { ...d, switches: s };
+  return { ...d, switches: { ...d.switches, [k]: on } };
 }
 
 const SHELL: Record<string, string> = { powershell: "bash" };

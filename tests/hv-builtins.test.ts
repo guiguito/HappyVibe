@@ -16,17 +16,17 @@ describe("parseBuiltins", () => {
   });
 });
 
-describe("parseBuiltins — plan requires ask_user (Important 3 defence in depth)", () => {
-  it("forces askUser on when plan is on, even if the config says otherwise", () => {
-    expect(parseBuiltins(JSON.stringify({ plan: true, askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: false, skills: true, coreOff: [] });
+describe("parseBuiltins — Ask user is independent of Plan mode (2026-10-10)", () => {
+  it("honours askUser:false with plan on — the plan prompt then asks in the reply", () => {
+    expect(parseBuiltins(JSON.stringify({ plan: true, askUser: false }))).toEqual({ plan: true, askUser: false, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: false, skills: true, coreOff: [] });
   });
 
   it("honours askUser:false once plan is off", () => {
     expect(parseBuiltins(JSON.stringify({ plan: false, askUser: false }))).toEqual({ plan: false, askUser: false, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: false, skills: true, coreOff: [] });
   });
 
-  it("defaults (plan on) also force askUser on", () => {
-    expect(parseBuiltins(JSON.stringify({ askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: false, skills: true, coreOff: [] });
+  it("defaults (plan on) keep askUser:false too", () => {
+    expect(parseBuiltins(JSON.stringify({ askUser: false }))).toEqual({ plan: true, askUser: false, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true, mcp: true, subagents: true, workflows: false, skills: true, coreOff: [] });
   });
 
   // §32: the web group. Same fail-open convention as its neighbours — a corrupt

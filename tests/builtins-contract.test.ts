@@ -100,8 +100,7 @@ test.skipIf(!fs.existsSync(CLI))(
     expect(tools.length).toBeGreaterThan(0);
     for (const t of PLAN_TOOLS) expect(tools).not.toContain(t);
     expect(commands.some((c) => c.includes("hv-plan"))).toBe(false);
-    // ask_user is force-coupled to plan in parseBuiltins, but plan is OFF here,
-    // so the config's own askUser default (true) applies.
+    // ask_user is its own switch, default on.
     expect(tools).toContain("ask_user");
   },
   30_000,
@@ -110,6 +109,14 @@ test.skipIf(!fs.existsSync(CLI))(
 test.skipIf(!fs.existsSync(CLI))('HV_BUILTINS {"plan":false,"askUser":false} ⇒ ask_user is gone too', async () => {
   const { tools } = await probe(JSON.stringify({ plan: false, askUser: false }));
   expect(tools.length).toBeGreaterThan(0);
+  expect(tools).not.toContain("ask_user");
+}, 30_000);
+
+test.skipIf(!fs.existsSync(CLI))('HV_BUILTINS {"askUser":false} with plan on ⇒ plan stays, ask_user is gone (2026-10-10)', async () => {
+  const { tools, commands } = await probe(JSON.stringify({ askUser: false }));
+  expect(tools.length).toBeGreaterThan(0);
+  for (const t of PLAN_TOOLS) expect(tools).toContain(t);
+  expect(commands.some((c) => c.includes("hv-plan"))).toBe(true);
   expect(tools).not.toContain("ask_user");
 }, 30_000);
 

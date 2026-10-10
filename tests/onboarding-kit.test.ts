@@ -95,12 +95,12 @@ describe("kitTotal", () => {
   });
 });
 
-describe("setFamily keeps Plan's dependency", () => {
-  it("Ask user can't go off while Plan is on, and Plan back on forces it on", () => {
-    expect(setFamily(full(), "askUser", false).switches.askUser).toBe(true);
-    const noPlan = setFamily(setFamily(full(), "plan", false), "askUser", false);
-    expect(noPlan.switches.askUser).toBe(false);
-    expect(setFamily(noPlan, "plan", true).switches.askUser).toBe(true);
+describe("setFamily — Ask user is independent of Plan mode (2026-10-10)", () => {
+  it("Ask user can go off with Plan on, and Plan on leaves Ask user as it is", () => {
+    const noAsk = setFamily(full(), "askUser", false);
+    expect(noAsk.switches).toMatchObject({ plan: true, askUser: false });
+    const replanned = setFamily(setFamily(noAsk, "plan", false), "plan", true);
+    expect(replanned.switches).toMatchObject({ plan: true, askUser: false });
   });
 });
 

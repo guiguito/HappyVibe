@@ -42,7 +42,7 @@ The note beside the box says why the prompt stays fixed: "The built-in prompt ab
 
 "Lets the agent pause mid-turn to ask you a clarifying question."
 
-While Plan mode is on, this switch is greyed out and reads: "Locked on — Plan mode depends on it. Turn off Plan mode first if you want to disable this." Plan mode relies on it, so the two go together.
+You can switch it off whether Plan mode is on or not. With it off, plan mode still asks you what it needs to know, in its reply, and waits for your answer.
 
 ### Agent terminal — 3 tools
 

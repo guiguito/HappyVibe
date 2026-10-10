@@ -220,18 +220,12 @@ function PlanModeRow({
 
 /** Ask user has no injected prompt to show (per brief: no prompt editing for
     it) — just a toggle, no expand, no confirm (not consequential like plan).
-    Important 3: while Plan mode is on, this toggle is disabled — Plan mode's
-    prompt and its required-tools list both hard-depend on ask_user, so letting
-    the user turn it off here would silently leave the model told to use a tool
-    that no longer exists (parseBuiltins repairs the pair defensively, but the
-    UI shouldn't invite the broken state in the first place). */
+    Free with Plan mode on too: the plan prompt then asks in the reply. */
 function AskUserRow({
   on,
-  planOn,
   onChange,
 }: {
   on: boolean;
-  planOn: boolean;
   onChange: (on: boolean) => void;
 }): React.JSX.Element {
   return (
@@ -240,14 +234,9 @@ function AskUserRow({
         <span className="font-bold block">{FAMILY_COPY.askUser.label}</span>
         <span className="text-xs text-ink-soft">{FAMILY_COPY.askUser.what}</span>
         <Weight tokens={TOOL_WEIGHTS.families.askUser} />
-        {planOn && (
-          <span className="text-xs text-ink-soft block mt-0.5">
-            Locked on — Plan mode depends on it. Turn off Plan mode first if you want to disable this.
-          </span>
-        )}
-        {!planOn && <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>}
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
       </div>
-      <TogglePill on={on} disabled={planOn} onClick={() => !planOn && onChange(!on)} />
+      <TogglePill on={on} onClick={() => onChange(!on)} />
     </div>
   );
 }
@@ -714,7 +703,6 @@ export function BuiltinToolsBlock({
         <PlanModeRow builtins={builtins} onChange={patch} />
         <AskUserRow
           on={builtins.askUser}
-          planOn={builtins.plan}
           onChange={(on) => {
             setAskUserError(null);
             void window.hv.builtinsSet({ askUser: on }).then(

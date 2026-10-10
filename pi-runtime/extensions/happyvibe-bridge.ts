@@ -2480,7 +2480,7 @@ export default function (pi: ExtensionAPI) {
         persistPlan(pi);
         emitPlan(ctx.ui);
       }
-      return { content: [{ type: "text", text: "Plan Mode is on. Explore read-only, ask any decisions via ask_user, then finish with plan_complete." }], details: {} };
+      return { content: [{ type: "text", text: `Plan Mode is on. Explore read-only, ask any decisions ${builtins.askUser ? "via ask_user" : "in your reply"}, then finish with plan_complete.` }], details: {} };
     },
   });
 
