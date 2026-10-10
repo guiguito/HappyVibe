@@ -5,7 +5,7 @@ import {
   basicsPatch, basicsTotal, DEFAULT_SWITCHES, fullTotal, KIT_SERVICES, kitPreset, kitShape, kitTiles, kitTotal,
   ONBOARDING_COPY, setFamily, smallModelLine, tooSmall, tooSmallLine, type KitDraft, type KitItems,
 } from "../src/renderer/src/onboarding";
-import { KIT_FAMILIES } from "../src/renderer/src/toolSwitches";
+import { FAMILY_COPY, KIT_FAMILIES } from "../src/renderer/src/toolSwitches";
 import { parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
 import { SAFE_TOOLS } from "../pi-runtime/extensions/hv-rules";
 import { DEFAULT_GIT_RULES } from "../src/main/gitRules";
@@ -19,9 +19,9 @@ const W = {
   tools: {},
 } as const;
 const items: KitItems = {
-  skills: [{ id: "/s/a", name: "a", tokens: 100 }, { id: "/s/b", name: "b", tokens: 50 }],
-  agents: [{ id: "x", name: "x", tokens: 40 }],
-  prompts: [{ id: "/p/x", name: "x", tokens: 0 }],
+  skills: [{ id: "/s/a", name: "a", tokens: 100, description: "" }, { id: "/s/b", name: "b", tokens: 50, description: "" }],
+  agents: [{ id: "x", name: "x", tokens: 40, description: "" }],
+  prompts: [{ id: "/p/x", name: "x", tokens: 0, description: "" }],
   imagesAvailable: false,
   core: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 };
@@ -151,6 +151,23 @@ describe("kitTiles", () => {
     expect(fin).toContain("for (const id of d.promptsOff) await window.hv.promptTemplatesSetEnabled(id, false);");
     const kit = app.slice(app.indexOf("const openKit"), app.indexOf("const finishOnboarding"));
     expect(kit).toContain('pt.global.filter((p) => p.source === "bundled")');
+  });
+});
+
+describe("one line on every tile and every list item (2026-10-10)", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+  it("every tile has a one-liner: FAMILY_COPY.short, or kitPromptsShort for Prompts", () => {
+    for (const t of kitTiles(true)) {
+      const line = t.key === "prompts" ? ONBOARDING_COPY.kitPromptsShort : FAMILY_COPY[t.key].short;
+      expect(line.trim().length, t.key).toBeGreaterThan(0);
+      expect(line.length, `${t.key} fits one tile line`).toBeLessThanOrEqual(42);
+    }
+  });
+  it("each list item carries its own description, from the three lists", () => {
+    const kit = app.slice(app.indexOf("const openKit"), app.indexOf("const finishOnboarding"));
+    expect(kit).toContain("tokens: s.estTokens.card, description: s.description");
+    expect(kit).toContain("tokens: 0, description: p.description");
+    expect(app).toContain("tokens: agentTokenCost(a), description: a.description");
   });
 });
 

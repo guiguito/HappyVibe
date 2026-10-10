@@ -81,6 +81,7 @@ export const ONBOARDING_COPY = {
   kitBack: "Back",
   kitLoadAll: "Load everything anyway",
   kitPrompts: "Ready-made prompts you start with /. They weigh nothing until you use one.",
+  kitPromptsShort: "Ready-made prompts you start with /.",
   kitTotalTail: "tokens on every message",
   kitMoreRoom: "Give your model more room ↗",
   noticeExtend: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks.",
@@ -184,7 +185,8 @@ export function rankProviders<T extends { id: string; label: string; featured: b
 export const KIT_SERVICES = ["GitHub", "Linear", "Notion"] as const;
 
 export type KitSwitches = Record<KitFamily, boolean> & { coreOff: string[] };
-export interface KitItem { id: string; name: string; tokens: number }
+/** `description` is the item's own one-liner (its frontmatter), shown under its name in the drill-in. */
+export interface KitItem { id: string; name: string; tokens: number; description: string }
 /** `core` only names the shell for the no-tools line — the kit never switches a core tool. */
 export interface KitItems { skills: KitItem[]; agents: KitItem[]; prompts: KitItem[]; imagesAvailable: boolean; core: string[] }
 export interface KitDraft { switches: KitSwitches; skillsOff: string[]; agentsOff: string[]; promptsOff: string[] }

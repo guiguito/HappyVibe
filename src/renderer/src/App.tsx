@@ -2681,8 +2681,8 @@ export default function App(): React.JSX.Element {
       setKitSwitches({ plan: b.plan, askUser: b.askUser, terminal: b.terminal, browser: b.browser, web: b.web, memory: b.memory, schedules: b.schedules, document: b.document, images: b.images, subagents: b.subagents, workflows: b.workflows, skills: b.skills, coreOff: b.coreOff });
       const [sk, pt, shell] = await Promise.all([window.hv.skillsList(), window.hv.promptTemplatesList(), window.hv.agentShell()]);
       setKitItems({
-        skills: sk.global.filter((s) => s.source === "bundled").map((s) => ({ id: s.id, name: s.name, tokens: s.estTokens.card })),
-        prompts: pt.global.filter((p) => p.source === "bundled").map((p) => ({ id: p.id, name: p.name, tokens: 0 })),
+        skills: sk.global.filter((s) => s.source === "bundled").map((s) => ({ id: s.id, name: s.name, tokens: s.estTokens.card, description: s.description })),
+        prompts: pt.global.filter((p) => p.source === "bundled").map((p) => ({ id: p.id, name: p.name, tokens: 0, description: p.description })),
         agents: [], // filled from the hv.agents notify (the `agents` state) at the call site
         imagesAvailable,
         core: coreToolNames(shell.shell),
@@ -4487,7 +4487,7 @@ export default function App(): React.JSX.Element {
           onDone={finishOnboarding}
           onOpenGuide={() => void window.hv.openExternal(docUrl("first-launch"))}
           contextWindow={kitInputsReady ? fallbackWindow : undefined}
-          kitItems={kitItems && agents ? { ...kitItems, agents: agents.filter((a) => a.source === "bundled").map((a) => ({ id: a.name, name: a.name, tokens: agentTokenCost(a) })) } : null}
+          kitItems={kitItems && agents ? { ...kitItems, agents: agents.filter((a) => a.source === "bundled").map((a) => ({ id: a.name, name: a.name, tokens: agentTokenCost(a), description: a.description })) } : null}
           kitSwitches={kitSwitches}
           onKitOpen={(p) => void openKit(p)}
           imagesAvailable={imagesAvailable}

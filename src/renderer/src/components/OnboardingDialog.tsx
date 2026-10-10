@@ -430,8 +430,14 @@ export function OnboardingDialog({
                         <h2 className="font-black text-2xl tracking-tight">{C.step3Title}</h2>
                       </div>
                       <p className="text-sm text-ink-soft leading-snug mt-1">{C.kitHeadline} {C.kitSubline}</p>
-                      {/* Only while nothing is ticked: "Load everything anyway" (or any tick) makes the line false. */}
-                      {draft && smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k]) && (
+                      {/* Only while nothing is ticked: "Load everything anyway" (or any tick) makes the line false.
+                          Not inside a drill-in: it acts on the families, and the list needs its height.
+                          Height budget, worst case (4k model + OpenRouter key), content box 484px
+                          (544 − 2×2 border − 2×28 padding): done steps 36 + title 32 + body 23 +
+                          this line 41 (2 lines) + too-small 21 + mt-3 12 + footer 52 = 217, leaving
+                          267 for the grid (~247 used). In a drill-in this line hides, leaving 308 for
+                          header 76 + 10 items (5 rows × 32 + 4 × 12 = 208) = 284. */}
+                      {draft && !drill && smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k]) && (
                         <p className="mt-2 text-xs text-ink-soft leading-snug">
                           {smallModelLine(ctx, full)}{" "}
                           <button

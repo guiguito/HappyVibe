@@ -46,15 +46,22 @@ export function OnboardingKit({
   const what = (k: TileKey): string => (k === "prompts" ? C.kitPrompts : FAMILY_COPY[k].what);
   const weight = (k: TileKey): number => (k === "prompts" ? 0 : TOOL_WEIGHTS.families[k]);
   const isOn = (k: TileKey): boolean => (k === "prompts" ? true : draft.switches[k]);
+  const short = (k: TileKey): string => (k === "prompts" ? C.kitPromptsShort : FAMILY_COPY[k].short);
+  const bundled = (k: TileKey): boolean => k === "skills" || k === "subagents";
+  /** The tile shows the family's name without its "— N tools" count (it truncated at 3 columns); the tooltip keeps it. */
+  const name = (k: TileKey): string => label(k).split(" — ")[0];
+  const tip = (k: TileKey): string =>
+    `${label(k)}. ${what(k)}${bundled(k) ? ` (${weightLabel(weight(k))} ${BUNDLED_NOTE})` : ""}`;
 
   /** One row per item of a tile's list: checked = not in its off-list. */
-  const rows = (t: KitTile): { id: string; name: string; tokens: number; on: boolean; disabled: boolean; toggle: () => void }[] => {
+  const rows = (t: KitTile): { id: string; name: string; tokens: number; description: string; on: boolean; disabled: boolean; toggle: () => void }[] => {
     switch (t.items) {
       case "skills":
         return items.skills.map((i) => ({
           id: i.id,
           name: i.name,
           tokens: i.tokens,
+          description: i.description,
           on: !draft.skillsOff.includes(i.id),
           disabled: !s.skills,
           toggle: () => setDraft({ ...draft, skillsOff: flip(draft.skillsOff, i.id) }),
@@ -64,6 +71,7 @@ export function OnboardingKit({
           id: i.id,
           name: i.name,
           tokens: i.tokens,
+          description: i.description,
           on: !draft.agentsOff.includes(i.id),
           disabled: !s.subagents,
           toggle: () => setDraft({ ...draft, agentsOff: flip(draft.agentsOff, i.id) }),
@@ -73,6 +81,7 @@ export function OnboardingKit({
           id: i.id,
           name: i.name,
           tokens: i.tokens,
+          description: i.description,
           on: !draft.promptsOff.includes(i.id),
           disabled: false,
           toggle: () => setDraft({ ...draft, promptsOff: flip(draft.promptsOff, i.id) }),
@@ -91,7 +100,7 @@ export function OnboardingKit({
   const tick = (k: KitFamily, on: boolean): React.JSX.Element => (
     <input
       type="checkbox"
-      className="mt-1 shrink-0 accent-tangerine cursor-pointer"
+      className="shrink-0 accent-tangerine cursor-pointer"
       checked={on}
       onChange={(e) => setDraft(setFamily(draft, k, e.target.checked))}
       aria-label={FAMILY_COPY[k].label}
@@ -109,23 +118,31 @@ export function OnboardingKit({
         <BackButton ref={backRef} label={C.kitBack} onClick={() => setOpen(null)} className="-ml-2" />
         <div className="flex items-baseline gap-3 mt-1 mb-3">
           <h3 className="font-black text-lg tracking-tight">{label(drill.key)}</h3>
-          <span className="text-xs text-ink-soft">{weightLabel(weight(drill.key))}{drill.key !== "prompts" && ` ${BUNDLED_NOTE}`}</span>
+          <span className="text-xs text-ink-soft">{weightLabel(weight(drill.key))}{bundled(drill.key) && ` ${BUNDLED_NOTE}`}</span>
         </div>
-        <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
+        {/* 2 columns, two lines per item (name + weight, then its own one-liner): 10 items = 5 rows of
+            32px + gap-y-3 = 208px, under a 76px header — sized into the 864×544 frame (see the dialog). */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
           {rows(drill).map((r) => (
             <label
               key={r.id}
-              className={`flex items-center gap-1.5 text-xs min-w-0 ${r.disabled ? "text-ink-soft/60" : "cursor-pointer"}`}
+              title={r.description || undefined}
+              className={`flex items-start gap-2 text-xs min-w-0 ${r.disabled ? "text-ink-soft/60" : "cursor-pointer"}`}
             >
               <input
                 type="checkbox"
-                className="shrink-0 accent-tangerine"
+                className="mt-0.5 shrink-0 accent-tangerine"
                 checked={r.on}
                 disabled={r.disabled}
                 onChange={r.toggle}
               />
-              <span className="truncate">{r.name}</span>
-              {r.tokens > 0 && <span className="shrink-0 text-ink-soft/80">{weightLabel(r.tokens)}</span>}
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-2">
+                  <span className="truncate font-bold">{r.name}</span>
+                  {r.tokens > 0 && <span className="shrink-0 text-ink-soft/80">{weightLabel(r.tokens)}</span>}
+                </span>
+                <span className="block truncate text-ink-soft">{r.description}</span>
+              </span>
             </label>
           ))}
         </div>
@@ -135,25 +152,22 @@ export function OnboardingKit({
 
   return (
     <div className="text-left">
-      {/* 3 columns, two text lines per tile: 12 tiles (Prompts last) = 4 full rows of ~52px, measured into the
-          fixed 864×544 frame with both small-window lines showing. */}
-      <div className="grid grid-cols-3 gap-1.5">
+      {/* 3 columns, two lines per tile (name + weight, then the one-liner): 12 tiles (Prompts last) =
+          4 rows of ~56px + 3 gaps of 8px = ~247px, sized into the fixed 864×544 frame with both
+          small-window lines showing (budget in the dialog's step 3). */}
+      <div className="grid grid-cols-3 gap-2">
         {kitTiles(items.imagesAvailable).map((t) => {
           const on = isOn(t.key);
           return (
             <div
               key={t.key}
-              className={`rounded-xl border-2 px-2.5 py-1.5 ${on ? "border-line bg-card" : "border-line/60 bg-paper-deep"}`}
+              title={tip(t.key)}
+              className={`rounded-xl border-2 px-3 py-2 ${on ? "border-line bg-card" : "border-line/60 bg-paper-deep"}`}
             >
-              <div className="flex items-start gap-2" title={what(t.key)}>
+              <div className="flex items-center gap-2">
                 {t.familyTick && t.key !== "prompts" && tick(t.key, on)}
-                <div className="min-w-0 flex-1">
-                  <div className={`text-sm font-bold leading-snug truncate ${on ? "" : "text-ink-soft"}`}>{label(t.key)}</div>
-                  <div className="text-xs text-ink-soft leading-snug">
-                    {weightLabel(weight(t.key))}
-                    {(t.key === "skills" || t.key === "subagents") && ` ${BUNDLED_NOTE}`}
-                  </div>
-                </div>
+                <span className={`min-w-0 flex-1 text-sm font-bold leading-snug truncate ${on ? "" : "text-ink-soft"}`}>{name(t.key)}</span>
+                <span className="shrink-0 text-xs text-ink-soft">{weightLabel(weight(t.key))}</span>
                 {t.items && (
                   <button
                     ref={(el) => { opener.current[t.key] = el; }}
@@ -166,6 +180,7 @@ export function OnboardingKit({
                   </button>
                 )}
               </div>
+              <p className="text-xs text-ink-soft leading-snug truncate">{short(t.key)}</p>
             </div>
           );
         })}

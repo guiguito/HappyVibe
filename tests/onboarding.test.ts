@@ -703,6 +703,14 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
     expect(ONBOARDING_COPY.kitBack).toBe("Back");
   });
 
+  it("tiles and list items are two lines each; the list is 2 columns; the small-model line yields to a drill-in", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    expect(has(kit, "{short(t.key)}"), "tile one-liner").toBe(true);
+    expect(has(kit, "{r.description}"), "item one-liner").toBe(true);
+    expect(has(kit, "grid grid-cols-2"), "2-column list").toBe(true);
+    expect(has(flat(DIALOG), "draft && !drill && smallModel"), "hidden inside a drill-in").toBe(true);
+  });
+
   it("step 3 is top-anchored and its done steps are not a list", () => {
     const src = flat(DIALOG);
     const step3 = src.slice(src.indexOf('screen === "personalize" ? ('), src.indexOf("{C.doneTitle}"));

@@ -11,19 +11,20 @@ export const KIT_FAMILIES: readonly KitFamily[] = ["plan", "askUser", "terminal"
  * tools rows AND the first-run kit, so the two can never describe a family differently.
  * A row keeps the rest of its copy after `what`.
  */
-export const FAMILY_COPY: Record<KitFamily | "intent" | "mcp" | "core", { label: string; what: string }> = {
-  plan: { label: "Plan mode", what: "Lets the agent draft and track a step-by-step plan before acting." },
-  askUser: { label: "Ask user", what: "Lets the agent pause mid-turn to ask you a clarifying question." },
-  terminal: { label: "Agent terminal — 3 tools", what: "Lets the agent run long-running commands in terminals you can watch, type into and stop." },
-  browser: { label: "Agent browser — 10 tools", what: "Lets the agent open a page in a sandboxed browser tab, read it, screenshot it, click and type in it, and watch its console and network traffic." },
-  web: { label: "Web tools — 4 tools", what: "Lets the agent search the web and read any public page as clean text, list a site's pages, or read a whole section of one." },
-  memory: { label: "Memory — 3 tools", what: "Lets the agent remember durable facts about you and about each project, across sessions." },
-  schedules: { label: "Schedules — 4 tools", what: "Lets the agent list this workspace's schedules and propose new ones." },
-  document: { label: "Documents — 1 tool", what: `Lets the agent read ${DOCUMENT_FAMILY_LIST} files as Markdown, converted on this machine — nothing is sent anywhere.` },
-  images: { label: "Images — 1 tool", what: "Lets the agent make an image and save it as a new file in your project." },
-  subagents: { label: "Sub-agents — 4 tools", what: "Lets the agent delegate work to the agents on the Agents page." },
-  workflows: { label: "Workflows — 1 tool", what: "Lets the agent run a scripted workflow of several sub-agents." },
-  skills: { label: "Skills", what: "Lets the agent load the skills you turned on." },
+/** `short` is the kit tile's one-liner (§22, 2026-10-10); Built-in tools keeps the full `what`. */
+export const FAMILY_COPY: Record<KitFamily, { label: string; what: string; short: string }> & Record<"intent" | "mcp" | "core", { label: string; what: string }> = {
+  plan: { label: "Plan mode", what: "Lets the agent draft and track a step-by-step plan before acting.", short: "Plans the steps before it acts." },
+  askUser: { label: "Ask user", what: "Lets the agent pause mid-turn to ask you a clarifying question.", short: "Asks you when something is unclear." },
+  terminal: { label: "Agent terminal — 3 tools", what: "Lets the agent run long-running commands in terminals you can watch, type into and stop.", short: "Runs long commands you can watch." },
+  browser: { label: "Agent browser — 10 tools", what: "Lets the agent open a page in a sandboxed browser tab, read it, screenshot it, click and type in it, and watch its console and network traffic.", short: "Opens and uses web pages in a sandbox." },
+  web: { label: "Web tools — 4 tools", what: "Lets the agent search the web and read any public page as clean text, list a site's pages, or read a whole section of one.", short: "Searches the web and reads pages." },
+  memory: { label: "Memory — 3 tools", what: "Lets the agent remember durable facts about you and about each project, across sessions.", short: "Remembers facts across sessions." },
+  schedules: { label: "Schedules — 4 tools", what: "Lets the agent list this workspace's schedules and propose new ones.", short: "Proposes tasks that run on a schedule." },
+  document: { label: "Documents — 1 tool", what: `Lets the agent read ${DOCUMENT_FAMILY_LIST} files as Markdown, converted on this machine — nothing is sent anywhere.`, short: "Reads office documents and PDFs." },
+  images: { label: "Images — 1 tool", what: "Lets the agent make an image and save it as a new file in your project.", short: "Makes images for your project." },
+  subagents: { label: "Sub-agents — 4 tools", what: "Lets the agent delegate work to the agents on the Agents page.", short: "Hands work to specialist agents." },
+  workflows: { label: "Workflows — 1 tool", what: "Lets the agent run a scripted workflow of several sub-agents.", short: "Runs scripted teams of sub-agents." },
+  skills: { label: "Skills", what: "Lets the agent load the skills you turned on.", short: "Loads expert know-how when it's needed." },
   intent: { label: "Tool intent", what: "The one-line “why” the model writes for each tool card." },
   mcp: { label: "MCP", what: "Lets the agent use the tools of your MCP servers." },
   core: { label: "Core tools", what: "Pi's own tools for reading, searching and changing files and running commands." },
