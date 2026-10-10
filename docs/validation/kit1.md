@@ -120,3 +120,16 @@ PRD §22 "Decision (Kit follow-up, 2026-10-10) — Personalize is step 3…". Bu
   edges, grid and drill-in alike), the later-line moved to step 3's bottom row; the last screen has
   ← Back top-left, 🎉 + "You're in." centred, consent + footer then Start at the bottom. No overflow
   on either screen in the worst case; Start opens one session.
+
+## Follow-up 3–4 (2026-10-10): Prompts back, explanations, one back pattern
+
+Built app, worst case (4k model + OpenRouter key):
+- 12 tiles (Prompts last, ▸ 9, no family tick), each with a one-line `short` explanation and its weight
+  on the name line; no overflow, no truncated text. Tile names drop their "— N tools" suffix at 3 columns
+  (full name in the tooltip and aria-label).
+- Drill-ins are 2 columns with name, weight and a first-clause description (`firstClause`, full text in
+  the tooltip); the 10-agent and 9-prompt lists fit. The small-model line hides while a list is open
+  (that is what makes the 10-agent list fit); the too-small line stays.
+- Back controls are the shared icon-only `BackButton` in the kit drill-in, "You're in.", ContextPanel
+  and FeedbackDialog; BrowserTab draws the same glyph. Opening a list with a real (CDP) mouse click
+  shows no focus ring; the ring is keyboard-only and drawn inside the button.
