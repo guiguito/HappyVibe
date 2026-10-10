@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ALL_OFF_COPY, BUNDLED_NOTE, FAMILY_COPY, allToolsOff, weightLabel } from "../toolSwitches";
+import { useEffect, useRef } from "react";
+import { ALL_OFF_COPY, BUNDLED_NOTE, FAMILY_COPY, allToolsOff, weightLabel, type KitFamily } from "../toolSwitches";
 import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
 import { ONBOARDING_COPY as C, kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
 
@@ -16,13 +16,26 @@ export function OnboardingKit({
   draft,
   setDraft,
   items,
+  open,
+  setOpen,
 }: {
   draft: KitDraft;
   setDraft: (d: KitDraft) => void;
   items: KitItems;
+  /** The drill-in on screen. Owned by the dialog: Esc inside it means Back, not Continue. */
+  open: KitFamily | null;
+  setOpen: (k: KitFamily | null) => void;
 }): React.JSX.Element {
-  const [open, setOpen] = useState<KitTile["key"] | null>(null);
   const s = draft.switches;
+  // Focus follows the drill-in: into its ← Back on open, back to the ▸ it came from on close.
+  const backRef = useRef<HTMLButtonElement | null>(null);
+  const opener = useRef<Partial<Record<KitFamily, HTMLButtonElement | null>>>({});
+  const last = useRef<KitFamily | null>(null);
+  useEffect(() => {
+    if (open) backRef.current?.focus();
+    else if (last.current) opener.current[last.current]?.focus();
+    last.current = open;
+  }, [open]);
 
   /** One row per item of a tile's list: checked = not in its off-list. */
   const rows = (t: KitTile): { id: string; name: string; tokens: number; on: boolean; disabled: boolean; toggle: () => void }[] => {
@@ -73,7 +86,7 @@ export function OnboardingKit({
     return (
       <div className="text-left">
         <div className="flex items-baseline gap-3 mb-2">
-          <button type="button" onClick={() => setOpen(null)} className="text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer">
+          <button ref={backRef} type="button" onClick={() => setOpen(null)} className="text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer">
             {C.kitBack}
           </button>
           <span className="text-sm font-bold">{FAMILY_COPY[drill.key].label}</span>
@@ -124,8 +137,10 @@ export function OnboardingKit({
                 </div>
                 {t.items && (
                   <button
+                    ref={(el) => { opener.current[t.key] = el; }}
                     type="button"
                     onClick={() => setOpen(t.key)}
+                    aria-label={FAMILY_COPY[t.key].label}
                     className="shrink-0 text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1"
                   >
                     ▸ {rows(t).length}

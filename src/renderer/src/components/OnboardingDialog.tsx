@@ -4,7 +4,7 @@ import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors, type KeyNote } from "./OnboardingDoors";
 import { OnboardingKit } from "./OnboardingKit";
 import { GOTO_LABELS } from "./GoTo";
-import { KIT_FAMILIES } from "../toolSwitches";
+import { KIT_FAMILIES, type KitFamily } from "../toolSwitches";
 import {
   ONBOARDING_COPY as C,
   DEFAULT_SWITCHES,
@@ -193,6 +193,7 @@ export function OnboardingDialog({
   const starting = useRef(false);
   const reported = useRef(false);
   const [continued, setContinued] = useState(false);
+  const [drill, setDrill] = useState<KitFamily | null>(null);
   const screen = onboardingScreen({ welcome, complete, continued });
   const kitOpen = screen === "personalize" || screen === "done";
   const next = (): void => { if (draft) setContinued(true); };
@@ -269,7 +270,8 @@ export function OnboardingDialog({
             e.preventDefault();
             if (welcome) { setWelcome(false); return; }
             // Step 3 and the last screen have no ✕: Esc moves forward with whatever the draft holds.
-            if (screen === "personalize") { next(); return; }
+            // Inside a Skills/Sub-agents drill-in, Esc is its ← Back.
+            if (screen === "personalize") { if (drill) setDrill(null); else next(); return; }
             if (screen === "done") { start(); return; }
             dismiss();
           }}
@@ -408,19 +410,19 @@ export function OnboardingDialog({
                         )}
                     </div>
                   ) : screen === "personalize" ? (
-                    /* Step 3, full width. Nothing scrolls at the fixed frame (2026-10-10):
-                       line 32 + title/body 56 + small-model 41 + too-small 21 + 4 tile rows
-                       ~254 + footer 52 ≈ 456px of the 484px inside. `overflow-y-auto` above
-                       is only the tiny-window safety net; `min-h-full`, not `h-full` (round 25). */
-                    <div className="min-h-full flex flex-col justify-center">
-                      <ol className="flex items-center gap-4 text-sm font-bold mb-3">
+                    /* Step 3, full width, fits the fixed frame — nothing scrolls (2026-10-10);
+                       `overflow-y-auto` above is only the tiny-window safety net. Top-anchored so
+                       the header holds still when the drill-in list is shorter than the grid;
+                       `min-h-full`, not `h-full` (round 25). */
+                    <div className="min-h-full flex flex-col">
+                      <div className="flex items-center gap-4 text-sm font-bold mb-3">
                         {doneSteps.map((t) => (
-                          <li key={t} className="flex items-center gap-2">
+                          <div key={t} className="flex items-center gap-2">
                             <span className={badge(true)} aria-hidden>✓</span>
                             <span className="text-ink-soft line-through decoration-2">{t}</span>
-                          </li>
+                          </div>
                         ))}
-                      </ol>
+                      </div>
                       <div className="flex items-center gap-3">
                         <span className={badge(false)} aria-hidden>3</span>
                         <h2 className="font-black text-2xl tracking-tight">{C.step3Title}</h2>
@@ -449,7 +451,7 @@ export function OnboardingDialog({
                       )}
                       <div className="mt-3">
                         {draft && kitItems ? (
-                          <OnboardingKit draft={draft} setDraft={setDraft} items={kitItems} />
+                          <OnboardingKit draft={draft} setDraft={setDraft} items={kitItems} open={drill} setOpen={setDrill} />
                         ) : (
                           <p className="text-sm text-ink-soft">{C.kitLoading}</p>
                         )}
@@ -468,7 +470,7 @@ export function OnboardingDialog({
                     <div className="min-h-full flex flex-col items-center justify-center text-center">
                       <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
                       <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
-                      <p className="hv-done-body text-sm text-ink-soft mt-2 leading-snug">
+                      <p className="hv-done-body text-sm text-ink mt-2 leading-snug">
                         {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.agents}.
                       </p>
                       <p className="text-xs text-ink-soft mt-4 leading-snug">🔒 {C.kitConsent}</p>

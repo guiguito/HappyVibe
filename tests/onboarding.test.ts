@@ -600,7 +600,7 @@ describe("the handover beat is actually visible", () => {
   it("Esc moves forward from step 3 on — Continue, then Start — and never dismisses there", () => {
     const src = flat(DIALOG);
     const esc = src.slice(src.indexOf("onEscapeKeyDown"), src.indexOf("onOpenAutoFocus"));
-    expect(has(esc, 'if (screen === "personalize") { next(); return; }'), "step 3 = Continue").toBe(true);
+    expect(has(esc, 'if (screen === "personalize") { if (drill) setDrill(null); else next(); return; }'), "step 3 = Continue; drill-in = Back").toBe(true);
     expect(has(esc, 'if (screen === "done") { start(); return; }'), "last screen = Start").toBe(true);
     // The ✕ only exists while steps 1–2 are incomplete.
     expect(has(src, "{!complete && ( <button type=\"button\" onClick={dismiss}"), "no ✕ from step 3 on").toBe(true);
@@ -689,6 +689,15 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
     expect(has(kit, "onClick={() => setOpen(null)}"), "Back returns to the grid").toBe(true);
     expect(has(kit, "col-span-2"), "no inline expansion").toBe(false);
     expect(has(kit, "grid grid-cols-3"), "3 columns").toBe(true);
+    expect(has(kit, "aria-label={FAMILY_COPY[t.key].label}"), "▸ N names its family").toBe(true);
+    expect(has(kit, "if (open) backRef.current?.focus(); else if (last.current) opener.current[last.current]?.focus();"), "focus follows").toBe(true);
+  });
+
+  it("step 3 is top-anchored and its done steps are not a list", () => {
+    const src = flat(DIALOG);
+    const step3 = src.slice(src.indexOf('screen === "personalize" ? ('), src.indexOf("{C.doneTitle}"));
+    expect(has(step3, '<div className="min-h-full flex flex-col">'), "top-anchored").toBe(true);
+    expect(/<ol|<li/.test(step3), "no two-item list").toBe(false);
   });
 });
 

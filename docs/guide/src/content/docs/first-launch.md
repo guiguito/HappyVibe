@@ -7,7 +7,7 @@ The first time you open HappyVibe, it greets you with one small window: a hello,
 
 ## When you see it
 
-The setup window appears only on a fresh install, before you've added a project or started a session, and only until you close it. If you've used HappyVibe before, it stays out of your way. Stuck or curious? While you set up, a **Read the setup guide ↗** link under the tagline opens this page in your browser, and setup stays where it is.
+The setup window appears only on a fresh install, before you've added a project or started a session, and only until you close it. If you've used HappyVibe before, it stays out of your way. Stuck or curious? During the first two steps, a **Read the setup guide ↗** link under the tagline opens this page in your browser, and setup stays where it is.
 
 ## Say hello
 
@@ -27,6 +27,8 @@ The app's first step reads "Connect a model": "The brain. Sign in with a plan yo
 
 Want more than the three choices? The line under them reads "Every option lives on the **Models** page." Clicking **Models** closes the setup window and takes you there.
 
+If you quit after this step, the next launch opens with it already ticked.
+
 ## Pick a project
 
 The second step reads "Pick a project": "A folder on your computer. The agent works in there — and asks first before touching anything outside it."
@@ -42,7 +44,7 @@ On a Windows computer without Git for Windows, one more line appears under the s
 
 ## Personalize your agent
 
-With the first two steps ticked, the window widens and step 3 takes all of it. A line at the top shows the two finished steps with their ✓, and under it the third step reads "Personalize your agent": "Your agent comes fully loaded. Untick anything you don't want."
+With the first two steps ticked, the hello panel on the left steps aside and step 3 takes the whole window. A line at the top shows the two finished steps with their ✓, and under it the third step reads "Personalize your agent": "Your agent comes fully loaded. Untick anything you don't want."
 
 <!-- TODO(media): first-launch/onboarding-kit.png — Step 3 "Personalize your agent" with its tiles, total and Continue button -->
 
@@ -50,10 +52,10 @@ Nothing here is final, and nothing happens on a timer. You can change every choi
 
 - **The tiles.** Each one is a group of abilities the agent has: **Plan mode**, **Ask user**, **Agent terminal — 3 tools**, **Agent browser — 10 tools**, **Web tools — 4 tools**, **Memory — 3 tools**, **Schedules — 4 tools**, **Documents — 1 tool**, **Sub-agents — 4 tools** and **Skills**, plus **Images — 1 tool** when you have an OpenRouter key or sign-in. Hover a tile to read what it does. Tick or untick the box to switch the group on or off. **Workflows** isn't a tile here: it starts off, and you can turn it on later from **Built-in tools**.
 - **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later.
-- **Skills and Sub-agents** each have a ▸ and a number. Click it and the tiles make way for that list: every skill or agent gets a tick of its own and its own weight, so you can drop single ones. Click **← Back** to return to the tiles. While the group itself is unticked, its list is greyed out.
+- **Skills and Sub-agents** each have a ▸ and a number. Click it and the tiles make way for that list: every skill or agent gets a tick of its own and its own weight, so you can drop single ones. Click **← Back**, or press **Esc**, to return to the tiles. While the group itself is unticked, its list is greyed out.
 - **The total.** At the bottom, beside **Continue**: "~N tokens on every message", with N for whatever is ticked right now, plus the core tools the agent always has for reading, editing and running commands. It moves as you tick.
 
-Nothing is saved yet, apart from the small-model preset below. Click **Continue** when you're happy.
+Nothing is saved yet, apart from one safety setting for small models, explained next. Click **Continue** when you're happy.
 
 ### If your model has a small window
 
@@ -63,20 +65,20 @@ If the window is very small, no bigger than the room HappyVibe's agent keeps fre
 
 ## You're in
 
-After **Continue**, the window says "You're in." and "You can change all of it later on Built-in tools, Skills and Agents." Under it:
+Setup's done, and your agent is ready when you are. After **Continue**, a 🎉 pops and the window says "You're in." and "You can change all of it later on Built-in tools, Skills and Agents." Under it:
 
 - **The consent line.** "Anything that changes your files or runs a command asks you first."
 - **The footer.** "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each."
 
 Click **Start my first session**. The window saves your choices, closes, and opens a session in your new workspace, with a few suggested first prompts waiting above the message box. Changed your mind about a tile? **← Back** under the button takes you to step 3 again.
 
-If you quit after the first step, the next launch opens with it already ticked.
-
 ## Setting up yourself instead
 
 The ✕ in the top-right corner is the way out while you're on the first two steps. Its tooltip reads "I'll set up myself". It's gone from step 3 and from "You're in.": you leave those by starting your session.
 
-On the keyboard, **Esc** closes the window during the first two steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On step 3, **Esc** means **Continue**, and on "You're in." it means **Start my first session**, with whatever is ticked. Clicking outside the window does nothing, so a stray click can't close it.
+On the keyboard, **Esc** closes the window during the first two steps. While the animation plays, the first **Esc** skips it and a second one closes the window. On step 3, **Esc** means **Continue** (inside a Skills or Sub-agents list, it takes you back to the tiles), and on "You're in." it means **Start my first session**, with whatever is ticked. Clicking outside the window does nothing, so a stray click can't close it.
+
+Quit on step 3 or on "You're in." and the window doesn't come back either: your project is already added, so the next launch opens straight into the app. Your ticks on step 3 aren't saved, and you can set them any time on **Built-in tools**, **Skills** and **Agents**.
 
 Once closed, the window doesn't come back, and you don't need it to. Everything it offers lives elsewhere in the app:
 
