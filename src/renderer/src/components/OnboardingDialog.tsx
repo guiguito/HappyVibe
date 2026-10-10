@@ -72,7 +72,7 @@ function StepRow({
   done: boolean;
   active: boolean;
   title: string;
-  /** Omitted on the upcoming step 3 row: its UI is the full-width screen that follows. */
+  /** Shown only while the row is active: an upcoming row is number + title. */
   body?: string;
   /** Survives the collapse — see ProviderDoors' onNote. */
   note?: string | null;
@@ -88,7 +88,7 @@ function StepRow({
           <div className={`font-bold ${done ? "text-ink-soft line-through decoration-2" : ""}`}>{title}</div>
           {/* A completed row collapses to its checkmark: it has nothing left to
               say, and leaving it open makes the active step harder to find. */}
-          {!done && body && <p className="text-sm text-ink-soft leading-snug mt-0.5">{body}</p>}
+          {!done && active && body && <p className="text-sm text-ink-soft leading-snug mt-0.5">{body}</p>}
           {note && <p className="text-xs text-berry font-bold mt-1">{note}</p>}
           {active && <div className="mt-3">{children}</div>}
         </div>
