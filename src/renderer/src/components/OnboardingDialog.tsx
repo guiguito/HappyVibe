@@ -456,36 +456,45 @@ export function OnboardingDialog({
                           <p className="text-sm text-ink-soft">{C.kitLoading}</p>
                         )}
                       </div>
-                      <div className="mt-3 flex items-center justify-end gap-4">
-                        {draft && kitItems && (
-                          <p className="text-xs text-ink-soft">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</p>
-                        )}
-                        <button type="button" className={`${primaryBtn} whitespace-nowrap`} onClick={next} disabled={!draft}>
-                          {C.kitContinue}
-                        </button>
+                      {/* `mt-auto`: the footer sits at the panel's bottom-right whether the grid or a
+                          drill-in list shows. The later-line rides its left side, so it costs no height. */}
+                      <div className="mt-auto pt-3 flex items-center justify-between gap-4">
+                        <p className="text-xs text-ink leading-snug">
+                          {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.agents}.
+                        </p>
+                        <div className="flex items-center gap-4 shrink-0">
+                          {draft && kitItems && (
+                            <p className="text-xs text-ink-soft">~{fmtNum(kitTotal(draft, kitItems))} {C.kitTotalTail}</p>
+                          )}
+                          <button type="button" className={`${primaryBtn} whitespace-nowrap`} onClick={next} disabled={!draft}>
+                            {C.kitContinue}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
-                    /* The last screen: centred, full width, waits for Start (no timer). */
-                    <div className="min-h-full flex flex-col items-center justify-center text-center">
-                      <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
-                      <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
-                      <p className="hv-done-body text-sm text-ink mt-2 leading-snug">
-                        {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.agents}.
-                      </p>
-                      <p className="text-xs text-ink-soft mt-4 leading-snug">🔒 {C.kitConsent}</p>
-                      <p className="text-xs text-ink-soft mt-1 leading-snug">{C.kitFooter}</p>
-                      <button type="button" className={`${primaryBtn} whitespace-nowrap mt-6`} onClick={start} disabled={busy || !draft}>
-                        {C.kitStart}
-                      </button>
+                    /* The last screen, full width, waits for Start (no timer): Back top-left,
+                       🎉 centred in the space above, consent + footer + Start at the bottom. */
+                    <div className="min-h-full flex flex-col text-center">
                       <button
                         type="button"
                         onClick={() => setContinued(false)}
                         disabled={busy}
-                        className="mt-3 text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer"
+                        className="self-start text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer"
                       >
                         {C.kitBack}
                       </button>
+                      <div className="flex-1 flex flex-col items-center justify-center">
+                        <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
+                        <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
+                      </div>
+                      <div className="hv-done-body flex flex-col items-center">
+                        <p className="text-sm text-ink leading-snug">🔒 {C.kitConsent}</p>
+                        <p className="text-sm text-ink-soft mt-1 leading-snug">{C.kitFooter}</p>
+                        <button type="button" className={`${primaryBtn} whitespace-nowrap mt-5`} onClick={start} disabled={busy || !draft}>
+                          {C.kitStart}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

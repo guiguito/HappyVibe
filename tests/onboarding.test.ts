@@ -699,6 +699,25 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
     expect(has(step3, '<div className="min-h-full flex flex-col">'), "top-anchored").toBe(true);
     expect(/<ol|<li/.test(step3), "no two-item list").toBe(false);
   });
+
+  it("step 3's footer is pinned bottom-right and carries the later-line", () => {
+    const src = flat(DIALOG);
+    const step3 = src.slice(src.indexOf('screen === "personalize" ? ('), src.indexOf("{C.doneTitle}"));
+    const footer = step3.slice(step3.indexOf("mt-auto"));
+    expect(step3.indexOf("mt-auto"), "pinned with mt-auto").toBeGreaterThan(-1);
+    expect(footer.indexOf("{C.kitLaterLead}"), "later-line in the footer").toBeGreaterThan(-1);
+    expect(footer.indexOf("{C.kitLaterLead}"), "left of the total").toBeLessThan(footer.indexOf("{C.kitTotalTail}"));
+    expect(footer.indexOf("{C.kitTotalTail}"), "total, then Continue").toBeLessThan(footer.indexOf("{C.kitContinue}"));
+  });
+
+  it("the last screen: Back first, then You're in., then consent, footer and Start — no later-line", () => {
+    const src = flat(DIALOG);
+    const done = src.slice(src.indexOf("min-h-full flex flex-col text-center"));
+    const order = ["{C.kitBack}", "{C.doneTitle}", "{C.kitConsent}", "{C.kitFooter}", "{C.kitStart}"].map((k) => done.indexOf(k));
+    expect(order.every((i) => i > -1), "all present").toBe(true);
+    expect([...order].sort((a, b) => a - b), "in that order").toEqual(order);
+    expect(has(done, "C.kitLaterLead"), "later-line moved to step 3").toBe(false);
+  });
 });
 
 describe("§4 Windows round — the Git for Windows line", () => {

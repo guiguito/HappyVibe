@@ -53,7 +53,8 @@ Nothing here is final, and nothing happens on a timer. You can change every choi
 - **The tiles.** Each one is a group of abilities the agent has: **Plan mode**, **Ask user**, **Agent terminal — 3 tools**, **Agent browser — 10 tools**, **Web tools — 4 tools**, **Memory — 3 tools**, **Schedules — 4 tools**, **Documents — 1 tool**, **Sub-agents — 4 tools** and **Skills**, plus **Images — 1 tool** when you have an OpenRouter key or sign-in. Hover a tile to read what it does. Tick or untick the box to switch the group on or off. **Workflows** isn't a tile here: it starts off, and you can turn it on later from **Built-in tools**.
 - **The grey weights.** Under each tile's name is what it adds to every message, like "~1.1k tokens". A token is the unit a model reads text in, roughly four characters. Skills and Sub-agents add "with the bundled ones on", because they grow with what you add later.
 - **Skills and Sub-agents** each have a ▸ and a number. Click it and the tiles make way for that list: every skill or agent gets a tick of its own and its own weight, so you can drop single ones. Click **← Back**, or press **Esc**, to return to the tiles. While the group itself is unticked, its list is greyed out.
-- **The total.** At the bottom, beside **Continue**: "~N tokens on every message", with N for whatever is ticked right now, plus the core tools the agent always has for reading, editing and running commands. It moves as you tick.
+- **The total.** In the bottom-right corner, beside **Continue**: "~N tokens on every message", with N for whatever is ticked right now, plus the core tools the agent always has for reading, editing and running commands. It moves as you tick, and stays put when a list opens.
+- **The reminder.** On the left of that row: "You can change all of it later on Built-in tools, Skills and Agents."
 
 Nothing is saved yet, apart from one safety setting for small models, explained next. Click **Continue** when you're happy.
 
@@ -65,12 +66,12 @@ If the window is very small, no bigger than the room HappyVibe's agent keeps fre
 
 ## You're in
 
-Setup's done, and your agent is ready when you are. After **Continue**, a 🎉 pops and the window says "You're in." and "You can change all of it later on Built-in tools, Skills and Agents." Under it:
+Setup's done, and your agent is ready when you are. After **Continue**, a 🎉 pops and the window says "You're in." At the bottom:
 
 - **The consent line.** "Anything that changes your files or runs a command asks you first."
 - **The footer.** "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each."
 
-Click **Start my first session**. The window saves your choices, closes, and opens a session in your new workspace, with a few suggested first prompts waiting above the message box. Changed your mind about a tile? **← Back** under the button takes you to step 3 again.
+Under those two lines, click **Start my first session**. The window saves your choices, closes, and opens a session in your new workspace, with a few suggested first prompts waiting above the message box. Changed your mind about a tile? **← Back**, in the top-left corner, takes you to step 3 again.
 
 ## Setting up yourself instead
 
