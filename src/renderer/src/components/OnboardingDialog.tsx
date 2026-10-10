@@ -72,13 +72,14 @@ function StepRow({
   done: boolean;
   active: boolean;
   title: string;
-  body: string;
+  /** Omitted on the upcoming step 3 row: its UI is the full-width screen that follows. */
+  body?: string;
   /** Survives the collapse — see ProviderDoors' onNote. */
   note?: string | null;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div className={`rounded-2xl border-2 px-5 py-4 ${active ? "border-ink/70 bg-paper" : "border-line bg-card"}`}>
+    <div className={`rounded-2xl border-2 px-5 ${active ? "py-4" : "py-2.5"} ${active ? "border-ink/70 bg-paper" : "border-line bg-card"}`}>
       <div className="flex items-start gap-3">
         <div className={badge(done)} aria-hidden>
           {done ? "✓" : n}
@@ -87,7 +88,7 @@ function StepRow({
           <div className={`font-bold ${done ? "text-ink-soft line-through decoration-2" : ""}`}>{title}</div>
           {/* A completed row collapses to its checkmark: it has nothing left to
               say, and leaving it open makes the active step harder to find. */}
-          {!done && <p className="text-sm text-ink-soft leading-snug mt-0.5">{body}</p>}
+          {!done && body && <p className="text-sm text-ink-soft leading-snug mt-0.5">{body}</p>}
           {note && <p className="text-xs text-berry font-bold mt-1">{note}</p>}
           {active && <div className="mt-3">{children}</div>}
         </div>
@@ -403,6 +404,10 @@ export function OnboardingDialog({
                           )}
                         </StepRow>
 
+                        {/* Upcoming only, never active here: step 3's real UI is the
+                            full-width screen that replaces this list. */}
+                        <StepRow n="3" done={false} active={false} title={C.step3Title} />
+
                         {/* §4 Windows round: only when the machine has no Git Bash.
                             Not a Banner, not persisted, not shown again — it names
                             the one thing that does not degrade, since the bundled
@@ -486,8 +491,8 @@ export function OnboardingDialog({
                     <div className="min-h-full flex flex-col text-center">
                       <BackButton label={C.kitBack} onClick={() => setContinued(false)} disabled={busy} className="self-start" />
                       <div className="flex-1 flex flex-col items-center justify-center">
-                        <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
-                        <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
+                        <div className="hv-burst text-8xl mb-4" aria-hidden>🎉</div>
+                        <h2 className="hv-done-title font-black text-5xl tracking-tight">{C.doneTitle}</h2>
                       </div>
                       <div className="hv-done-body flex flex-col items-center">
                         <p className="text-sm text-ink leading-snug">🔒 {C.kitConsent}</p>

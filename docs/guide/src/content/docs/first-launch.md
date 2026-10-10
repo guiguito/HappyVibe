@@ -21,6 +21,8 @@ The app's first step reads "Connect a model": "The brain. Sign in with a plan yo
 
 <!-- TODO(media): first-launch/onboarding-setup.png — The Setup step: step 1 "Connect a model" with its three choices, step 2 "Pick a project" -->
 
+Below the two active steps, a third row reads "Personalize your agent", dimmed: it's the step that comes next, and it opens on its own once the first two are ticked.
+
 1. Pick one of the choices: **Sign in with a plan**, **Free, on this computer** or **Paste an API key**. The free choice appears only when HappyVibe finds Ollama, LM Studio or llama.cpp (free apps that run AI models on your own computer) running with at least one model.
 2. Follow it through. [Connect a model](/docs/connect-a-model/) walks through each choice.
 3. When a model is ready, the step folds away to a ✓. If the provider refuses your key, the step stays open with a red line saying why, so you can paste another.

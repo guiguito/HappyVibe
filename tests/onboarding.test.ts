@@ -660,6 +660,7 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
     const src = flat(DIALOG);
     expect(ONBOARDING_COPY.step3Title).toBe("Personalize your agent");
     expect(has(src, "{C.step3Title}"), "step 3 title").toBe(true);
+    expect(has(flat(DIALOG), 'n="3" done={false} active={false} title={C.step3Title}'), "setup list shows step 3 as upcoming").toBe(true);
     expect(has(src, "const doneSteps = [C.step1Title, C.step2Title];"), "steps 1–2 not re-typed").toBe(true);
     expect(has(src, "{C.kitHeadline} {C.kitSubline}"), "body").toBe(true);
   });
