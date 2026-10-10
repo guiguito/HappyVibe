@@ -102,3 +102,17 @@ PRD §13/§22 "Decision (Kit follow-up, 2026-10-10)". Checked on the built app, 
   by `tests/workflows-default.test.ts`.
 - Live batch (required: `pi-runtime/extensions` changed): 90/91 green in 16 min (slow provider);
   the one failure, `readonly-bridge.test.ts`, is the known batch-only flake and passed alone in 5.6 s.
+
+## Follow-up 2 (2026-10-10): Personalize is step 3, "You're in." is the last screen
+
+PRD §22 "Decision (Kit follow-up, 2026-10-10) — Personalize is step 3…". Built app, worst case
+(4,096-token seeded model + OpenRouter key: 11 tiles, small-model line and too-small line all showing):
+- Step 3 at 864×544: no element overflows (every `overflow-y:auto` box has scrollHeight ≤ clientHeight).
+  Same for the 10-agent Sub-agents list and the last screen.
+- The step 3 header stays at the same y when the drill-in opens (top-anchored). ▸ buttons carry the
+  family label; opening a list focuses ← Back, Back refocuses the ▸ it came from.
+- Esc: inside a list → back to the grid; on the grid → Continue; on "You're in." → Start. No ✕ on
+  either screen. ← Back from "You're in." keeps the draft (11 ticked, 13.4k after Load everything anyway).
+- Start: one session, settings saved as drafted, no reload notice.
+- Quitting at step 3 does not reopen the wizard (step 2 already added the project); the small-model
+  preset written at step 3's open is what remains (R1, unchanged).
