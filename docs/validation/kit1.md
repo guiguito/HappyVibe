@@ -133,3 +133,7 @@ Built app, worst case (4k model + OpenRouter key):
 - Back controls are the shared icon-only `BackButton` in the kit drill-in, "You're in.", ContextPanel
   and FeedbackDialog; BrowserTab draws the same glyph. Opening a list with a real (CDP) mouse click
   shows no focus ring; the ring is keyboard-only and drawn inside the button.
+- Setup list shows **3 · Personalize your agent** as an upcoming step. Upcoming rows show number +
+  title only. Tallest state (no keys, step 1 active, either door open): no overflow — before the
+  title-only rule it overflowed by 29 px and cut step 3 off. "You're in." 🎉 is text-8xl and the title
+  text-5xl; no overflow.
