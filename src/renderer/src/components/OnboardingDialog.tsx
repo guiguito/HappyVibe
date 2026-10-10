@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors, type KeyNote } from "./OnboardingDoors";
 import { OnboardingKit } from "./OnboardingKit";
+import { BackButton } from "./BackButton";
 import { GOTO_LABELS } from "./GoTo";
 import { KIT_FAMILIES } from "../toolSwitches";
 import {
@@ -477,14 +478,7 @@ export function OnboardingDialog({
                     /* The last screen, full width, waits for Start (no timer): Back top-left,
                        🎉 centred in the space above, consent + footer + Start at the bottom. */
                     <div className="min-h-full flex flex-col text-center">
-                      <button
-                        type="button"
-                        onClick={() => setContinued(false)}
-                        disabled={busy}
-                        className="self-start text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer"
-                      >
-                        {C.kitBack}
-                      </button>
+                      <BackButton label={C.kitBack} onClick={() => setContinued(false)} disabled={busy} className="self-start -ml-2" />
                       <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="hv-burst text-5xl mb-2" aria-hidden>🎉</div>
                         <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>

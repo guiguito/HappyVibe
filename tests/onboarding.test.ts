@@ -693,6 +693,16 @@ describe("step 3 Personalize and the last screen (2026-10-10)", () => {
     expect(has(kit, "if (open) backRef.current?.focus(); else if (last.current) opener.current[last.current]?.focus();"), "focus follows").toBe(true);
   });
 
+  it("the drill-in header: Back alone on top, then the family as a heading with its weight", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    const back = kit.indexOf("<BackButton ref={backRef} label={C.kitBack}");
+    const title = kit.indexOf('<h3 className="font-black text-lg tracking-tight">{label(drill.key)}</h3>');
+    expect(back, "Back").toBeGreaterThan(-1);
+    expect(title, "heading after Back").toBeGreaterThan(back);
+    expect(kit.indexOf("{weightLabel(weight(drill.key))}"), "weight after the heading").toBeGreaterThan(title);
+    expect(ONBOARDING_COPY.kitBack).toBe("Back");
+  });
+
   it("step 3 is top-anchored and its done steps are not a list", () => {
     const src = flat(DIALOG);
     const step3 = src.slice(src.indexOf('screen === "personalize" ? ('), src.indexOf("{C.doneTitle}"));

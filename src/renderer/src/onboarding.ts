@@ -77,7 +77,8 @@ export const ONBOARDING_COPY = {
   kitFooter: "Want your agent to reach GitHub, Linear, Notion…? Add plugins and MCP servers later — a few clicks each.",
   kitStart: "Start my first session",
   kitContinue: "Continue",
-  kitBack: "← Back",
+  // The tooltip + accessible name of the BackButton icon — the chevron IS the arrow.
+  kitBack: "Back",
   kitLoadAll: "Load everything anyway",
   kitPrompts: "Ready-made prompts you start with /. They weigh nothing until you use one.",
   kitTotalTail: "tokens on every message",

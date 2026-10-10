@@ -4,6 +4,7 @@ import {
   categoryCount, compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
   type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
 } from "../context";
+import { BackButton } from "./BackButton";
 import { EmptyState } from "./EmptyState";
 import { HowItWorks } from "./HowItWorks";
 import { trackUi } from "../usage";
@@ -261,13 +262,7 @@ export function ContextPanel({
 
           {snapshot && drilled && (
             <section>
-              <button
-                type="button"
-                onClick={() => setDrill(null)}
-                className="mb-2 text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
-              >
-                ← All categories
-              </button>
+              <BackButton label="All categories" onClick={() => setDrill(null)} className="mb-1 -ml-2" />
               <GroupHeader label={drilled.label} est={drilled.estTokens} />
 
               {drilled.key === "system" && snapshot.system && (

@@ -3,6 +3,7 @@ import { ALL_OFF_COPY, BUNDLED_NOTE, FAMILY_COPY, allToolsOff, weightLabel, type
 import { TOOL_WEIGHTS } from "../../../main/toolWeights.generated";
 import { ONBOARDING_COPY as C, kitTiles, setFamily, type KitDraft, type KitItems, type KitTile } from "../onboarding";
 import { GOTO_LABELS } from "./GoTo";
+import { BackButton } from "./BackButton";
 
 type TileKey = KitTile["key"];
 
@@ -30,7 +31,7 @@ export function OnboardingKit({
   setOpen: (k: TileKey | null) => void;
 }): React.JSX.Element {
   const s = draft.switches;
-  // Focus follows the drill-in: into its ← Back on open, back to the ▸ it came from on close.
+  // Focus follows the drill-in: into its Back on open, back to the ▸ it came from on close.
   const backRef = useRef<HTMLButtonElement | null>(null);
   const opener = useRef<Partial<Record<TileKey, HTMLButtonElement | null>>>({});
   const last = useRef<TileKey | null>(null);
@@ -103,11 +104,11 @@ export function OnboardingKit({
   if (drill) {
     return (
       <div className="text-left">
-        <div className="flex items-baseline gap-3 mb-2">
-          <button ref={backRef} type="button" onClick={() => setOpen(null)} className="text-xs font-bold text-ink-soft hover:text-ink underline underline-offset-2 cursor-pointer">
-            {C.kitBack}
-          </button>
-          <span className="text-sm font-bold">{label(drill.key)}</span>
+        {/* Back alone on its own line, then the family as a heading (2026-10-10). `-ml-2` lines the
+            chevron up with the text below it (the hit area is wider than the glyph). */}
+        <BackButton ref={backRef} label={C.kitBack} onClick={() => setOpen(null)} className="-ml-2" />
+        <div className="flex items-baseline gap-3 mt-1 mb-3">
+          <h3 className="font-black text-lg tracking-tight">{label(drill.key)}</h3>
           <span className="text-xs text-ink-soft">{weightLabel(weight(drill.key))}{drill.key !== "prompts" && ` ${BUNDLED_NOTE}`}</span>
         </div>
         <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
