@@ -615,6 +615,12 @@ describe("the handover beat is actually visible", () => {
     expect(has(flat(APP), "contextWindow={kitInputsReady ? fallbackWindow : undefined}"), "App hands undefined while reading").toBe(true);
   });
 
+  it("the kit never switches a core tool or a prompt (2026-10-10) — Start writes neither", () => {
+    const kit = flat(read("components/OnboardingKit.tsx"));
+    for (const gone of ["toggleCore", "promptTemplates", "coreWeight"]) expect(has(kit, gone), gone).toBe(false);
+    expect(has(flat(APP), "promptTemplatesSetEnabled(id, false)"), "no prompt write at Start").toBe(false);
+  });
+
   it("the small-model line shows only while no family is ticked — derived, never a flag", () => {
     const src = flat(DIALOG);
     expect(has(src, "smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k])"), "derived from the draft").toBe(true);

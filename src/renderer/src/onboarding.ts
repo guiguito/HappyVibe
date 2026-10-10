@@ -66,7 +66,7 @@ export const ONBOARDING_COPY = {
 
   kitHeadline: "Your agent comes fully loaded.",
   kitSubline: "Untick anything you don't want.",
-  // + the page names, rendered from GOTO_LABELS (builtinTools, skills, agents, promptTemplates), never typed here.
+  // + the page names, rendered from GOTO_LABELS (builtinTools, skills, agents), never typed here.
   kitLaterLead: "You can change all of it later on",
   kitLaterAnd: " and ",
   kitLoading: "Loading…",
@@ -76,7 +76,6 @@ export const ONBOARDING_COPY = {
   kitBasics: "Just the basics",
   kitLoadAll: "Load everything anyway",
   kitTotalTail: "tokens on every message",
-  kitPrompts: "Ready-made prompts you start with /. They weigh nothing until you use one.",
   kitMoreRoom: "Give your model more room ↗",
   noticeExtend: "Want your agent to reach GitHub, Linear or Notion? Add a plugin or an MCP server — a few clicks.",
 
@@ -180,9 +179,10 @@ export const KIT_SERVICES = ["GitHub", "Linear", "Notion"] as const;
 
 export type KitSwitches = Record<KitFamily, boolean> & { coreOff: string[] };
 export interface KitItem { id: string; name: string; tokens: number }
-export interface KitItems { skills: KitItem[]; agents: KitItem[]; prompts: KitItem[]; imagesAvailable: boolean; core: string[] }
-export interface KitDraft { switches: KitSwitches; skillsOff: string[]; agentsOff: string[]; promptsOff: string[] }
-export interface KitTile { key: KitFamily | "core" | "prompts"; familyTick: boolean; items: "core" | "skills" | "agents" | "prompts" | null; nestedUnder: "subagents" | null }
+/** `core` only names the shell for the no-tools line — the kit never switches a core tool. */
+export interface KitItems { skills: KitItem[]; agents: KitItem[]; imagesAvailable: boolean; core: string[] }
+export interface KitDraft { switches: KitSwitches; skillsOff: string[]; agentsOff: string[] }
+export interface KitTile { key: KitFamily; items: "skills" | "agents" | null }
 /** Structural, not `typeof TOOL_WEIGHTS` (whose `as const` literals would reject any other figures). */
 type Weights = { total: number; compactionReserve: number; families: Record<string, number>; core: Record<string, number> };
 
@@ -228,7 +228,7 @@ export function fullTotal(imagesAvailable: boolean, w: Weights = TOOL_WEIGHTS): 
 }
 
 export function basicsTotal(items: KitItems, w: Weights = TOOL_WEIGHTS): number {
-  return kitTotal({ switches: { ...DEFAULT_SWITCHES, ...basicsPatch(), coreOff: [] }, skillsOff: [], agentsOff: [], promptsOff: [] }, items, w);
+  return kitTotal({ switches: { ...DEFAULT_SWITCHES, ...basicsPatch(), coreOff: [] }, skillsOff: [], agentsOff: [] }, items, w);
 }
 
 /** More than a quarter of the window ⇒ basics. Unknown (null/0) counts as large, like Pi's own fallback. */
@@ -254,19 +254,21 @@ export function tooSmallLine(basics: number, ctx: number): string {
 
 export function kitShape(d: KitDraft): "full" | "basics" | "custom" {
   const s = d.switches;
-  const itemsTouched = d.skillsOff.length + d.agentsOff.length + d.promptsOff.length + s.coreOff.length > 0;
+  const itemsTouched = d.skillsOff.length + d.agentsOff.length + s.coreOff.length > 0;
   if (itemsTouched) return "custom";
   if (KIT_FAMILIES.every((k) => s[k] === DEFAULT_SWITCHES[k])) return "full";
   if (KIT_FAMILIES.every((k) => !s[k])) return "basics";
   return "custom";
 }
 
+/**
+ * Built-in tools' order, minus what the kit doesn't show (2026-10-10): Workflows ships off and
+ * isn't in context, and Images needs an OpenRouter credential. Core tools are always there and
+ * Prompts weigh nothing, so neither is a tile. `basicsPatch` still switches Workflows off.
+ */
 export function kitTiles(imagesAvailable: boolean): KitTile[] {
-  const tiles: KitTile[] = KIT_FAMILIES.filter((k) => k !== "images" || imagesAvailable).map((k) => ({
+  return KIT_FAMILIES.filter((k) => k !== "workflows" && (k !== "images" || imagesAvailable)).map((k) => ({
     key: k,
-    familyTick: true,
     items: k === "subagents" ? "agents" : k === "skills" ? "skills" : null,
-    nestedUnder: k === "workflows" ? "subagents" : null,
   }));
-  return [...tiles, { key: "core", familyTick: false, items: "core", nestedUnder: null }, { key: "prompts", familyTick: false, items: "prompts", nestedUnder: null }];
 }

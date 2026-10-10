@@ -19,11 +19,10 @@ const W = {
 const items: KitItems = {
   skills: [{ id: "/s/a", name: "a", tokens: 100 }, { id: "/s/b", name: "b", tokens: 50 }],
   agents: [{ id: "x", name: "x", tokens: 40 }],
-  prompts: [{ id: "/p/t", name: "t", tokens: 0 }],
   imagesAvailable: false,
   core: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 };
-const full = (): KitDraft => ({ switches: { ...DEFAULT_SWITCHES, coreOff: [] }, skillsOff: [], agentsOff: [], promptsOff: [] });
+const full = (): KitDraft => ({ switches: { ...DEFAULT_SWITCHES, coreOff: [] }, skillsOff: [], agentsOff: [] });
 
 describe("DEFAULT_SWITCHES", () => {
   it("is parseBuiltins' own defaults (images on, nothing core off), so a flipped default can't go stale here", () => {
@@ -71,7 +70,6 @@ describe("kitTotal", () => {
   it("unticking a family or an item subtracts exactly its weight", () => {
     expect(kitTotal(setFamily(full(), "browser", false), items, W)).toBe(10_000 - 1130);
     expect(kitTotal({ ...full(), skillsOff: ["/s/a"] }, items, W)).toBe(10_000 - 100);
-    expect(kitTotal({ ...full(), promptsOff: ["/p/t"] }, items, W)).toBe(10_000);
   });
   it("a family off does not subtract its items a second time", () => {
     const d = { ...setFamily(full(), "skills", false), skillsOff: ["/s/a"] };
@@ -91,7 +89,7 @@ describe("kitTotal", () => {
     expect(kitTotal({ ...full(), switches: { ...full().switches, coreOff: ["powershell"] } }, { ...items, core: ["read", "powershell"] }, W)).toBe(10_000 - 135);
     expect(kitTotal({ ...full(), switches: { ...full().switches, coreOff: ["bash", "powershell"] } }, items, W)).toBe(10_000 - 135);
   });
-  it("basics keeps the core tools and every prompt", () => {
+  it("basics keeps the core tools", () => {
     const sum = Object.values(W.families).reduce((a, b) => a + b, 0) - W.families.workflows - W.families.images - W.families.intent - W.families.mcp;
     expect(basicsTotal(items, W)).toBe(10_000 - sum);
   });
@@ -116,23 +114,22 @@ describe("basics and shape", () => {
     expect(kitShape(full())).toBe("full");
     expect(kitShape({ ...full(), switches: { ...full().switches, ...basicsPatch() } })).toBe("basics");
     expect(kitShape(setFamily(full(), "web", false))).toBe("custom");
-    expect(kitShape({ ...full(), promptsOff: ["/p/t"] })).toBe("custom");
+    expect(kitShape({ ...full(), agentsOff: ["x"] })).toBe("custom");
   });
 });
 
 describe("kitTiles", () => {
-  it("only switches the app already has: no family tick on Core tools or Prompts, no MCP, no intent", () => {
-    const t = kitTiles(false);
-    expect(t.find((x) => x.key === "core")).toMatchObject({ familyTick: false, items: "core" });
-    expect(t.find((x) => x.key === "prompts")).toMatchObject({ familyTick: false, items: "prompts" });
-    expect(t.map((x) => x.key)).not.toContain("mcp");
-    expect(t.map((x) => x.key)).not.toContain("intent");
-    expect(t.map((x) => x.key)).not.toContain("images");
-    expect(kitTiles(true).map((x) => x.key)).toContain("images");
-    expect(t.find((x) => x.key === "workflows")?.nestedUnder).toBe("subagents");
+  it("no Core tools, Prompts or Workflows (2026-10-10), and nothing the kit can't switch: no MCP, no intent", () => {
+    const keys: string[] = kitTiles(true).map((x) => x.key);
+    for (const k of ["core", "prompts", "workflows", "mcp", "intent"]) expect(keys, k).not.toContain(k);
+    expect(kitTiles(false).map((x) => x.key)).not.toContain("images");
   });
-  it("follows Built-in tools' order, then Core tools, then Prompts", () => {
-    expect(kitTiles(true).map((x) => x.key)).toEqual([...KIT_FAMILIES, "core", "prompts"]);
+  it("follows Built-in tools' order, minus Workflows, minus Images without OpenRouter", () => {
+    expect(kitTiles(true).map((x) => x.key)).toEqual(KIT_FAMILIES.filter((k) => k !== "workflows"));
+    expect(kitTiles(false).map((x) => x.key)).toEqual(KIT_FAMILIES.filter((k) => k !== "workflows" && k !== "images"));
+  });
+  it("only Sub-agents and Skills open a list", () => {
+    expect(kitTiles(true).filter((x) => x.items).map((x) => [x.key, x.items])).toEqual([["subagents", "agents"], ["skills", "skills"]]);
   });
 });
 

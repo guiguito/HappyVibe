@@ -203,7 +203,7 @@ export function OnboardingDialog({
   }, [kitOpen, contextWindow]);
 
   useEffect(() => {
-    if (kitSwitches && draft === null) setDraft({ switches: kitSwitches, skillsOff: [], agentsOff: [], promptsOff: [] });
+    if (kitSwitches && draft === null) setDraft({ switches: kitSwitches, skillsOff: [], agentsOff: [] });
   }, [kitSwitches, draft]);
 
   const start = (): void => {
@@ -221,7 +221,7 @@ export function OnboardingDialog({
 
   const full = fullTotal(imagesAvailable);
   const smallModel = kitPreset(ctx, full) === "basics";
-  const later = [GOTO_LABELS.builtinTools, GOTO_LABELS.skills, GOTO_LABELS.agents];
+  const later = [GOTO_LABELS.builtinTools, GOTO_LABELS.skills];
 
   const createFresh = async (): Promise<void> => {
     if (!fresh || busy) return;
@@ -406,7 +406,7 @@ export function OnboardingDialog({
                       <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
                       <p className="hv-done-body font-bold mt-1">{C.kitHeadline}</p>
                       <p className="text-sm text-ink-soft mt-1 leading-snug">
-                        {C.kitSubline} {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.promptTemplates}.
+                        {C.kitSubline} {C.kitLaterLead} {later.join(", ")}{C.kitLaterAnd}{GOTO_LABELS.agents}.
                       </p>
                       {/* Only while nothing is ticked: "Load everything anyway" (or any tick) makes the line false. */}
                       {draft && smallModel && ctx && !KIT_FAMILIES.some((k) => draft.switches[k]) && (
