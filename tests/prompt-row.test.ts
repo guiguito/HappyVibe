@@ -42,3 +42,10 @@ test("the read-only prompt block exists in exactly one component", () => {
   const total = files.reduce((n, f) => n + (read(f).match(/built-in prompt \(read-only\)/g) ?? []).length, 0);
   expect(total).toBe(1);
 });
+
+test("the plan prompt reloads when Ask user changes", () => {
+  // The panel loaded its text once, so flipping Ask user left an open panel showing the
+  // other variant (docs-round 2026-10-11). A key would remount and collapse the row.
+  expect(read("src/renderer/src/components/PromptRow.tsx")).toMatch(/\[reloadOn\]\)/);
+  expect(read("src/renderer/src/components/BuiltinToolsBlock.tsx")).toContain("reloadOn={builtins.askUser}");
+});

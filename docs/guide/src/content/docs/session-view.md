@@ -102,6 +102,12 @@ And around them:
 - After a compaction ([Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) says more), a note says "Earlier messages were compacted into a summary" and why. **Load earlier messages** brings them back into view, marked "earlier — not in the agent's context": you can read them, but the agent can't see them.
 - Scrolled up while the agent writes? The conversation stops following it. **Jump to latest** takes you back down.
 - If a request fails, the error says what happened, and often offers **Retry** or **Restart & resend**.
+- If the agent can't take a message at all, nothing is lost: your bubble goes away, a note says why, and your words go back into the message box so you can send them again. The note is one of these:
+  - "The agent is compacting its context. Send your message again when it finishes."
+  - "Your sign-in for … has expired or can't be reached. Sign in again on Models, then send your message again."
+  - "There's no key or sign-in for … Add one on Models, then send your message again."
+  - "This session has no model. Pick one in the model menu, then send your message again."
+  - "The agent didn't take your message (…). Send it again.", for anything else, with the reason in brackets.
 - For a rejected key, an unknown model or a conversation past the model's context window, the error also shows a **Read the guide ↗** link. It opens the **User guide** page inside the app, at the part that explains the fix. For an unknown model or the context window, that's the custom-endpoint steps on the Models page.
 
 ### Subagents and terminals at work
@@ -137,7 +143,7 @@ Pasting more than 100,000 characters asks first: "That's a large amount of text 
 Above the box, you may also see:
 
 - the first-prompt suggestions, in the session the setup window opened for you;
-- your queued messages, marked "queued · kept on stop", while the agent works, with **Take back** to put them all back in the message box (see [Steer, or stop](/docs/first-session/#steer-or-stop));
+- your queued messages, each as a chip (↪ lands between tool calls, ⏭ runs after this turn), marked "queued · kept on stop", while the agent works, with **Take back** to put them all back in the message box (see [Steer, or stop](/docs/first-session/#steer-or-stop));
 - "Model saved — applies when this session restarts.", after a change that couldn't reach the running session;
 - "No model configured — set one up on the Models page to start chatting.", when no model is set. Click **Models** in it to go there. You can't send until a model is set;
 - an update line, when a new version of HappyVibe is ready, for example "HappyVibe … is ready" with **Restart to update**. **✕** hides it until the next launch.
@@ -170,6 +176,8 @@ The new session opens in a new tab, titled with "(fork)" after the original's na
 - A "Forked from" line with the original's name (a link you can click) sits where the fork's own messages begin, above everything you send there. It reads "Forked from a deleted session" once the original is gone.
 - Run cards from before the fork read "From the original session". They link to the original (plain text if it's deleted), and they don't expand.
 - Messages from before a compaction have no fork icon, because the agent no longer has them.
+
+<!-- TODO(media): session-view/fork-dialog.png — "Fork from this message?" with its two choices, Conversation only and Conversation and files -->
 
 ## Search this conversation
 
@@ -221,7 +229,9 @@ You always know when the agent is busy:
 - the rewind icon hides until the turn ends;
 - the fork icon stays, but **Conversation and files** hides in its dialog.
 
-A few slash commands belong to HappyVibe's own screens, so typing one gets a short note instead, such as "/mcp is managed from the MCP page.", "/agents is managed from the Agents page." or "Sign-ins are managed from Models." To turn off bypass, click **Turn off** on the red banner.
+A few slash commands belong to HappyVibe's own screens, so typing one gets a short note instead, such as "/mcp is managed from the MCP page.", "/agents is managed from the Agents page." or "Sign-ins are managed from Models." Typing /hv-dangerous on gets "Bypass is turned on in Settings, with Bypass ALL permissions." To turn off bypass, click **Turn off** on the red banner. Any other command HappyVibe keeps for itself gets a note such as "/hv-tools is internal to HappyVibe and can't be typed."
+
+If you're in another app when the agent needs your answer, HappyVibe tells you: [It waits for you](/docs/approve-a-tool-call/#it-waits-for-you) shows how on each system.
 
 While subagents work, the message box says so instead: "Subagents are working in the background — keep chatting; results drop in when they finish", or, while one subagent holds the turn, "Type away — messages will be answered when *name* finishes".
 

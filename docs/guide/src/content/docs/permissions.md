@@ -126,7 +126,7 @@ Opening a site other than localhost in the app's browser, or fetching a page fro
 
 ### Subagents and workflows
 
-A subagent is a helper agent the main agent hands a task to, and a workflow is a small script that runs several subagents. When one of them asks, the dialog offers fewer buttons:
+A subagent is a helper agent the main agent hands a task to, and a workflow is a small script that runs several subagents. Workflows start switched off: turn on **Workflows — 1 tool** under **Sub-agents — 4 tools** in [Built-in tools](/docs/built-in-tools/) to let the agent use them. When one of them asks, the dialog offers fewer buttons:
 
 - A subagent: the title names it, for example "Sub-agent worker wants to run something". The buttons are **Allow**, **Allow for this run** and **Deny**. **Allow for this run** covers that tool until the subagent's run ends.
 - A workflow: **Allow** and **Deny**.

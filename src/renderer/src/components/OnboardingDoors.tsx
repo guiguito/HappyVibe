@@ -199,21 +199,26 @@ export function ProviderDoors({
 
   useEffect(() => {
     void (async () => {
-      const [p, ollama, runners] = await Promise.all([
-        window.hv.getProviders(),
-        window.hv.detectOllama(),
-        window.hv.detectLocalRunners(),
-      ]);
+      const p = await window.hv.getProviders();
       setOauth(p.oauth.filter((o) => !o.superseded));
       setByok(p.byok);
       setKeyId((id) => id || (p.byok.find((b) => b.featured)?.id ?? p.byok[0]?.id ?? ""));
-      // "Don't show what cannot work": a runner with no models gives Pi nothing
-      // to call, so it is not a door — it is a row that would fail on click.
-      setLocal([
-        ...(ollama.models.length > 0 ? [{ id: "ollama", label: "Ollama" }] : []),
-        ...runners.filter((r) => r.models.length > 0).map((r) => ({ id: r.id, label: r.label })),
-      ]);
     })();
+    // A runner already holding a model at launch ticks step 1 through the gate, so this door is
+    // for one started AFTER setup opened: look again when the user comes back to the window.
+    const detect = (): void => {
+      void Promise.all([window.hv.detectOllama(), window.hv.detectLocalRunners()]).then(([ollama, runners]) =>
+        // "Don't show what cannot work": a runner with no models gives Pi nothing
+        // to call, so it is not a door — it is a row that would fail on click.
+        setLocal([
+          ...(ollama.models.length > 0 ? [{ id: "ollama", label: "Ollama" }] : []),
+          ...runners.filter((r) => r.models.length > 0).map((r) => ({ id: r.id, label: r.label })),
+        ]),
+      );
+    };
+    detect();
+    window.addEventListener("focus", detect);
+    return () => window.removeEventListener("focus", detect);
   }, []);
 
   useEffect(() => {

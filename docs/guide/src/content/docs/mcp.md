@@ -78,8 +78,8 @@ Some online servers ask you to sign in with your account instead of a key. The d
 
 1. Add the server, or click **Authenticate** on its row.
 2. The dialog reads "Connecting to" the server. If it needs you to sign in, your browser opens and the dialog says "Waiting for sign-in in your browser…".
-3. Approve access in your browser. Closed the tab by mistake? Click **Open the sign-in page again**.
-4. Come back to HappyVibe. You see "Connected to" the server and its tools.
+3. Approve access in your browser. The server's consent screen asks you to allow HappyVibe. Closed the tab by mistake? Click **Open the sign-in page again**.
+4. Your browser shows the HappyVibe icon and "Authentication successful". Close that tab and come back to HappyVibe. You see "Connected to" the server and its tools.
 
 To stop, click **Cancel**. The sign-in stops right away, and the server stays on the list as **needs auth** until you sign in.
 

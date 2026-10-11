@@ -517,7 +517,7 @@ function McpStatusBadge({
         type="button"
         onClick={onToggleTools}
         aria-expanded={open}
-        title={open ? "Hide the tool list" : "Show the tools and what they do"}
+        title={open ? "Hide the tool list" : "Show the tool names"}
         className={`${cls} inline-flex items-center gap-1 cursor-pointer hover:brightness-105`}
       >
         <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
