@@ -71,6 +71,8 @@ You don't have to wait for the agent to finish. While it works, the message box 
 
 Changed your mind? Click **Take back** beside "queued · kept on stop": every queued message goes back into the message box. Images attached to a queued message aren't kept.
 
+<!-- TODO(media): first-session/queued-take-back.png — A turn in progress with a queued message chip, "queued · kept on stop" and Take back -->
+
 To stop the agent, click the stop button beside the message box. Its tooltip reads "Stop the agent". Anything you queued stays queued.
 
 ## Context: what the agent can see

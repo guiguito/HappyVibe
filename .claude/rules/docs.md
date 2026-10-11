@@ -46,7 +46,7 @@ paths:
   | Shot (under `media/`) | Pages | Shows (the alt text, and the placeholder's text) |
   |---|---|---|
   | `install/install-smartscreen.png` | `install` | Windows SmartScreen after clicking More info, with Run anyway visible |
-  | `first-launch/onboarding-setup.png` | `first-launch` | The Setup step: step 1 "Connect a model" with its three choices, step 2 "Pick a project" |
+  | `first-launch/onboarding-setup.png` | `first-launch` | The Setup step: step 1 "Connect a model" open on its choices, with "Pick a project" and "Personalize your agent" below |
   | `first-launch/onboarding-kit.png` | `first-launch` | Step 3 "Personalize your agent" with its tiles, total and Continue button |
   | `models/models-populated.png` | `connect-a-model`, `models` | Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills |
   | `first-session/session-running.png` | `first-session` | A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button |
@@ -62,5 +62,9 @@ paths:
   | `session-view/session-view.png` | `session-view` | A session with its top bar (model, thinking effort, cost, context gauge), a second tab in a split pane, and the message box |
   | `files-and-changes/changes-panel.png` | `files-and-changes` | The Changes panel with its changed files, one diff open and a drafted commit message |
   | `schedules/schedules-list.png` | `schedules` | The Schedules screen with two schedules and a recent run |
+  | `built-in-tools/builtin-switches.png` | `built-in-tools` | The MCP, Sub-agents and Skills switches, Workflows switched off under Sub-agents, and Core tools with a switch per tool |
+  | `session-view/fork-dialog.png` | `session-view` | "Fork from this message?" with its two choices, Conversation only and Conversation and files |
+  | `first-session/queued-take-back.png` | `first-session` | A turn in progress with a queued message chip, "queued · kept on stop" and Take back |
+  | `privacy/privacy-switches.png` | `privacy` | The Privacy page: the Usage statistics, Crash reports and Feedback switches |
 
   A video's placeholder names it without an extension (`mcp/mcp-add`).
