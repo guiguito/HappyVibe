@@ -17,7 +17,7 @@ The screen's own intro sums it up: "Abilities HappyVibe gives the agent itself, 
 
 Below it is one list, under the heading **Built-in Custom Tools**. Each row has a switch on the right. **Core tools** has one switch beside each tool name instead. The switch reads **On** while it's on. Click it to turn it off.
 
-<!-- TODO(media): built-in-tools/builtin-tools.png — The Built-in tools list with its toggles, and Plan mode expanded to show its read-only prompt -->
+![The Built-in tools list with its toggles, and Plan mode expanded to show its read-only prompt](/docs/media/built-in-tools/builtin-tools.png)
 
 Change a row, and your conversation stays. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
 
@@ -90,7 +90,7 @@ Before each image, the approval dialog reads "This makes an image with" the mode
 
 "The one-line “why” the model writes for each tool card." Turning it off saves the tokens (the unit models read and bill text in, roughly four characters) that sentence costs. Cards then show a label built from the call itself. Approval dialogs don't change either way: "they always show the factual action, never this sentence."
 
-<!-- TODO(media): built-in-tools/builtin-switches.png — The MCP, Sub-agents and Skills switches, Workflows switched off under Sub-agents, and Core tools with a switch per tool -->
+![The MCP, Sub-agents and Skills switches, Workflows switched off under Sub-agents, and Core tools with a switch per tool](/docs/media/built-in-tools/builtin-switches.png)
 
 ### MCP
 

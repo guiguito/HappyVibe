@@ -66,7 +66,7 @@ The Changes panel is git, in plain words. Git is the tool that keeps your projec
 
 Two saves, two jobs: **Save** in the editor writes one file to disk; the Changes panel's save button records a version of the whole project. On this page, "your last save" always means your last version.
 
-<!-- TODO(media): files-and-changes/changes-panel.png — The Changes panel with its changed files, one diff open and a drafted commit message -->
+![The Changes panel with its changed files, one diff open and a drafted commit message](/docs/media/files-and-changes/changes-panel.png)
 
 **The branch bar**, at the top:
 

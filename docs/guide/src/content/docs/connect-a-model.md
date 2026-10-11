@@ -109,7 +109,7 @@ A key the provider accepts proves the key is right, not that the account has cre
 
 The top of the Models page lists everything you've connected, each with a tag: "signed in", "running" or "key saved". Below it, under **Default model**, you pick the model new sessions use, unless a workspace or session picks its own.
 
-<!-- TODO(media): models/models-populated.png — Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills -->
+![Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills](/docs/media/models/models-populated.png)
 
 ## Next
 

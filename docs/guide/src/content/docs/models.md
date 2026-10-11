@@ -17,7 +17,7 @@ Until a provider is connected, the agent has no one to talk to, so this screen g
 
 While nothing is connected yet, the list of providers is already open, and the **Default model** section is hidden until you've connected something. The app takes you on to your sessions as soon as you save a key, click **Use Ollama**, or finish a sign-in and click **Done**. The [First launch](/docs/first-launch/) and [Connect a model](/docs/connect-a-model/) pages walk through it step by step.
 
-<!-- TODO(media): models/models-populated.png — Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills -->
+![Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills](/docs/media/models/models-populated.png)
 
 ### Providers
 

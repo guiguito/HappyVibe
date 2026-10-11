@@ -22,7 +22,7 @@ Four menus sit at the top. They all start on showing everything, and the newest 
 
 If the filters leave nothing, the log says "No decisions match these filters." Before the agent has asked for anything at all, it says "No permission decisions yet — they appear here once the agent asks for something."
 
-<!-- TODO(media): audit-log/audit-log.png — Permission decisions including denials, with the filters visible -->
+![Permission decisions including denials, with the filters visible](/docs/media/audit-log/audit-log.png)
 
 ### Permission decisions
 

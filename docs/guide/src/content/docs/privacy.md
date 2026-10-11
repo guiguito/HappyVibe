@@ -15,7 +15,7 @@ Two connections are controlled somewhere else: the update check is on the [Chang
 
 ## What's on the screen
 
-<!-- TODO(media): privacy/privacy-switches.png — The Privacy page: the Usage statistics, Crash reports and Feedback switches -->
+![The Privacy page: the Usage statistics, Crash reports and Feedback switches](/docs/media/privacy/privacy-switches.png)
 
 ### Usage statistics
 

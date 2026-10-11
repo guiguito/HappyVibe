@@ -46,7 +46,7 @@ Schedules are grouped under their workspace's name. Each row shows:
 
 Click a schedule's title to open it in the drawer and change anything.
 
-<!-- TODO(media): schedules/schedules-list.png — The Schedules screen with two schedules and a recent run -->
+![The Schedules screen with two schedules and a recent run](/docs/media/schedules/schedules-list.png)
 
 How the last run went:
 

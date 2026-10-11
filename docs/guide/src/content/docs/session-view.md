@@ -13,7 +13,7 @@ The middle of the window. Click a session in the sidebar and it opens here, in a
 
 From top to bottom: the tab strip, the session's top bar, the conversation and the message box. Day to day you need three things: the message box, the cards in the conversation, and the context gauge at the top right. Everything else is here for when you go looking.
 
-<!-- TODO(media): session-view/session-view.png — A session with its top bar (model, thinking effort, cost, context gauge), a second tab in a split pane, and the message box -->
+![A session with its top bar (model, thinking effort, cost, context gauge), a second tab in a split pane, and the message box](/docs/media/session-view/session-view.png)
 
 ### The tab strip
 
@@ -177,7 +177,7 @@ The new session opens in a new tab, titled with "(fork)" after the original's na
 - Run cards from before the fork read "From the original session". They link to the original (plain text if it's deleted), and they don't expand.
 - Messages from before a compaction have no fork icon, because the agent no longer has them.
 
-<!-- TODO(media): session-view/fork-dialog.png — "Fork from this message?" with its two choices, Conversation only and Conversation and files -->
+!["Fork from this message?" with its two choices, Conversation only and Conversation and files](/docs/media/session-view/fork-dialog.png)
 
 ## Search this conversation
 

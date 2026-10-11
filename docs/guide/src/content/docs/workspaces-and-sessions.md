@@ -15,7 +15,7 @@ The sidebar runs down the left of the window. This page covers its top half, eve
 
 From top to bottom: a row of buttons, **Schedules**, then your workspaces, each with its sessions underneath. Most days you only click a session, or the **+** beside a workspace.
 
-<!-- TODO(media): workspaces-and-sessions/sidebar-workspaces.png — The sidebar with two workspaces and their sessions, showing the working, plan-mode and sleeping marks, with the + menu open on New session -->
+![The sidebar with two workspaces and their sessions, showing the working, plan-mode and sleeping marks, with the + menu open on New session](/docs/media/workspaces-and-sessions/sidebar-workspaces.png)
 
 ### The top row
 

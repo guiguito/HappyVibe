@@ -19,7 +19,7 @@ It lasts about two and a half seconds. Any click or key skips straight to the en
 
 The app's first step reads "Connect a model": "The brain. Sign in with a plan you already pay for, run a free one on this computer, or paste an API key."
 
-<!-- TODO(media): first-launch/onboarding-setup.png — The Setup step: step 1 "Connect a model" open on its choices, with "Pick a project" and "Personalize your agent" below -->
+![The Setup step: step 1 "Connect a model" open on its choices, with "Pick a project" and "Personalize your agent" below](/docs/media/first-launch/onboarding-setup.png)
 
 One step is open at a time. Below it, the steps still to come show only their number and title: "Pick a project", then "Personalize your agent". Each one opens on its own once the step before it is ticked.
 
@@ -48,7 +48,7 @@ On a Windows computer without Git for Windows, one more line appears under the s
 
 With the first two steps ticked, the hello panel on the left steps aside and step 3 takes the whole window. A line at the top shows the two finished steps with their ✓, and under it the third step reads "Personalize your agent": "Your agent comes fully loaded. Untick anything you don't want."
 
-<!-- TODO(media): first-launch/onboarding-kit.png — Step 3 "Personalize your agent" with its tiles, total and Continue button -->
+![Step 3 "Personalize your agent" with its tiles, total and Continue button](/docs/media/first-launch/onboarding-kit.png)
 
 Nothing here is final, and nothing happens on a timer. You can change every choice later.
 
