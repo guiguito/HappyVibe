@@ -1,11 +1,14 @@
 // Drives the HappyVibe app over the Chrome DevTools Protocol and captures it, for the user guide's media.
 // ponytail: raw CDP over Node 22's built-in WebSocket, as hv-demo-media/shoot2.mjs does. No Playwright.
 import { mkdirSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { dirname } from "node:path";
 
 const PORT = process.env.CDP_PORT ?? "9222";
 /** The app's renderer: index.html in a packaged build, the Vite server in dev. Browser panes are other targets. */
 const IS_APP = /index\.html|localhost:5173\/?$/;
+/** The home folder the app runs under; any other /Users/<name> on screen is someone's real path. */
+const DEMO_HOME = process.env.MEDIA_HOME_NAME ?? "demo";
 
 export async function connect() {
   const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
@@ -54,31 +57,63 @@ function driver(send) {
   const waitForDialog = (timeout = 60_000) =>
     waitFor(() => evaluate(`!!document.querySelector('[role="dialog"]')`), timeout, "a dialog");
 
-  /** The centre of the first visible clickable element whose text is `text` (or starts with it). */
-  const find = (text, { startsWith = false } = {}) =>
+  /** Scrolls the element into view and returns its centre. `pick` is a JS expression over `els`. */
+  const centre = (selector, filter, pick) =>
     evaluate(`(() => {
-      const want = ${JSON.stringify(text)};
-      const el = [...document.querySelectorAll('button, a, [role="button"], [role="tab"], [role="menuitem"], summary, label')]
-        .find((e) => {
-          const t = (e.innerText ?? "").trim();
-          return (${startsWith} ? t.startsWith(want) : t === want) && e.getBoundingClientRect().width > 0;
-        });
+      const els = [...document.querySelectorAll(${JSON.stringify(selector)})]
+        .filter((e) => e.getBoundingClientRect().width > 0 && (${filter}));
+      const el = ${pick};
       if (!el) return null;
+      el.scrollIntoView({ block: "nearest" });
       const r = el.getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     })()`);
 
+  const CLICKABLE = 'button, a, [role="button"], [role="tab"], [role="menuitem"], [role="switch"], summary, label';
+  /**
+   * The first visible clickable element whose text matches, case-insensitively. Case-insensitive
+   * because the sidebar's group headers are CSS-uppercased and innerText returns "ABILITIES".
+   * "includes" is for rows whose text starts with a glyph: the "›" of a prompt row, a catalog
+   * card's monogram ("P\nPlaywright…").
+   */
+  const find = (text, { match = "exact" } = {}) => {
+    const want = JSON.stringify(text.toLowerCase());
+    const test = { exact: `t === ${want}`, start: `t.startsWith(${want})`, includes: `t.includes(${want})` }[match];
+    return centre(CLICKABLE, `((t) => ${test})((e.innerText ?? "").trim().toLowerCase())`, "els[0]");
+  };
+
   /** A real mouse click, so the app sees exactly what a person's click produces. */
-  const click = async (text, { startsWith = false, timeout = 10_000 } = {}) => {
-    const at = await waitFor(() => find(text, { startsWith }), timeout, `a clickable "${text}"`);
+  const mouseClick = async (at) => {
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
     for (const type of ["mousePressed", "mouseReleased"]) {
       await send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
     }
     await sleep(300);
   };
 
-  /** Opens a sidebar screen, expanding its group first when the item is hidden. */
+  const click = async (text, { match = "exact", timeout = 10_000 } = {}) =>
+    mouseClick(await waitFor(() => find(text, { match }), timeout, `a clickable "${text}"`));
+
+  /** Clicks by selector (a title, an aria-label), optionally only where the text includes `text`, or the last match. */
+  const clickSel = async (css, { text, last = false, timeout = 10_000 } = {}) => {
+    const filter = text ? `(e.innerText ?? "").toLowerCase().includes(${JSON.stringify(text.toLowerCase())})` : "true";
+    await mouseClick(await waitFor(() => centre(css, filter, last ? "els.at(-1)" : "els[0]"), timeout, css));
+    await sleep(300);
+  };
+
+  /** Moves the mouse over an element, for controls that appear on hover. */
+  const hover = async (css, { last = false } = {}) => {
+    const at = await waitFor(() => centre(css, "true", last ? "els.at(-1)" : "els[0]"), 10_000, css);
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await sleep(300);
+  };
+
+  /**
+   * Opens a sidebar screen. Every screen sits in the Settings section, closed on a fresh profile,
+   * and a closed group isn't in the page at all. Pinned rows (Models) need no group.
+   */
   const openView = async (label, group) => {
+    if (!(await find(label)) && !(await find(group ?? label))) await click("Settings");
     if (group && !(await find(label))) await click(group);
     await click(label);
     await sleep(500);
@@ -88,7 +123,7 @@ function driver(send) {
   const type = async (text, { delay = 35 } = {}) => {
     const ok = await evaluate(`(() => {
       const t = [...document.querySelectorAll("textarea")]
-        .find((e) => e.getBoundingClientRect().width > 0 && e.placeholder.startsWith("Ask for a change"));
+        .find((e) => e.getBoundingClientRect().width > 0 && /^(Ask for a change|Steer the agent)/.test(e.placeholder));
       t?.focus();
       return !!t;
     })()`);
@@ -100,7 +135,10 @@ function driver(send) {
   };
 
   const press = async (key) => {
-    const k = key === "Enter" ? { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 } : { key, code: key };
+    const k =
+      key === "Enter" ? { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }
+      : key === "Escape" ? { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }
+      : { key, code: key };
     for (const type of ["keyDown", "keyUp"]) await send("Input.dispatchKeyEvent", { type, ...k });
   };
 
@@ -108,14 +146,15 @@ function driver(send) {
   const viewport = (scale = 2) =>
     send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: scale, mobile: false });
 
-  /** Refuses to capture anything private. Tooltips aren't in innerText; the frame review in Task 8 covers them. */
+  /** Refuses to capture anything private. Tooltips aren't in innerText; the frame review in Task 9 covers them. */
   const guard = async () => {
     const text = await evaluate("document.body.innerText");
     const rules = [
       ["an API key", /\bsk-[A-Za-z0-9_-]{8,}/],
       ["an email address", /[\w.+-]+@[\w-]+\.[a-z]{2,}/i],
-      ["a home path that is not /Users/demo", /\/Users\/(?!demo\b)[\w.-]+/],
+      [`a home path that is not /Users/${DEMO_HOME}`, new RegExp(`/Users/(?!${DEMO_HOME}\\b)[\\w.-]+`)],
       ["a KEY=value line", /\b[A-Z][A-Z0-9_]{2,}=\S+/],
+      ["this Mac's user name", new RegExp(`\\b${userInfo().username}\\b`)], // an `ls -l` card prints it
     ];
     for (const [what, re] of rules) {
       const m = text.match(re);
@@ -159,5 +198,5 @@ function driver(send) {
     return real;
   };
 
-  return { send, evaluate, sleep, find, click, openView, waitFor, waitForText, waitForDialog, type, press, viewport, guard, shot, record };
+  return { send, evaluate, sleep, find, click, clickSel, hover, openView, waitFor, waitForText, waitForDialog, type, press, viewport, guard, shot, record };
 }

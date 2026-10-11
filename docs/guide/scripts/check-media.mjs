@@ -1,4 +1,4 @@
-// The v1 media (Notion: Documentation → Media), checked before the docs plan's Task 16 places it.
+// The v1 media (.claude/rules/docs.md; Notion: Documentation → Media), checked before Task 10 places it.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -8,18 +8,29 @@ const FFPROBE = process.env.FFPROBE ?? "/opt/homebrew/bin/ffprobe";
 const STILLS = [
   "install/install-smartscreen",
   "first-launch/onboarding-setup",
+  "first-launch/onboarding-kit",
   "models/models-populated",
   "first-session/session-running",
+  "first-session/queued-take-back",
   "approve-a-tool-call/permission-modal",
   "memory/memory-save-prompt",
   "built-in-tools/builtin-tools",
+  "built-in-tools/builtin-switches",
   "plugins/plugins-marketplace",
   "permissions/permissions-rules",
   "audit-log/audit-log",
+  "workspaces-and-sessions/sidebar-workspaces",
+  "session-view/session-view",
+  "session-view/fork-dialog",
+  "files-and-changes/changes-panel",
+  "schedules/schedules-list",
+  "privacy/privacy-switches",
 ];
 const CLIPS = ["approve-a-tool-call/permission-approve", "mcp/mcp-add"];
 
-for (const s of STILLS) {
+// MEDIA_SKIP=install/install-smartscreen: the one shot that needs a Windows machine, until it is taken.
+const SKIP = (process.env.MEDIA_SKIP ?? "").split(",");
+for (const s of STILLS.filter((s) => !SKIP.includes(s))) {
   const f = `${MEDIA}${s}.png`;
   assert.ok(existsSync(f), `missing ${s}.png`);
   const b = readFileSync(f);

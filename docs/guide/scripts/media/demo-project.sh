@@ -25,6 +25,7 @@ cat > style.css <<'EOF'
 body { font-family: system-ui, sans-serif; margin: 3rem auto; max-width: 32rem; background: #fffbe6; color: #3b3000; }
 h1 { color: #d49b00; }
 EOF
+printf '# Agent notes\n\nA one-page lemonade stand site: plain HTML and CSS, no build step. Keep it small.\n' > AGENTS.md
 printf '# Lemonade Stand\n\nA one-page site for a neighbourhood lemonade stand.\n' > README.md
 mkdir -p scripts
 # Takes a few seconds on purpose, so session-running can catch a command card mid-run.
