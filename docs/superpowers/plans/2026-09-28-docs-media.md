@@ -776,10 +776,10 @@ If macOS asks for keychain access at any point, click **Always Allow**.
 - [ ] **Step 2: Shoot the Setup step**
 
 Run: `node shots.mjs onboarding-setup`
-Expected: `saved …/first-launch/onboarding-setup.png`. It waits for the Setup step by itself. The shot must show step 1 open on **Sign in with a plan** and **Paste an API key**. **Free, on this computer** won't be there: it only shows when a local model is running, and a running local model ticks step 1 before the setup screen appears (logged as an app bug in `docs/validation/docs-round.md`). If step 1 is already ticked, a local model was running: quit it, run **Clear all data…** on **Privacy**, and start over.
+Expected: `saved …/first-launch/onboarding-setup.png`. It waits for the Setup step by itself. The shot must show step 1 open on **Sign in with a plan** and **Paste an API key**. For the third choice, **Free, on this computer**, run `open -a Ollama` once the setup screen is up, then click back into HappyVibe: the doors look again on focus. Then run the routine. (A model already running at launch ticks step 1 instead.) If step 1 is already ticked, a local model was running: quit it, run **Clear all data…** on **Privacy**, and start over.
 
 - [ ] **Step 3: You do steps 1 and 2**
-1. Step 1, **Sign in with a plan**: sign in to Claude in the browser. Claude becomes the default model, which keeps step 3 off the small-model preset (Review Focus 6). Don't start Ollama yet.
+1. If you started Ollama for the shot, quit it first: `osascript -e 'quit app "Ollama"'`. Then step 1, **Sign in with a plan**: sign in to Claude in the browser. Claude becomes the default model, which keeps step 3 off the small-model preset (Review Focus 6). Don't start Ollama yet.
 2. Step 2, **Start fresh…**: name it `lemonade-stand`, then **Create it**.
 
 Step 3, "Personalize your agent", opens full width.

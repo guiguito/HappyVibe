@@ -515,6 +515,13 @@ describe("step 1 is a choice before it is a list", () => {
   it("offers the local rung only when a runner is actually there", () => {
     expect(has(flat(DOORS), "local.length > 0 && ("), "conditional rung").toBe(true);
   });
+
+  it("looks for a local runner again when the window comes back into focus", () => {
+    // A runner already holding a model at launch ticks step 1 through the gate, so the local
+    // door only ever matters for one started AFTER setup opened — and a one-shot mount check
+    // never saw it (docs-round 2026-10-11). Focus is when the user returns from starting it.
+    expect(has(flat(DOORS), 'window.addEventListener("focus", detect)'), "re-detect on focus").toBe(true);
+  });
 });
 
 describe("the API-key picker", () => {

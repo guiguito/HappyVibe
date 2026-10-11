@@ -73,6 +73,7 @@ export function PromptRow({
   error,
   right,
   footer,
+  reloadOn,
 }: {
   title: string;
   subtitle: ReactNode;
@@ -99,6 +100,8 @@ export function PromptRow({
    * "How memory works" did the moment a row was added underneath it.
    */
   footer?: ReactNode;
+  /** When this changes, the read-only prompt is fetched again. */
+  reloadOn?: unknown;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState<string | null>(null);
@@ -107,6 +110,13 @@ export function PromptRow({
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // The prompt text can depend on another setting (plan mode's on Ask user): drop it so the
+  // load below fetches the current variant, without remounting and collapsing the row.
+  useEffect(() => {
+    setPrompt(null);
+    setPromptError(false);
+  }, [reloadOn]);
 
   useEffect(() => {
     if (open && prompt === null && !promptError) {

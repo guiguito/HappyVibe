@@ -169,6 +169,7 @@ function PlanModeRow({
         // live sessions, so the toggle hands the intent back rather than acting.
         onToggle={(next) => (next ? turnOn() : setConfirming(true))}
         loadPrompt={() => window.hv.builtinPrompt("plan").then((r) => r.text)}
+        reloadOn={builtins.askUser}
         append={builtins.planAppend}
         onSaveAppend={async (v) => {
           await window.hv.builtinsSet({ planAppend: v });
