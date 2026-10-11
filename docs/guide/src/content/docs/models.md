@@ -17,11 +17,11 @@ Until a provider is connected, the agent has no one to talk to, so this screen g
 
 While nothing is connected yet, the list of providers is already open, and the **Default model** section is hidden until you've connected something. The app takes you on to your sessions as soon as you save a key, click **Use Ollama**, or finish a sign-in and click **Done**. The [First launch](/docs/first-launch/) and [Connect a model](/docs/connect-a-model/) pages walk through it step by step.
 
-![Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills](/docs/media/models/models-populated.png)
-
 ### Providers
 
 "Sign in with a plan, add an API key, or point at a local server."
+
+![Providers with rows tagged "running" and "key saved"; Default model with the Thinking effort pills](/docs/media/models/models-populated.png)
 
 At the top is a list of what you've already connected, one row each. The tag on the right of a row says what kind of connection it is:
 

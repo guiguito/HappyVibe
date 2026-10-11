@@ -51,7 +51,7 @@ Click a schedule's title to open it in the drawer and change anything.
 How the last run went:
 
 - "— never ran": it hasn't run yet.
-- **✓**, then how long it took and what it cost, when HappyVibe knows the cost. A cost it doesn't know is left out, never shown as $0.00.
+- **✓**, then how long it took and what it cost, when HappyVibe knows the cost. A cost it doesn't know is left out. A known cost under a cent shows as $0.00.
 - "✕ failed:" and the reason.
 - "– skipped:" and why: "another session in the project was working" (the whole time, so the run never started), "HappyVibe was closed or asleep at that time" (you skipped the missed run, or chose **Skip it**), "nobody decided about the missed run", or "the project was removed from the sidebar" (the schedule then switches itself off).
 

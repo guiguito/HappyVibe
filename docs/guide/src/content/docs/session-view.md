@@ -169,6 +169,8 @@ Want to try a different approach without losing this one? Fork it. The new sessi
    - **Conversation and files**: "Also roll the workspace back to before this message. This session shares those files." This option appears only when there are files to roll back, and it's hidden while the agent is working.
 4. Click **Fork**.
 
+!["Fork from this message?" with its two choices, Conversation only and Conversation and files](/docs/media/session-view/fork-dialog.png)
+
 The new session opens in a new tab, titled with "(fork)" after the original's name. Your message waits in its composer, with any documents you'd attached, ready to edit and send.
 
 - Because both sessions use the same project folder, **Conversation and files** changes this session's files too. The fork is made first, then this session's files roll back and it posts a notice like "Files rewound — 2 restored, 0 removed." If the restore can't run, the fork still exists and the notice says no files were changed.
@@ -177,7 +179,6 @@ The new session opens in a new tab, titled with "(fork)" after the original's na
 - Run cards from before the fork read "From the original session". They link to the original (plain text if it's deleted), and they don't expand.
 - Messages from before a compaction have no fork icon, because the agent no longer has them.
 
-!["Fork from this message?" with its two choices, Conversation only and Conversation and files](/docs/media/session-view/fork-dialog.png)
 
 ## Search this conversation
 
