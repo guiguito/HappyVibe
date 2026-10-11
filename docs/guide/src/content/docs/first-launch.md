@@ -19,9 +19,9 @@ It lasts about two and a half seconds. Any click or key skips straight to the en
 
 The app's first step reads "Connect a model": "The brain. Sign in with a plan you already pay for, run a free one on this computer, or paste an API key."
 
-<!-- TODO(media): first-launch/onboarding-setup.png — The Setup step: step 1 "Connect a model" with its three choices, step 2 "Pick a project" -->
+<!-- TODO(media): first-launch/onboarding-setup.png — The Setup step: step 1 "Connect a model" open on its choices, with "Pick a project" and "Personalize your agent" below -->
 
-Below the two active steps, a third row reads "Personalize your agent", dimmed: it's the step that comes next, and it opens on its own once the first two are ticked.
+One step is open at a time. Below it, the steps still to come show only their number and title: "Pick a project", then "Personalize your agent". Each one opens on its own once the step before it is ticked.
 
 1. Pick one of the choices: **Sign in with a plan**, **Free, on this computer** or **Paste an API key**. The free choice appears only when HappyVibe finds Ollama, LM Studio or llama.cpp (free apps that run AI models on your own computer) running with at least one model.
 2. Follow it through. [Connect a model](/docs/connect-a-model/) walks through each choice.

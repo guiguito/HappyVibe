@@ -15,6 +15,8 @@ Two connections are controlled somewhere else: the update check is on the [Chang
 
 ## What's on the screen
 
+<!-- TODO(media): privacy/privacy-switches.png — The Privacy page: the Usage statistics, Crash reports and Feedback switches -->
+
 ### Usage statistics
 
 "Which features get used, where setup gets stuck, and whether the app is reliable. Never what you type, your files or your projects."
@@ -146,6 +148,7 @@ Nothing is deleted until you click **Clear all data** in the dialog. After that,
 - **What goes:** every chat, workspace, setting, permission rule, sign-in and API key, your memory, schedules and Audit log, downloaded voice models, and the worktrees HappyVibe made.
 - **What stays:** the branches of those worktrees, in your repositories, and everything inside your project folders. HappyVibe writes two folders there, `.pi-subagents/` and `.agents/plans/`. Delete them yourself if you want them gone.
 - **When it refuses:** if a worktree has changes you haven't committed, or its project can't be found (moved, renamed, or on a drive that isn't plugged in), the dialog says "Some worktrees have unsaved work", lists them, and deletes nothing. Commit or discard those changes, or move the folder somewhere safe, then try again.
+- **When git refuses partway:** rarely, git refuses to remove a worktree after clearing has started. The dialog then says "Some worktrees couldn't be removed", lists each one with git's reason, and adds: "Your sessions were stopped and other worktrees may already be gone. Your other data wasn't touched. Fix what git says above, then try again."
 
 ## During a session
 

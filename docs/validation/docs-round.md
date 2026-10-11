@@ -321,3 +321,11 @@ links through `window.open` (sandbox now has `allow-popups`), which reaches the 
 mail schemes only. Verified live by arming the same script in memory with a spy on `shell.openExternal`: the frame stayed on the
 guide, `openExternal` received exactly the clicked URL, a link within the guide still navigated normally and the next page was
 injected too, and the console stayed empty. The CSP stays at exactly one frame origin.
+
+## Guide update since 0.1.0 (2026-10-11)
+
+App bugs found while auditing PRs #95–#111 against the guide (branch `docs/guide-since-0.1.0`). None fixed in that branch, which is docs-only.
+
+- **The "Free, on this computer" onboarding choice can't be seen.** It appears only when a local runner holds a model (`OnboardingDoors.tsx:212-215`). But `hv:has-any-provider` counts that same runner as connected (`src/main/ipc.ts:5160`), so step 1 opens already ticked (`App.tsx:943`, `OnboardingDialog.tsx:191`) and the choice is never drawn. Neither side re-checks for a runner started later. `first-launch.md` still documents the choice, because it describes the intended screen.
+- **The MCP tool-count badge's tooltip is stale.** It says "Show the tools and what they do" (`McpServersSection.tsx:520`), but since the move to Pi's built-in MCP the list shows names only (`src/main/mcpPi.ts:89`).
+- **The Plan mode prompt panel doesn't follow the Ask user switch live.** The text is built from the switch (`src/main/ipc.ts:4740`), but `PromptRow` loads it once (`PromptRow.tsx:111-117`), so an open panel shows the old prompt until you leave the screen. The guide says only that the prompt "follows this switch".

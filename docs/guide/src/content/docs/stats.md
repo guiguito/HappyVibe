@@ -24,6 +24,8 @@ Before your first session, the screen says "Nothing to show yet." and "Start a s
 - **Cost (est.)**: an estimate, worked out locally. Its note reads "local estimate, plan spend excluded": what you use through a plan you already pay for isn't counted here. When some prices aren't known, the total ends in "+?" and the note reads "estimate — some prices unknown", so a partial total never passes for a complete one.
 - **Avg session**: how long a session lasts on average, with the median underneath.
 
+A forked or duplicated session counts only what it spent after the split. The conversation it copied stays counted once, in the original.
+
 Under the tiles, a short sentence may count the model calls the app made on its own, outside any session: naming a session, writing a commit message, drafting a pull request. Their tokens are estimated and they're kept out of the cost above. The sentence ends "Each one is listed in the audit log." You'll find them in the [Audit log](/docs/audit-log/).
 
 ### The charts

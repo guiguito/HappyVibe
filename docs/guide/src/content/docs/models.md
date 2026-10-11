@@ -26,6 +26,7 @@ While nothing is connected yet, the list of providers is already open, and the *
 At the top is a list of what you've already connected, one row each. The tag on the right of a row says what kind of connection it is:
 
 - **signed in**: you signed in with a plan. The row has a **Sign out** button.
+  If you signed in to ChatGPT before the current **ChatGPT** card existed, that sign-in still works and shows as "ChatGPT (Codex, legacy)" until you sign out.
 - **running**: a local server the app found on this computer (Ollama, LM Studio or llama.cpp), with the number of local models it has.
 - **key saved**: an API key you saved here (the row has a **Remove** button), or a custom endpoint you added with a key.
 - **.env**: the key comes from an environment variable on your computer, not from this screen.
@@ -40,6 +41,8 @@ Click **+ Add provider** to open the ways to connect, and **Hide providers** to 
 One card per plan you can sign in with. Click **Sign in** and a window opens: "HappyVibe never sees your password — the provider does the sign-in." Your browser opens to the provider's page. Finish there, and the window updates by itself. If your browser didn't open, use **Open browser** or copy the address. Some providers show a code instead: "Enter this code at the provider:". Copy it and type it on the provider's page.
 
 The Claude card carries a note worth reading before you click: "Heads up: on Claude Pro/Max this uses your plan's extra usage."
+
+A **ChatGPT** sign-in can use only the models your plan includes. Pick one outside it and the session says "Your ChatGPT plan doesn't include this model." Pick another model from the menu.
 
 ### Local
 
@@ -70,7 +73,7 @@ For a server that speaks the OpenAI API, such as one you run yourself. Click **+
 
 Turn it off and a full context fails the next message instead. The card says "Automatic compaction is off. Compact now, or fork from an earlier message (hover it, then Fork)." and has a **Compact now…** button.
 
-Turning it off asks first ("Turn off automatic compaction?"): "When the context fills up, the next message fails instead of being summarized." **Keep it on** leaves it as it is, and turning it back on is one click. ([More on context](/docs/first-session/#context-what-the-agent-can-see).)
+Turning it off asks first ("Turn off automatic compaction?"): "When the context fills up, the next message fails instead of being summarized." Click **Turn off** to confirm, or **Keep it on** to leave it as it is. Turning it back on is one click. ([More on context](/docs/first-session/#context-what-the-agent-can-see).)
 
 **Extended prompt cache** is off, and most people can leave it that way. It helps when you often leave a session and come back to it later. Normally the provider keeps the start of your conversation cached for five minutes and charges less to read it again. With this on, it keeps it for an hour on Anthropic (24 hours on OpenAI). Most other providers are asked for the same, though "Google, Mistral, OpenAI Codex, xAI and a few others ignore it." The catch, in the screen's words: "Anthropic bills a long-lived cache write at 2× the input rate, so this wins when your turns are minutes apart and loses when you type continuously." It applies to new sessions. The switch reads **Off** while it's off. Click it to turn it on.
 

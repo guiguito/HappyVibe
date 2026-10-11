@@ -42,7 +42,7 @@ The note beside the box says why the prompt stays fixed: "The built-in prompt ab
 
 "Lets the agent pause mid-turn to ask you a clarifying question."
 
-You can switch it off whether Plan mode is on or not. With it off, plan mode still asks you what it needs to know, in its reply, and waits for your answer. Either way, plan mode stays read-only.
+You can switch it off whether Plan mode is on or not. With it off, plan mode still asks you what it needs to know, in its reply, and waits for your answer. You can read that version of the prompt under **Plan mode**. Either way, plan mode stays read-only.
 
 ### Agent terminal — 3 tools
 
@@ -89,6 +89,8 @@ Before each image, the approval dialog reads "This makes an image with" the mode
 ### Tool intent
 
 "The one-line “why” the model writes for each tool card." Turning it off saves the tokens (the unit models read and bill text in, roughly four characters) that sentence costs. Cards then show a label built from the call itself. Approval dialogs don't change either way: "they always show the factual action, never this sentence."
+
+<!-- TODO(media): built-in-tools/builtin-switches.png — The MCP, Sub-agents and Skills switches, Workflows switched off under Sub-agents, and Core tools with a switch per tool -->
 
 ### MCP
 
@@ -154,7 +156,7 @@ Your lines go after the built-in prompt, never instead of it. Open sessions rest
 The web tools don't fetch pages from your computer. A web service does, so sites see the service's address rather than yours. By default that's a server HappyVibe runs, which can see the addresses and searches the agent sends. If that matters to you, point the app at a service of your own.
 
 1. Under **Web tools — 4 tools**, open **Web service**.
-2. Pick **HappyVibe's service**, and you're done. It's saved as soon as you pick it. For your own service, pick **Your own** and carry on.
+2. Pick **HappyVibe's service (free for now)**, and you're done. It's saved as soon as you pick it. For your own service, pick **Your own** and carry on.
 3. Type its address in **API URL**, and its key in **API key (optional)** if it needs one. The note underneath says what fits: "Firecrawl-compatible API, v2 — e.g. https://firecrawl.example.com. Applies to the next call, so nothing restarts."
 4. Click **Test**. "Connected." means it answered. You can test before you save.
 5. Click **Save**.
@@ -178,6 +180,7 @@ On a computer where an administrator turned HappyVibe's service off, **HappyVibe
 - **Ask user** shows up as a question from the agent, waiting for your answer.
 - The terminal, browser and web tools show up as tool cards, and anything that needs your OK waits in an approval dialog. See [Approve a tool call](/docs/approve-a-tool-call/).
 - **Tool intent** is the one-line "why" at the top of each tool card.
+- **Images** shows up as a card with the model's one-line why. With **Tool intent** off, it reads "Making hero.png" (the file's name), or "Making an image" until the name arrives.
 
 ## Related
 
