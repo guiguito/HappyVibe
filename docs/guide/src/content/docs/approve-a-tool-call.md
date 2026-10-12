@@ -25,7 +25,10 @@ You can change what asks on [Permissions](/docs/permissions/), which also lists 
 4. Click **Allow**.
 5. The card in the session runs, then turns done, with a check whose tooltip reads "Allowed by you".
 
-<!-- TODO(media): approve-a-tool-call/permission-approve — Ask to create hello.txt, the dialog appears, click Allow, and the card turns done with its approval mark -->
+<video autoplay muted loop playsinline controls poster="/docs/media/approve-a-tool-call/permission-approve.jpg" aria-label="Ask to create hello.txt, the dialog appears, click Allow, and the card turns done">
+  <source src="/docs/media/approve-a-tool-call/permission-approve.webm" type="video/webm" />
+  <source src="/docs/media/approve-a-tool-call/permission-approve.mp4" type="video/mp4" />
+</video>
 
 ## Who writes the dialog
 
@@ -33,7 +36,7 @@ The app writes the approval dialog, never the model. The line you approve agains
 
 ## The five buttons
 
-<!-- TODO(media): approve-a-tool-call/permission-modal.png — "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny -->
+!["The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny](/docs/media/approve-a-tool-call/permission-modal.png)
 
 Each button answers this call. Three buttons also remember your answer. What they remember is the whole tool, never just this one command or file, so pick them when you trust the tool, not just the call. For web and browser calls, "the tool" is one site; for a tool from an MCP server, that one tool; for a subagent (a helper agent the main agent hands a task to), that one agent.
 

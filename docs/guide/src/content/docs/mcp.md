@@ -68,7 +68,10 @@ In short: the badge is the app's own check, not your session's.
 5. Click **Add Playwright** (the button carries the server's name).
 6. HappyVibe connects straight away. When it works, you see "Connected to Playwright" and how many tools it found, with the list. Click **Done**.
 
-<!-- TODO(media): mcp/mcp-add — Pick Playwright, Add, and it connects: "Connected to Playwright" with the number of tools discovered -->
+<video autoplay muted loop playsinline controls poster="/docs/media/mcp/mcp-add.jpg" aria-label="Pick Playwright, Add, and it connects: &quot;Connected to Playwright&quot; with the number of tools discovered">
+  <source src="/docs/media/mcp/mcp-add.webm" type="video/webm" />
+  <source src="/docs/media/mcp/mcp-add.mp4" type="video/mp4" />
+</video>
 
 If it can't connect, the dialog shows "Could not connect to" the server and the reason. Click **Retry**, or **Close** and fix it with **Edit**.
 

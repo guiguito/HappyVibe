@@ -13,7 +13,7 @@ The screen says what it holds: "Global rules for every workspace. Per-workspace 
 
 ## What's on the screen
 
-<!-- TODO(media): permissions/permissions-rules.png — The rule list mixing allow, ask and deny, with the test box -->
+![The rule list mixing allow, ask and deny, with the test box](/docs/media/permissions/permissions-rules.png)
 
 ### Rules
 
@@ -86,7 +86,7 @@ While it's on, every session it applies to shows a red banner, "Dangerous mode i
 
 ## Turn "Always allow" into a rule
 
-<!-- TODO(media): approve-a-tool-call/permission-modal.png — "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny -->
+!["The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny](/docs/media/approve-a-tool-call/permission-modal.png)
 
 Two buttons in the [approval dialog](/docs/approve-a-tool-call/#the-five-buttons) write a rule for you:
 

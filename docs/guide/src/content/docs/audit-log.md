@@ -22,7 +22,7 @@ Four menus sit at the top. They all start on showing everything, and the newest 
 
 If the filters leave nothing, the log says "No decisions match these filters." Before the agent has asked for anything at all, it says "No permission decisions yet — they appear here once the agent asks for something."
 
-<!-- TODO(media): audit-log/audit-log.png — Permission decisions including denials, with the filters visible -->
+![Permission decisions including denials, with the filters visible](/docs/media/audit-log/audit-log.png)
 
 ### Permission decisions
 
@@ -30,7 +30,7 @@ Most rows are decisions: a tool call the agent wanted to make, and what happened
 
 - The decision, as a tag: allow, allow-session or deny, the same as **Allowed**, **Allowed for session** and **Denied** in the filter. Allows are green and denials are red.
 - The tool's name.
-- Who decided. For example: "rule" when one of your rules answered, "user" when you answered the approval dialog yourself, "plan" when [plan mode](/docs/built-in-tools/#start-plan-mode) did, and "sub-agent" followed by the agent's name when the call came from one of the agent's [subagents](/docs/agents/) (helpers it hands work to). When a rule matched, its pattern follows. Hover over it to see which rule it was.
+- Who decided. For example: "rule" when one of your rules answered, "user" when you answered the approval dialog yourself, "plan" when [plan mode](/docs/built-in-tools/#start-plan-mode) did, "safe default" when the tool is on the short list that runs without asking, and "sub-agent" followed by the agent's name when the call came from one of the agent's [subagents](/docs/agents/) (helpers it hands work to). When a rule matched, its pattern follows. Hover over it to see which rule it was.
 - When it happened.
 - Underneath: a summary of the call, then the workspace and the session it belongs to.
 

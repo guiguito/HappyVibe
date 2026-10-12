@@ -57,7 +57,7 @@ You say "remember that …", or the agent offers to save something it learned fr
 3. If it would replace a note you already have, the title reads "The agent wants to REPLACE this memory", and you see **what changes** instead of the whole text.
 4. Click **Allow** to save just this one, or **Deny** to keep it out. **Always allow** means future saves stop asking, so pick it only if you're happy for the agent to save notes on its own.
 
-<!-- TODO(media): memory/memory-save-prompt.png — In a session, the approval dialog for saving a memory, with the memory and what changes -->
+![In a session, the approval dialog for saving a memory, with its name, kind, scope and summary](/docs/media/memory/memory-save-prompt.png)
 
 Forgetting asks the same way: "The agent wants to forget this". Opening a note to read it never asks, since you can read every one on this screen anyway. More on the approval dialog and its other buttons in [Approve a tool call](/docs/approve-a-tool-call/).
 

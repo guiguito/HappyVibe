@@ -15,7 +15,7 @@ A plugin is someone else's good idea, packaged: skills, prompts and tools for th
 
 "Every plugin here was checked against the permission gate before the release, so anything listed installs. Nothing installs on its own — you pick what comes in, and skills arrive switched off."
 
-<!-- TODO(media): plugins/plugins-marketplace.png — The Marketplace: search box, category chips and the card grid -->
+![The Marketplace: search box, category chips and the card grid](/docs/media/plugins/plugins-marketplace.png)
 
 - **Installed** lists the plugins you've installed, with what each one brought and a **Remove** button. It appears once you've installed one.
 - **Search plugins…** filters by name and description.

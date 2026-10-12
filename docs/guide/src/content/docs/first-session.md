@@ -38,7 +38,7 @@ Clicking one fills the message box and never sends it. Change it as much as you 
 
 A tool is one action the agent can take: read a file, edit one, run a command. Every tool it uses shows up as a card, with a plain description of what it's doing: "Editing" or "Creating" and the file's name, or a command described in words. Expand a card to see exactly what it did. In the session the setup window opens for you, the app says so too: "Each card is a tool the agent ran — expand one to see exactly what it did."
 
-<!-- TODO(media): first-session/session-running.png — A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button -->
+![A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button](/docs/media/first-session/session-running.png)
 
 The dot at the start of each card shows its state. Hover over it to read the word. The three you'll meet first:
 
@@ -71,7 +71,7 @@ You don't have to wait for the agent to finish. While it works, the message box 
 
 Changed your mind? Click **Take back** beside "queued · kept on stop": every queued message goes back into the message box. Images attached to a queued message aren't kept.
 
-<!-- TODO(media): first-session/queued-take-back.png — A turn in progress with a queued message chip, "queued · kept on stop" and Take back -->
+![A turn in progress with a queued message chip, "queued · kept on stop" and Take back](/docs/media/first-session/queued-take-back.png)
 
 To stop the agent, click the stop button beside the message box. Its tooltip reads "Stop the agent". Anything you queued stays queued.
 

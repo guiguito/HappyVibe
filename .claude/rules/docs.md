@@ -48,11 +48,11 @@ paths:
   | `install/install-smartscreen.png` | `install` | Windows SmartScreen after clicking More info, with Run anyway visible |
   | `first-launch/onboarding-setup.png` | `first-launch` | The Setup step: step 1 "Connect a model" open on its choices, with "Pick a project" and "Personalize your agent" below |
   | `first-launch/onboarding-kit.png` | `first-launch` | Step 3 "Personalize your agent" with its tiles, total and Continue button |
-  | `models/models-populated.png` | `connect-a-model`, `models` | Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills |
+  | `models/models-populated.png` | `connect-a-model`, `models` | Providers with rows tagged "running" and "key saved"; Default model with the Thinking effort pills |
   | `first-session/session-running.png` | `first-session` | A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button |
   | `approve-a-tool-call/permission-modal.png` | `approve-a-tool-call`, `permissions` | "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny |
-  | `approve-a-tool-call/permission-approve.{webm,mp4,jpg}` | `approve-a-tool-call` | Ask to create hello.txt, the dialog appears, click Allow, and the card turns done with its approval mark |
-  | `memory/memory-save-prompt.png` | `memory` | In a session, the approval dialog for saving a memory, with the memory and what changes |
+  | `approve-a-tool-call/permission-approve.{webm,mp4,jpg}` | `approve-a-tool-call` | Ask to create hello.txt, the dialog appears, click Allow, and the card turns done |
+  | `memory/memory-save-prompt.png` | `memory` | In a session, the approval dialog for saving a memory, with its name, kind, scope and summary |
   | `built-in-tools/builtin-tools.png` | `built-in-tools` | The Built-in tools list with its toggles, and Plan mode expanded to show its read-only prompt |
   | `plugins/plugins-marketplace.png` | `plugins` | The Marketplace: search box, category chips and the card grid |
   | `mcp/mcp-add.{webm,mp4,jpg}` | `mcp` | Pick Playwright, Add, and it connects: "Connected to Playwright" with the number of tools discovered |
