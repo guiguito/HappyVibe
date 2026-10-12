@@ -61,7 +61,7 @@ import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, agentTokenCost, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
-import { applyDelta, updateToolCard, mergeIntoLastAssistant, indexTools } from "./streaming";
+import { applyDelta, updateToolCard, mergeIntoLastAssistant, indexTools, stampApproval } from "./streaming";
 import { sendOutcome } from "./sendOutcome";
 import { parseDocumentChips, stripInjectedBlocks } from "./mentions";
 import type { Activity, ToolDraft } from "./busyStatus";
@@ -3054,7 +3054,17 @@ export default function App(): React.JSX.Element {
           },
         });
       } else {
-        pendingApproval.current[sid] = { tool: uiReq.info.tool, choice: bridgeChoice as "Allow" | "Allow for session" };
+        const choiceMark = bridgeChoice as "Allow" | "Allow for session";
+        // The card for this call is already on screen (tool_execution_start precedes the gate): mark it.
+        // Only when none is waiting does the choice wait for a card that arrives later.
+        if (stampApproval(transcripts[sid] ?? [], uiReq.info.tool, choiceMark)) {
+          setTranscripts((p) => {
+            const stamped = stampApproval(p[sid] ?? [], uiReq.info.tool, choiceMark);
+            return stamped ? { ...p, [sid]: stamped } : p;
+          });
+        } else {
+          pendingApproval.current[sid] = { tool: uiReq.info.tool, choice: choiceMark };
+        }
       }
     }
     // Pop the answered prompt (not necessarily the global head — B4 queues are per-session).
