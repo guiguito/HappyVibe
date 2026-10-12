@@ -10,8 +10,8 @@ import { connect } from "./cdp.mjs";
 const OUT = process.env.MEDIA_OUT ?? new URL("../../public/media/", import.meta.url).pathname;
 const WORK = process.env.MEDIA_WORK ?? new URL("../../.media-work/", import.meta.url).pathname;
 const FFMPEG = process.env.FFMPEG ?? "/opt/homebrew/bin/ffmpeg";
-/** Made by onboarding's "Start fresh…" with the name lemonade-stand, filled by demo-project.sh. */
-const PROJECT = `${homedir()}/Documents/HappyVibe/lemonade-stand`;
+/** Made by onboarding's "Start fresh…" with the name lemonade-stand, filled by demo-project.sh. MEDIA_PROJECT puts it elsewhere. */
+const PROJECT = process.env.MEDIA_PROJECT ?? `${homedir()}/Documents/HappyVibe/lemonade-stand`;
 
 const RUNNING = `!!document.querySelector('[title="Stop the agent"]')`;
 const DIALOG = `!!document.querySelector('[role="dialog"]')`;
@@ -50,7 +50,8 @@ function encode(id, slug, fps) {
   console.log(`saved ${base}.{mp4,webm,jpg}`);
 }
 
-const HELLO = "Create hello.txt with a short welcome note.";
+// "Don't list the folder": an `ls -l` card prints the Mac user name as the file owner.
+const HELLO = "Create hello.txt with a short welcome note. Don't list or read anything first.";
 /** Read-only, so it runs without an approval: the turn keeps the "working" state on screen for a few seconds. */
 const READ_ONLY = "Use the read tool, not bash, on index.html, style.css and README.md, then describe the site in three bullets.";
 
@@ -287,15 +288,6 @@ const SHOTS = {
   "audit-log": async (d) => {
     await d.openView("Audit log", "The record");
     await d.waitForText("Every permission decision");
-    // Commands in other sessions print the project's full path, which is the real home folder here: filter to the scheduled run,
-    // whose rows (a denied command, an allowed read, "schedule fired") carry none.
-    await d.evaluate(`(() => {
-      const s = [...document.querySelectorAll("main select")].find((s) => [...s.options].some((o) => o.text === "All sessions"));
-      const o = [...s.options].filter((o) => o.text.startsWith("Check the site"))[1];
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, o.value);
-      s.dispatchEvent(new Event("change", { bubbles: true }));
-    })()`);
-    await d.sleep(1200);
     await d.shot(`${OUT}audit-log/audit-log.png`);
   },
 };
