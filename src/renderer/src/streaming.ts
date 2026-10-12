@@ -76,6 +76,26 @@ export function updateToolCard(
   return next;
 }
 
+/**
+ * Stamp "who approved this" on the card a permission answer is about. `tool_execution_start` fires
+ * BEFORE the tool_call gate (docs/validation/d1.md), so that card already exists, running, when the
+ * user clicks Allow; waiting for a card to arrive after the answer left it unmarked, and marked
+ * the next call of the same tool instead. Takes the oldest running card of the tool that has no
+ * mark yet (prompts are answered in the order the calls were made). Null when none is waiting.
+ */
+export function stampApproval(
+  items: TranscriptItem[],
+  toolName: string,
+  approval: "Allow" | "Allow for session",
+): TranscriptItem[] | null {
+  const i = items.findIndex((it) => it.kind === "tool" && it.card.toolName === toolName && it.card.status === "running" && !it.card.approval);
+  const it = items[i];
+  if (i < 0 || it?.kind !== "tool") return null;
+  const next = items.slice();
+  next[i] = { ...it, card: { ...it.card, approval } };
+  return next;
+}
+
 /** Record where a tool card lives so `_update`/`_end` can find it in O(1). */
 export function indexTool(index: Map<string, number>, toolCallId: string, at: number): void {
   index.set(toolCallId, at);

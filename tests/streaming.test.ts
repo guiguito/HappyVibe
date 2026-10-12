@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyDelta, updateToolCard, indexTool, indexTools, mergeIntoLastAssistant } from "../src/renderer/src/streaming";
+import { applyDelta, updateToolCard, indexTool, indexTools, mergeIntoLastAssistant, stampApproval } from "../src/renderer/src/streaming";
 import type { TranscriptItem } from "../src/renderer/src/components/Transcript";
 
 describe("applyDelta", () => {
@@ -111,4 +111,31 @@ test("round 27 review I1: a STALE index never patches another call's card, and t
   expect((next[0] as never as { card: { status: string } }).card.status).toBe("done");
   expect((next[1] as never as { card: { status: string } }).card.status).toBe("running");
   expect(stale.get("t1")).toBe(0); // repaired
+});
+
+// tool_execution_start fires BEFORE the tool_call gate (docs/validation/d1.md), so the card for the call being
+// approved already exists, running, when the user clicks Allow. The badge has to land on THAT card.
+describe("stampApproval", () => {
+  const tool = (id: string, toolName: string, status: string, approval?: string) =>
+    ({ kind: "tool", card: { toolCallId: id, toolName, args: {}, status, approval } }) as never as TranscriptItem;
+  const approvalOf = (items: TranscriptItem[], i: number) => (items[i] as never as { card: { approval?: string } }).card.approval;
+
+  test("marks the running card of that tool", () => {
+    const items = [tool("a", "write", "running")];
+    const next = stampApproval(items, "write", "Allow");
+    expect(next && approvalOf(next, 0)).toBe("Allow");
+    expect(approvalOf(items, 0)).toBeUndefined(); // the input is not mutated
+  });
+
+  test("leaves finished cards and other tools alone, and takes the oldest unmarked running one", () => {
+    const items = [tool("a", "write", "done"), tool("b", "bash", "running"), tool("c", "write", "running"), tool("d", "write", "running")];
+    const next = stampApproval(items, "write", "Allow for session");
+    expect(next && [0, 1, 2, 3].map((i) => approvalOf(next, i))).toEqual([undefined, undefined, "Allow for session", undefined]);
+  });
+
+  test("skips a card that already carries a mark, and returns null when no card is waiting", () => {
+    expect(stampApproval([tool("a", "write", "running", "Allow")], "write", "Allow")).toBeNull();
+    expect(stampApproval([tool("a", "write", "done")], "write", "Allow")).toBeNull();
+    expect(stampApproval([], "write", "Allow")).toBeNull();
+  });
 });
