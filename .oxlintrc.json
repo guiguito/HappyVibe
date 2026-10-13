@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "error",
+    "react/static-components": "error",
+
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/purity": "off",
+    "react/immutability": "off",
+    "react/preserve-manual-memoization": "off"
+  },
+  "ignorePatterns": ["out/**", "release/**", "docs/guide/dist/**", "docs/guide/.astro/**"]
+}

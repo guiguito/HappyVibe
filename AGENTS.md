@@ -13,12 +13,16 @@ permission UX and context-window visibility as the differentiators.
   tree; its postinstall applies the two owned patches (tintinweb, Pi's OAuth page). A fresh worktree
   without it fails the live tests.
 - `npm run dev` · `npm test` (non-live suite, ~50 s) · `npm run build`
-- **Gate = `npm run gate`** (build → non-live suite). `build` runs all three typechecks first and
+- **Gate = `npm run gate`** (lint → build → non-live suite). `build` runs all three typechecks first and
   fast-fails, so never run `npm run typecheck` before `gate` or `build` — that's the same check twice.
 - Plus `npm run test:live` when `npm run live:why` prints anything. If it prints nothing, say the
   live batch isn't required — don't silently omit it.
-- No linter, no formatter: typescript-eslint refuses TypeScript 7 (by decision — the typechecks in
-  `gate` are the check; how to revive it is in `.claude/rules/typescript.md`). Match the code around you.
+- Lint = `npm run lint` — **oxlint**, pinned exact, config `.oxlintrc.json` (why not ESLint:
+  `.claude/rules/typescript.md`). Bug rules only: correctness, `react-hooks/*`, `react/static-components`.
+  The React-Compiler rules (`refs`, `purity`, `set-state-in-effect`…) are off — the app doesn't use the
+  compiler and they flag deliberate patterns. An exemption is `// oxlint-disable-next-line <rule> --
+  <why>`; for `exhaustive-deps` it goes on the line ABOVE the dependency array. No formatter, ever —
+  it would rewrite most of the repo. Match the code around you.
 - User guide: `docs/guide/`, its own npm project — see `.claude/rules/docs.md`.
 - Commits need `git commit -s` (DCO check in `.github/workflows/dco.yml`). CI runs on `main` pushes
   and pull requests only — a branch push runs nothing, so platform work needs a (draft) PR.

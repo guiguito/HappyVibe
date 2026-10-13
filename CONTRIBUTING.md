@@ -37,8 +37,8 @@ the files that make it necessary).
 
 - Match the code around you: its naming, its comment density, its idiom.
 - A behaviour change comes with a test that fails without it.
-- There is no linter or formatter: the typechecks in `npm run gate` are the check. Please don't
-  run a formatter over the repository — it would rewrite most of it.
+- `npm run gate` lints (oxlint), typechecks, builds and runs the suite. There is no formatter —
+  please don't run one over the repository; it would rewrite most of it.
 
 ## Sign your commits (DCO)
 
