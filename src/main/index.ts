@@ -278,7 +278,12 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     ...(process.platform === 'darwin' ? {} : { icon }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      // Privacy: Electron's default spellcheck downloads Hunspell dictionaries
+      // from the Chromium CDN on Windows and Linux — a call home no switch
+      // covered. It was never a feature here (no suggestions menu), so it is off.
+      // Pinned by tests/pi-privacy-contract.test.ts.
+      spellcheck: false
     }
   })
 

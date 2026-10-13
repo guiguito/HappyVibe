@@ -105,6 +105,9 @@ export class BrowserManager {
         nodeIntegration: false,
         webviewTag: false,
         partition: PARTITION,
+        // Privacy: the guest's own session would otherwise fetch spellcheck
+        // dictionaries from the Chromium CDN on Windows/Linux (see index.ts).
+        spellcheck: false,
         // Autoplay etc. stay at Chromium defaults; media PERMISSIONS are denied
         // wholesale below, which is the part that matters.
       },
