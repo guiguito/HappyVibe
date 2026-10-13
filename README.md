@@ -166,9 +166,8 @@ Pi subprocess, one per session (pinned)          pi-runtime/
 - **x64 only on Windows and Linux.** On Windows, the voice and document engines publish no arm64
   build, so arm64 machines run the x64 installer under emulation. On Linux, arm64 is excluded only
   because nothing tests it yet.
-- **Linux has had less real-world use** than macOS and Windows. CI builds, packages and tests it on
-  every change. The file tree doesn't refresh on its own there — Linux has no recursive file
-  watching — so a file created outside the app appears on the next refresh.
+- **On Linux, the file tree doesn't refresh on its own.** Linux has no recursive file watching, so a
+  file created outside the app appears on the next refresh. macOS and Windows update live.
 - **It is not a sandbox.** The approval gate runs inside the agent's process, and the agent's shell
   can reach the network. It asks before it acts; it isn't a security boundary.
 - **Costs are estimates**, from the price table of the pinned agent version. When it can't price a
