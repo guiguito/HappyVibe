@@ -135,7 +135,7 @@ reimplementation, a fork, or `patch-package`.
 probe evidence — a reproducing prose-turn failure is not the same as a regression, and isolation
 alone cannot tell them apart).
 
-Fold the durable lessons into `CLAUDE.md` and the wire shapes into `docs/validation/d1.md` in the
+Fold the durable lessons into `AGENTS.md` and the wire shapes into `docs/validation/d1.md` in the
 same session. One commit per logical change; `/land` is the close-out gate.
 
 The changelog is written at release time, not here (PRD §30) — but if the bump changes

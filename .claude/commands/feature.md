@@ -7,7 +7,7 @@ Build this small feature: $ARGUMENTS
 
 Seven phases, in order. **Stop at the first failure** — report it, don't work around it. This
 command owns the sequencing and the gates only; the details live where they already live
-(`CLAUDE.md`, `.claude/commands/uicheck.md`, `.claude/commands/devdoctor.md`). Read them rather
+(`AGENTS.md`, `.claude/commands/uicheck.md`, `.claude/commands/devdoctor.md`). Read them rather
 than trusting a copy — a duplicated test list already drifted across four worktrees once.
 
 ### 0. Read, scope-check, THEN branch
@@ -61,11 +61,11 @@ Per task, in this order, no exceptions:
 2. Write the minimum implementation that passes.
 3. Run that same file green.
 
-Redirect to a log rather than piping to `tail` (CLAUDE.md §Tests) — otherwise wanting a
+Redirect to a log rather than piping to `tail` (AGENTS.md §Tests) — otherwise wanting a
 different slice of the output costs you the whole run again.
 
 Never edit a test to make it pass. If a test looks wrong, stop and say so — a test bent to fit
-the implementation verifies nothing. Follow the layer rules in `CLAUDE.md` (pure `hv-*.ts`
+the implementation verifies nothing. Follow the layer rules in `AGENTS.md` (pure `hv-*.ts`
 modules stay electron-free and vitest-importable; mirrored logic like `resolveModel` changes on
 both sides or neither).
 
