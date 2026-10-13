@@ -35,3 +35,22 @@ from the login shell (`src/main/index.ts`, `mergePath(…, loginShellPath())`), 
 (module scope) and `installRemoteConfig`/`installUsage` (`whenReady`) have run. Routes that work:
 `launchctl setenv` (from a LaunchAgent for persistence) and `open -a HappyVibe --env NAME=VALUE`
 (`man open`: `--env VAR`).
+
+## Electron — spellcheck dictionaries (found 2026-10-13, removed)
+
+The Privacy round inventoried the app's and Pi's calls; Electron's own was missed.
+
+- Spellcheck is **on by default since Electron 9** (`webPreferences.spellcheck`). On **Windows and
+  Linux** it is backed by Hunspell, whose dictionaries are **downloaded from the Chromium CDN**
+  (Electron `docs/api/session.md`, `setSpellCheckerDictionaryDownloadURL`: "By default Electron will
+  download hunspell dictionaries from the Chromium CDN"). On **macOS** the OS spellchecker is used and
+  nothing is downloaded.
+- Neither `src/main/index.ts` nor `src/main/browsers.ts` set it, so both surfaces had the default —
+  the browser pane's `persist:hv-browser` partition is its own session, with its own spellchecker.
+- No Privacy switch or `HV_NO_PHONE_HOME` reached it.
+- **Source: Electron's documentation, not a wire capture.** The fix does not depend on the wire
+  detail: the feature had no suggestions menu and was off on every code-like field already.
+
+Fix: `spellcheck: false` on both. Pinned by `tests/pi-privacy-contract.test.ts` ("Electron's own
+calls home"), which fails when a `new BrowserWindow`/`WebContentsView`/`BrowserView` anywhere in
+`src/main` lacks it.

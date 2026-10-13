@@ -65,3 +65,38 @@ describe("Pi's own calls home", () => {
     expect(fs.readFileSync(path.join(root, "src/main/ipc.ts"), "utf8")).toMatch(/offline: !getSwitch\("modelList"\)/);
   });
 });
+
+/**
+ * Electron's own call home. Spellcheck is ON by default since Electron 9, and on
+ * Windows and Linux it downloads Hunspell dictionaries from the Chromium CDN —
+ * a connection no Privacy switch or HV_NO_PHONE_HOME covered. The app never
+ * chose spellcheck (no suggestions menu, so the squiggles were unfixable) and
+ * every code-like field already opted out, so it is off on every surface.
+ *
+ * Scanned rather than unit-tested: the risk is a NEW window or view added later
+ * without the line, and an absence is what a render test never fails on.
+ */
+describe("Electron's own calls home", () => {
+  const CREATE = /new (BrowserWindow|WebContentsView|BrowserView)\(/g;
+  function mainSources(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+      const p = path.join(dir, d.name);
+      if (d.isDirectory()) return mainSources(p);
+      return d.name.endsWith(".ts") ? [p] : [];
+    });
+  }
+
+  it("every window and view the app creates turns spellcheck off", () => {
+    let created = 0;
+    for (const file of mainSources(path.join(root, "src/main"))) {
+      const src = fs.readFileSync(file, "utf8");
+      const n = (src.match(CREATE) ?? []).length;
+      if (!n) continue;
+      created += n;
+      const off = (src.match(/spellcheck: false/g) ?? []).length;
+      expect(off, `${path.relative(root, file)} creates ${n} window/view(s) but sets spellcheck: false ${off} time(s)`).toBeGreaterThanOrEqual(n);
+    }
+    // The app window and the browser pane. Guards a scan that silently matches nothing.
+    expect(created).toBeGreaterThanOrEqual(2);
+  });
+});
