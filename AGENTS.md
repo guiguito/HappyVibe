@@ -4,8 +4,9 @@ Electron app shipping a curated distribution of the Pi coding agent (pinned, ven
 permission UX and context-window visibility as the differentiators.
 - PRD: `docs/prd.md`, a mirror of the Notion PRD — fold decisions in place, NEVER rewrite it wholesale.
 - Evidence, measurements and bridge wire shapes: `docs/validation/*.md` (`d1.md` for wire shapes).
-- Subsystem rules live in `.claude/rules/*.md` and load automatically when you touch matching
-  files (index at the bottom).
+- Subsystem rules live in `.claude/rules/*.md` (index at the bottom). Claude Code loads one
+  automatically when you touch a file its `paths:` header matches; any other agent should read the
+  matching rule before editing those files.
 
 ## Commands
 - Install: `npm install && (cd pi-runtime && npm ci)` — BOTH. `pi-runtime/` is a separate vendored
