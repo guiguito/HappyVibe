@@ -2,7 +2,6 @@
 paths:
   - "tsconfig*.json"
   - "scripts/typecheck-ext.mjs"
-  - "eslint.config.mjs"
   - "tests/extensions-typecheck.test.ts"
 ---
 # TypeScript 7 and the typechecks
@@ -14,12 +13,12 @@ paths:
 - `require("typescript")` does NOT throw at 7.x: it resolves to `lib/version.cjs` and exports only
   `version`/`versionMajorMinor` — every compiler function is `undefined`. A version probe succeeds
   and the failure lands at the first real call.
-- Lint can't run: typescript-eslint throws *"does not support TS 7.0"* before linting a file. Decided,
-  not neglected — the gate is the only consumer of the `typescript` package (electron-vite uses
-  esbuild, jiti runs the catalog scripts), so a second TypeScript just for lint was refused. To
-  revive: `"typescript": "npm:@typescript/typescript6@^6"` + `"@typescript/native": "npm:typescript@^7"`
+- No linter, no formatter: typescript-eslint throws *"does not support TS 7.0"* before linting a
+  file, so the eslint/prettier scaffold was removed. Decided, not neglected — the gate is the only
+  consumer of the `typescript` package (electron-vite uses esbuild, jiti runs the catalog scripts),
+  so a second TypeScript just for lint was refused. To bring lint back:
+  `"typescript": "npm:@typescript/typescript6@^6"` + `"@typescript/native": "npm:typescript@^7"`
   with the `typecheck:*` scripts on the native binary — check typescript-eslint's peer range first.
-  `eslint.config.mjs` is untouched scaffold (it walks `release/`).
 - All of `pi-runtime/extensions/` is typechecked by `tsconfig.extensions.json` (standalone `--noEmit`,
   not referenced from the root tsconfig). Load-bearing knobs: `allowImportingTsExtensions` (explicit
   `.ts` imports), `noUnusedLocals/Parameters` off (vendored raw `.ts`), and `paths` mapping the NESTED

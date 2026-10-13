@@ -16,8 +16,8 @@ permission UX and context-window visibility as the differentiators.
   fast-fails, so never run `npm run typecheck` before `gate` or `build` — that's the same check twice.
 - Plus `npm run test:live` when `npm run live:why` prints anything. If it prints nothing, say the
   live batch isn't required — don't silently omit it.
-- `npm run lint` / `npm run format`: don't run. Lint refuses TypeScript 7 outright (by decision);
-  format rewrites ~85% of the repo. Neither is in the gate or CI.
+- No linter, no formatter: typescript-eslint refuses TypeScript 7 (by decision — the typechecks in
+  `gate` are the check; how to revive it is in `.claude/rules/typescript.md`). Match the code around you.
 - User guide: `docs/guide/`, its own npm project — see `.claude/rules/docs.md`.
 - Commits need `git commit -s` (DCO check in `.github/workflows/dco.yml`). CI runs on `main` pushes
   and pull requests only — a branch push runs nothing, so platform work needs a (draft) PR.

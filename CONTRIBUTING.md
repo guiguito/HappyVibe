@@ -37,8 +37,8 @@ the files that make it necessary).
 
 - Match the code around you: its naming, its comment density, its idiom.
 - A behaviour change comes with a test that fails without it.
-- `npm run lint` and `npm run format` are scaffold leftovers — please don't run them in a PR; they
-  rewrite most of the repository.
+- There is no linter or formatter: the typechecks in `npm run gate` are the check. Please don't
+  run a formatter over the repository — it would rewrite most of it.
 
 ## Sign your commits (DCO)
 
