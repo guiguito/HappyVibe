@@ -1,6 +1,7 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import path from "node:path";
 import { PiClient } from "../src/main/pi/PiClient";
+import { platform } from "../src/main/platform";
 
 const fakeSpec = {
   execPath: process.execPath,
@@ -50,6 +51,25 @@ test("writing to a Pi that already exited neither crashes main nor hangs", async
   await expect(client.send({ type: "get_session_stats" })).rejects.toThrow(/pi exited/);
   await new Promise((r) => setTimeout(r, 100)); // let a stray EPIPE surface
 }, 10_000);
+
+test("stop() kills a live child's tree, and never a pid whose child already exited", async () => {
+  const kill = vi.spyOn(platform, "killTree").mockImplementation(() => {});
+  try {
+    client = new PiClient(fakeSpec);
+    await client.start();
+    client.stop();
+    expect(kill).toHaveBeenCalledWith(client.pid);
+    kill.mockClear();
+    // Windows hands a freed pid out again within moments; taskkill /T would take that stranger's tree.
+    const exited = new Promise((r) => client.on("exit", r));
+    client.send({ type: "crash_now" } as never).catch(() => {});
+    await exited;
+    client.stop();
+    expect(kill).not.toHaveBeenCalled();
+  } finally {
+    kill.mockRestore();
+  }
+});
 
 import fs from "node:fs";
 import os from "node:os";

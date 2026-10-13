@@ -122,10 +122,15 @@ export class PiClient extends EventEmitter {
    * No grace period before /F, measured rather than assumed: Pi appends its session
    * file with appendFileSync, so nothing already written is lost, and its own SIGTERM
    * branch deliberately skips the stdout flush anyway.
+   *
+   * Never after "exit": the OS may already have handed the pid to another process —
+   * Windows within moments — and /T takes that stranger's whole tree. Until "exit" is
+   * delivered, libuv still holds the process handle, so the pid cannot be reused yet.
    */
   stop(): void {
-    const pid = this.child?.pid;
-    if (pid !== undefined) platform.killTree(pid);
+    const c = this.child;
+    if (!c || c.exitCode !== null || c.signalCode !== null) return;
+    if (c.pid !== undefined) platform.killTree(c.pid);
     else this.child?.kill();
   }
 }
