@@ -114,7 +114,7 @@ describe("the sidecar's wire", () => {
       expect(code, f).toBe(0);
       expect(reply?.ok, `${f}: ${JSON.stringify(reply)}`).toBe(true);
       expect(typeof reply?.text, f).toBe("string");
-      expect((reply?.text as string).length, f).toBeGreaterThan(0);
+      expect(String(reply?.text ?? "").length, f).toBeGreaterThan(0);
       expect(reply?.totalLines as number, f).toBeGreaterThan(0);
       expect(reply?.from, f).toBe(1);
       expect(reply?.format, f).toBeTruthy();
@@ -125,7 +125,7 @@ describe("the sidecar's wire", () => {
 
   it("slices like Pi's read: offset is a 1-indexed line, limit a line count", () => {
     const full = run(path.join(FIX, "sample.docx"));
-    const lines = (full.reply?.text as string).split("\n");
+    const lines = String(full.reply?.text ?? "").split("\n");
     expect(lines.length).toBeGreaterThan(4);
     const part = run(path.join(FIX, "sample.docx"), "2", "2");
     expect(part.reply?.from).toBe(2);
