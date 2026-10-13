@@ -131,8 +131,9 @@ npm run build:mac                    # or build:win / build:linux — an install
 ```
 
 Before a pull request, read **[CONTRIBUTING.md](CONTRIBUTING.md)** (setup behind a proxy, the live
-suite, signing your commits). Working with a coding agent on this repo? Point it at
-**[CLAUDE.md](CLAUDE.md)** and `.claude/rules/` — they hold the conventions and the traps.
+suite, signing your commits). Working with a coding agent on this repo? It reads
+**[AGENTS.md](AGENTS.md)** by itself — the conventions and the traps; per-subsystem rules are in
+`.claude/rules/`.
 
 ## How it's built
 
@@ -189,7 +190,7 @@ never a public issue.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each version, in plain words
 - [`docs/prd.md`](docs/prd.md) — the product spec, with every decision and why
 - [`docs/validation/`](docs/validation/) — measurements, wire formats and negative results
-- [`CLAUDE.md`](CLAUDE.md) — working notes for changing this repo safely
+- [`AGENTS.md`](AGENTS.md) — working notes for changing this repo safely, read by any coding agent
 
 ## Licence
 
