@@ -49,7 +49,7 @@ export function toPiEntry(input: McpEntry): { entry: McpEntry; changed: boolean 
   const hasAuthHeader = !!headers && Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
   const bearer = typeof e.bearerToken === "string" && e.bearerToken ? e.bearerToken
     : typeof e.bearerTokenEnv === "string" && e.bearerTokenEnv ? `\${${e.bearerTokenEnv}}` : undefined;
-  if (bearer && !hasAuthHeader) e.headers = { ...(headers ?? {}), Authorization: `Bearer ${bearer}` };
+  if (bearer && !hasAuthHeader) e.headers = { ...headers, Authorization: `Bearer ${bearer}` };
   delete e.bearerToken;
   delete e.bearerTokenEnv;
   delete e.bearerTokenStore; // keychain-held: Pi cannot read it; the server asks to sign in instead

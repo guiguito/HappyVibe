@@ -248,6 +248,7 @@ export function McpServersSection({
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });
     return () => { unsubRef.current?.(); };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- refresh is rebuilt every render; it reads only workspaceId and scope
   }, [workspaceId, scope]);
 
   const remove = async (s: McpServer): Promise<void> => {

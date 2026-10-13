@@ -528,6 +528,7 @@ export class BrowserManager {
   }
 
   destroyAll(): void {
+    // oxlint-disable-next-line unicorn/no-useless-spread -- a snapshot: destroy() deletes from entries mid-loop
     for (const id of [...this.entries.keys()]) this.destroy(id);
   }
 

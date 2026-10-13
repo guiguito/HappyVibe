@@ -351,7 +351,7 @@ describe("no dead copy", () => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
-        else if (/\.tsx$/.test(e.name)) sources.push(fs.readFileSync(p, "utf8"));
+        else if (e.name.endsWith(".tsx")) sources.push(fs.readFileSync(p, "utf8"));
       }
     };
     walk(R);

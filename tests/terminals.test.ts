@@ -3,14 +3,13 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { attachWriteErrorHandler, TerminalManager } from "../src/main/terminals";
-import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 
 const require_ = createRequire(import.meta.url);
 const settle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 // A POSIX shell on every platform (Git Bash on Windows) — see tests/shellFixture.ts
 // for why these tests do not switch to PowerShell syntax.
-import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
+import { FAST } from "./shellFixture";
 import { FOREGROUND_SUPPORTED as FOREGROUND, SHELL_NAME } from "./shellFixture";
 
 describe("node-pty packaging", () => {

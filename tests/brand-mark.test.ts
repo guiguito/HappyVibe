@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { monogram } from "../src/renderer/src/components/BrandMark";
 import { INLINE_GLYPHS, glyphKey } from "../src/renderer/src/components/BrandGlyphs";
-import { MCP_CATALOG } from "../src/main/mcpCatalog";
 
 /**
  * Round 8 follow-up: no MCP server should ever render as a blank square. That

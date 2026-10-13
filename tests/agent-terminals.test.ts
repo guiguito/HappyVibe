@@ -1,10 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach, vi, afterAll } from "vitest";
 import { TerminalManager } from "../src/main/terminals";
 import { AgentTerminals, MAX_AGENT_TERMINALS, HOLD_IDLE_MS } from "../src/main/agentTerminals";
-import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 
 /** `-f` skips the user's rc files, so a test does not depend on someone's dotfiles. */
-import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
+import { FAST } from "./shellFixture";
 import { FOREGROUND_SUPPORTED as FOREGROUND } from "./shellFixture";
 
 /**

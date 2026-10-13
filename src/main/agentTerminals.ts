@@ -44,6 +44,7 @@ interface Claim {
 }
 
 /** Enter, Ctrl-C, Ctrl-U — after any of these the user's input line is gone. */
+// oxlint-disable-next-line no-control-regex -- \x03 and \x15 ARE Ctrl-C and Ctrl-U
 const LINE_ENDERS = /[\r\n\x03\x15]/;
 
 export class AgentTerminals {

@@ -173,7 +173,7 @@ export function mergeModelsJson(existingRaw: string | null, endpoints: CustomEnd
   } catch {
     /* corrupt file in our app-owned dir — rebuild it */
   }
-  const providers = { ...(parsed.providers ?? {}) };
+  const providers = { ...parsed.providers };
   for (const key of [...(parsed.hvManaged ?? []), ...LEGACY_MANAGED]) delete providers[key];
   for (const e of endpoints) providers[e.providerKey] = endpointEntry(e);
   return JSON.stringify(

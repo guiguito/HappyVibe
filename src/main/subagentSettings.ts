@@ -39,8 +39,8 @@ export function disabledAgentOverrides(
   agentsEnabled: Record<string, boolean> = {},
 ): Record<string, unknown> {
   const out = { ...settings };
-  const subagents = { ...((out.subagents as Record<string, unknown> | undefined) ?? {}) };
-  const overrides = { ...((subagents[OVERRIDES_KEY] as Record<string, unknown> | undefined) ?? {}) };
+  const subagents = { ...(out.subagents as Record<string, unknown> | undefined) };
+  const overrides = { ...(subagents[OVERRIDES_KEY] as Record<string, unknown> | undefined) };
   const disabled = resolveDisabledAgents(agentsEnabled);
   // Every name we have an opinion about gets an EXPLICIT boolean. Omitting the
   // key for a re-enabled agent would leave the `disabled: true` a previous run

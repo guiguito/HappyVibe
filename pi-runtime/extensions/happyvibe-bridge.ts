@@ -750,7 +750,7 @@ export default function (pi: ExtensionAPI) {
   // Regression-tested by tests/mcp-bridge.test.ts (live).
   // §13 round 12: the headline is bought with tokens, so it has a switch. In
   // MCP that is every tool a server publishes, which is where the cost scales.
-  pi.on("turn_start", (_e, ctx) => {
+  pi.on("turn_start", (_e, _ctx) => {
     requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent);
   });
 

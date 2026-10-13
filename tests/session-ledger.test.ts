@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ledgerTotal } from "../src/main/calls";
-import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runByCallFrom, runTotalsByCall, sessionCalls } from "../src/main/sessionLedger";
+import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTotalsByCall, sessionCalls } from "../src/main/sessionLedger";
 
 /** One assistant line in Pi's session-file shape (verified against real files). */
 const line = (ts: number, provider: string, model: string, cost: number): string =>

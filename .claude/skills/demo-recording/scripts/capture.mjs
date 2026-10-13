@@ -36,13 +36,13 @@ function connect(wsUrl) {
 const app = connect(`ws://127.0.0.1:${port}/devtools/page/${appId}`);
 await app.ready;
 
-let guest = null, guestId = null;
+let guest = null;
 const findGuest = async () => {
   if (guest) return;
   try {
     const list = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
     const t = list.find(x => x.type === "page" && x.id !== appId && !x.url.includes("5173"));
-    if (t) { guestId = t.id; guest = connect(t.webSocketDebuggerUrl); await guest.ready; console.error("guest attached: " + t.url); }
+    if (t) { guest = connect(t.webSocketDebuggerUrl); await guest.ready; console.error("guest attached: " + t.url); }
   } catch {}
 };
 

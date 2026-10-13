@@ -46,7 +46,7 @@ describe("fileToAttachment", () => {
 
   test("a large image does not blow btoa's argument limit", async () => {
     // Chunking exists for this: String.fromCharCode(...200k bytes) throws.
-    const big = new Array(200_000).fill(65);
+    const big = Array.from({ length: 200_000 }, () => 65);
     const a = await fileToAttachment(file(big, "image/png"));
     expect(a!.data.length).toBeGreaterThan(100_000);
   });
