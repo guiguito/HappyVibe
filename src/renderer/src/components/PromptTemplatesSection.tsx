@@ -151,7 +151,7 @@ function ImportPicker({
   const [selected, setSelected] = useState<Set<string>>(() => new Set(scan.templates.map((c) => c.id)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const toggle = (id: string): void => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id: string): void => setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const doImport = async (): Promise<void> => {
     setBusy(true);
     setError(null);

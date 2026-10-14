@@ -37,8 +37,8 @@ the files that make it necessary).
 
 - Match the code around you: its naming, its comment density, its idiom.
 - A behaviour change comes with a test that fails without it.
-- `npm run lint` and `npm run format` are scaffold leftovers — please don't run them in a PR; they
-  rewrite most of the repository.
+- `npm run gate` lints (oxlint), typechecks, builds and runs the suite. There is no formatter —
+  please don't run one over the repository; it would rewrite most of it.
 
 ## Sign your commits (DCO)
 

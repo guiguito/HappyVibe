@@ -19,7 +19,7 @@ steps) takes ~240 ms — Pi's bundled CLI boots fast; a near-instant run here is
 
 ## Footprint
 
-`scripts/spike/mcp-footprint.mjs` (throwaway): 4 idle RPC sessions (faux model, one 1-word turn),
+`scripts/spike/mcp-footprint.mjs` (throwaway, removed after this measurement — it is in git history): 4 idle RPC sessions (faux model, one 1-word turn),
 3 servers in `<agentDir>/mcp.json` — `chrome-devtools` (`npx -y chrome-devtools-mcp@latest`, stdio),
 `context7` and `deepwiki` (remote, no auth). RSS summed over each Pi's process tree 20 s after boot;
 start = spawn → first `get_state` response. 3 runs per arm, interleaved, no app running.

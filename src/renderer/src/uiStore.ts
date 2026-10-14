@@ -52,7 +52,7 @@ const ADOPTED = [
 ] as const;
 
 function seed(): Record<string, string> {
-  const stored = { ...(window.hv?.boot?.record?.ui ?? {}) };
+  const stored = { ...window.hv?.boot?.record?.ui };
   if (Object.keys(stored).length > 0) return stored;
   // A record with nothing in it is either a brand-new window or the first
   // launch after round 23. Both want whatever the old shared store held; a new

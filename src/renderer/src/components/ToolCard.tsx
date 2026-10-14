@@ -679,7 +679,7 @@ function SubagentCard({
     void window.hv.subagentInspect(sessionId, asyncId).then((r) => {
       if (!alive) return;
       if (r.ok) {
-        setInspected(inspectToResults(r.reply, delegationAgent(card.args) ?? "subagent"));
+        setInspected(inspectToResults(r.reply, reqAgent ?? "subagent"));
         setInspectError(null);
       } else {
         // Named, never a spinner: inspection is scoped to the current session's
@@ -884,7 +884,6 @@ export function ToolCard({
   /** §17 round 28: opens the session this one was forked from (pre-fork sub-agent cards only). */
   onOpenOriginal?: () => void;
 }): React.JSX.Element {
-  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} onOpenOriginal={onOpenOriginal} />;
   // W1.1: headline = icon + human label; the technical block (raw name/args/
   // result) lives behind the collapsed "details" toggle. Diffs are NOT
   // technical — they ARE the human content for edit/write — so they render
@@ -893,6 +892,9 @@ export function ToolCard({
   const diff = card.toolName === "edit" || card.toolName === "write" ? toolDiff(card.toolName, card.args) : null;
   const [openDiff, setOpenDiff] = useState(diff?.kind === "edit");
   const [details, setDetails] = useState(false);
+  // After every hook, never before: hooks must run in the same order on every render
+  // (react-hooks/rules-of-hooks). The two above are unused by a sub-agent card.
+  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} onOpenOriginal={onOpenOriginal} />;
   // §7 round 12: live results carry raw image blocks; restored ones arrive as
   // data URLs main already built (restore.ts imagesOf). One call covers both.
   const cardImages = resultImages(card.result, card.images);

@@ -68,7 +68,8 @@ export function ContextPanel({
   const toggle = (key: string): void =>
     setSelected((p) => {
       const next = new Set(p);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
 

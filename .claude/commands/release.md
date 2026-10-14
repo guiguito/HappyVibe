@@ -5,7 +5,7 @@ argument-hint: <patch|minor|major> (empty = read the log and propose one)
 
 Cut a HappyVibe release: **$ARGUMENTS**
 
-The convention this implements is PRD **§30** and the `## Releasing` block in `CLAUDE.md`. Read
+The convention this implements is PRD **§30** and the `## Releasing` block in `AGENTS.md`. Read
 neither — everything you need is below, on purpose, so the rules cannot drift from the command that
 applies them.
 

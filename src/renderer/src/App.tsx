@@ -352,6 +352,10 @@ export default function App(): React.JSX.Element {
    * looking at. Found in the GUI, not by a test — no unit could have seen it.
    */
   const [activeWs, setActiveWs] = useState<string | null>(() => uiGet("hv:active-ws"));
+  // Read by the mount-once RPC listener below, which would otherwise keep seeing the
+  // workspace that was active when the app started.
+  const activeWsRef = useRef(activeWs);
+  useEffect(() => { activeWsRef.current = activeWs; }, [activeWs]);
   useEffect(() => {
     if (activeWs) uiSet("hv:active-ws", activeWs);
   }, [activeWs]);
@@ -1319,7 +1323,7 @@ export default function App(): React.JSX.Element {
               // moment it and the terminal id are ever seen together — the same
               // shape of trap as §12's `asyncCards`, one feature over.
               [sid]: {
-                ...(p[sid] ?? {}),
+                ...p[sid],
                 // `title` is remembered here because a KILLED terminal loses its
                 // live entry the moment main pushes the exit — and the circle has
                 // to keep naming itself for the length of its exit animation.
@@ -1338,7 +1342,7 @@ export default function App(): React.JSX.Element {
           const bid = browserEv.browserId;
           if (browserEv.stage === "opened") {
             setBrowserOwners((p) => ({ ...p, [bid]: sid }));
-            const ws = browserEv.workspaceId ?? activeWs;
+            const ws = browserEv.workspaceId ?? activeWsRef.current;
             if (ws) {
               setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, bid, chatTab(sid)) }));
               setActiveWs(ws);
@@ -1358,7 +1362,7 @@ export default function App(): React.JSX.Element {
               delete next[bid];
               return next;
             });
-            const ws = browserEv.workspaceId ?? activeWs;
+            const ws = browserEv.workspaceId ?? activeWsRef.current;
             if (ws) {
               setTabsByWs((p) => {
                 const t = p[ws] ?? emptyTabs;
@@ -2089,6 +2093,7 @@ export default function App(): React.JSX.Element {
   // debounced; reset search/context/cost on session switch. Settling on
   // agent_end is deliberate: Pi only writes a call's usage once the message
   // lands, so there is no honest intra-turn number to show.
+  const selectedTurns = selectedId ? turns[selectedId] : 0;
   useEffect(() => {
     setSearchOpen(false);
     setContextOpen(false);
@@ -2100,7 +2105,7 @@ export default function App(): React.JSX.Element {
       window.hv.getSessionCalls(selectedId).then((c) => live && setSelCalls(c)).catch(() => {});
     }, 500);
     return () => { live = false; clearTimeout(t); };
-  }, [selectedId, selectedId ? turns[selectedId] : 0]);
+  }, [selectedId, selectedTurns]);
 
   // §14 round 6: the session's LOADED skill set comes from main's per-session
   // manifest (the exact dirs passed to Pi as --skill). Re-fetched when the

@@ -287,7 +287,7 @@ export function resolvePiSpawn(
       // browser. Sub-agents run in this process, so a delegated `npm run dev`
       // behaves too. The agent has browser_open for the pane it wants.
       BROWSER: "none",
-      ...(opts.providerEnv ?? {}),
+      ...opts.providerEnv,
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),

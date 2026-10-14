@@ -132,6 +132,7 @@ export function PermissionModal({
     return () => {
       live = false;
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- fact is rebuilt every render; keyed on its name and scope on purpose
   }, [fact?.name, fact?.scope, info.tool, workspaceId]);
   // §13 round 27: an image costs money — the model and the new file are the question.
   const imageArgs = info.tool === "generate_image" ? (argsFromSummary(info.tool, info.summary) as { model?: string; path?: string } | undefined) : undefined;

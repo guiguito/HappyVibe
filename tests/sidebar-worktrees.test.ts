@@ -194,7 +194,7 @@ describe("the worktree cluster — finishing one", () => {
     expect(panel).toMatch(/every stale entry of this repository/);
   });
 
-  it("every git failure is read with gitReason, never split\(\)\[0\]", () => {
+  it("every git failure is read with gitReason, never split()[0]", () => {
     expect(c).not.toMatch(/\.error[^\n]*split\("\\n"\)\[0\]/);
     expect((c.match(/gitReason\(/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });

@@ -3,7 +3,6 @@ dist
 out
 release
 .DS_Store
-.eslintcache
 *.log*
 .env
 

@@ -432,6 +432,7 @@ export class TerminalManager {
   }
 
   killAll(): void {
+    // oxlint-disable-next-line unicorn/no-useless-spread -- a snapshot: kill() deletes from entries mid-loop
     for (const id of [...this.entries.keys()]) this.kill(id);
   }
 }

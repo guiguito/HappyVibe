@@ -37,7 +37,7 @@ export function winBuildConfig(env) {
   }
 
   config.win = {
-    ...(config.win ?? {}),
+    ...config.win,
     azureSignOptions: {
       endpoint: env.AZURE_SIGN_ENDPOINT,
       codeSigningAccountName: env.AZURE_SIGN_ACCOUNT,

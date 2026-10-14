@@ -61,7 +61,10 @@ describe("a reopened tintinweb session's card can inspect its child", () => {
 
   it("the card names its agent from either stack's args", () => {
     const src = fs.readFileSync("src/renderer/src/components/ToolCard.tsx", "utf8");
-    expect(src).toMatch(/inspectToResults\(r\.reply, delegationAgent\(card\.args\) \?\? "subagent"\)/);
+    // Named once, as reqAgent, and reused inside the inspect effect — so it is a tracked
+    // dependency rather than a value the effect re-derives from card.args behind React's back.
+    expect(src).toMatch(/const reqAgent = delegationAgent\(card\.args\);/);
+    expect(src).toMatch(/inspectToResults\(r\.reply, reqAgent \?\? "subagent"\)/);
   });
 });
 

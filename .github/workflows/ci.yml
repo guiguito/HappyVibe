@@ -20,6 +20,8 @@ jobs:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+      # Lint is OS-independent, so it runs once, here, before anything slow.
+      - run: npm run lint
       - run: cd pi-runtime && npm ci
       - run: npm test
       - run: npm run build

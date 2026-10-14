@@ -47,6 +47,46 @@ const defaults = DEFAULT_TERMINAL_SETTINGS as unknown as HvTerminalSettings;
  * nothing on screen. Caught in the GUI, where the terminal stayed dark after
  * switching to Paper.
  */
+/**
+ * One settings row, with the per-row reset §26 asks for. Module level, not inside the
+ * view: a component defined during render is a NEW component type every render, so
+ * React remounted every row (and the font picker in it lost its state) on each change.
+ */
+function Row({
+  label,
+  hint,
+  changed,
+  onReset,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  changed: boolean;
+  onReset: () => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className="flex items-start gap-4 py-2.5 border-b border-line last:border-0">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-bold">{label}</div>
+        {hint && <div className="text-[12px] text-ink-soft mt-0.5">{hint}</div>}
+      </div>
+      <div className="shrink-0 flex items-center gap-2">
+        {children}
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!changed}
+          title="Reset to the default"
+          className="text-[11px] px-1.5 py-0.5 rounded border-2 border-line text-ink-soft enabled:hover:text-ink enabled:hover:border-line-strong disabled:opacity-0 cursor-pointer"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function TerminalView({
   settings,
   onChange,
@@ -85,38 +125,6 @@ export function TerminalView({
   const reset = <K extends keyof HvTerminalSettings>(key: K): void => {
     patch({ [key]: defaults[key] } as Partial<HvTerminalSettings>);
   };
-
-  /** One settings row, with the per-row reset §26 asks for. */
-  const Row = ({
-    label,
-    hint,
-    field,
-    children,
-  }: {
-    label: string;
-    hint?: string;
-    field: keyof HvTerminalSettings;
-    children: React.ReactNode;
-  }): React.JSX.Element => (
-    <div className="flex items-start gap-4 py-2.5 border-b border-line last:border-0">
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-bold">{label}</div>
-        {hint && <div className="text-[12px] text-ink-soft mt-0.5">{hint}</div>}
-      </div>
-      <div className="shrink-0 flex items-center gap-2">
-        {children}
-        <button
-          type="button"
-          onClick={() => reset(field)}
-          disabled={!changed(field)}
-          title="Reset to the default"
-          className="text-[11px] px-1.5 py-0.5 rounded border-2 border-line text-ink-soft enabled:hover:text-ink enabled:hover:border-line-strong disabled:opacity-0 cursor-pointer"
-        >
-          Reset
-        </button>
-      </div>
-    </div>
-  );
 
   const input = "rounded-lg border-2 border-line bg-paper px-2 py-1 text-[13px] outline-none focus:border-tangerine";
   const num = (v: number, on: (n: number) => void, step = 1, w = "w-20"): React.JSX.Element => (
@@ -205,26 +213,26 @@ export function TerminalView({
               ? "Looking for monospace fonts on this machine…"
               : `${families.length} monospace ${families.length === 1 ? "font" : "fonts"} found on this machine.`
           }
-          field="fontFamily"
+          changed={changed("fontFamily")} onReset={() => reset("fontFamily")}
         >
           <FontPicker value={s.fontFamily} families={families} onPick={(f) => patch({ fontFamily: f })} />
         </Row>
-        <Row label="Font size" field="fontSize">{num(s.fontSize, (v) => patch({ fontSize: v }))}</Row>
-        <Row label="Line height" field="lineHeight">{num(s.lineHeight, (v) => patch({ lineHeight: v }), 0.1)}</Row>
-        <Row label="Letter spacing" field="letterSpacing">{num(s.letterSpacing, (v) => patch({ letterSpacing: v }), 0.5)}</Row>
-        <Row label="Cursor style" field="cursorStyle">{pick(s.cursorStyle, ["bar", "block", "underline"] as const, (v) => patch({ cursorStyle: v }))}</Row>
-        <Row label="Cursor blink" field="cursorBlink">{toggle(s.cursorBlink, (v) => patch({ cursorBlink: v }))}</Row>
+        <Row label="Font size" changed={changed("fontSize")} onReset={() => reset("fontSize")}>{num(s.fontSize, (v) => patch({ fontSize: v }))}</Row>
+        <Row label="Line height" changed={changed("lineHeight")} onReset={() => reset("lineHeight")}>{num(s.lineHeight, (v) => patch({ lineHeight: v }), 0.1)}</Row>
+        <Row label="Letter spacing" changed={changed("letterSpacing")} onReset={() => reset("letterSpacing")}>{num(s.letterSpacing, (v) => patch({ letterSpacing: v }), 0.5)}</Row>
+        <Row label="Cursor style" changed={changed("cursorStyle")} onReset={() => reset("cursorStyle")}>{pick(s.cursorStyle, ["bar", "block", "underline"] as const, (v) => patch({ cursorStyle: v }))}</Row>
+        <Row label="Cursor blink" changed={changed("cursorBlink")} onReset={() => reset("cursorBlink")}>{toggle(s.cursorBlink, (v) => patch({ cursorBlink: v }))}</Row>
         <Row
           label="Minimum contrast ratio"
           hint="Auto-lightens unreadable output from a badly-behaved program. The palettes above already pass on their own."
-          field="minimumContrastRatio"
+          changed={changed("minimumContrastRatio")} onReset={() => reset("minimumContrastRatio")}
         >
           {num(s.minimumContrastRatio, (v) => patch({ minimumContrastRatio: v }), 0.5)}
         </Row>
       </Section>
 
       <Section icon="terminal" title="Shell" subtitle={SHELL_COPY.subtitle}>
-        <Row label="Shell path" hint={SHELL_COPY.pathHint} field="shellPath">
+        <Row label="Shell path" hint={SHELL_COPY.pathHint} changed={changed("shellPath")} onReset={() => reset("shellPath")}>
           <input
             value={s.shellPath ?? ""}
             placeholder={SHELL_COPY.placeholder}
@@ -232,14 +240,14 @@ export function TerminalView({
             className={`${input} w-64`}
           />
         </Row>
-        <Row label="Shell arguments" hint={SHELL_COPY.argsHint} field="shellArgs">
+        <Row label="Shell arguments" hint={SHELL_COPY.argsHint} changed={changed("shellArgs")} onReset={() => reset("shellArgs")}>
           <input
             value={s.shellArgs.join(" ")}
             onChange={(e) => patch({ shellArgs: e.target.value.split(/\s+/).filter(Boolean) })}
             className={`${input} w-64`}
           />
         </Row>
-        <Row label="Extra environment" hint="One KEY=value per line. Merged over the inherited environment." field="env">
+        <Row label="Extra environment" hint="One KEY=value per line. Merged over the inherited environment." changed={changed("env")} onReset={() => reset("env")}>
           <textarea
             rows={3}
             value={Object.entries(s.env).map(([k, v]) => `${k}=${v}`).join("\n")}
@@ -264,25 +272,25 @@ export function TerminalView({
       </Section>
 
       <Section icon="terminal" title="Behaviour" subtitle="How the terminal reacts to you.">
-        <Row label="Scrollback" hint="Lines kept per terminal. Also the window the agent can read in a later build." field="scrollback">
+        <Row label="Scrollback" hint="Lines kept per terminal. Also the window the agent can read in a later build." changed={changed("scrollback")} onReset={() => reset("scrollback")}>
           {num(s.scrollback, (v) => patch({ scrollback: v }), 500, "w-28")}
         </Row>
-        <Row label="Copy on select" field="copyOnSelect">{toggle(s.copyOnSelect, (v) => patch({ copyOnSelect: v }))}</Row>
-        <Row label="Right-click pastes" hint="Off by default — a right-click opens the context menu instead." field="rightClickPastes">
+        <Row label="Copy on select" changed={changed("copyOnSelect")} onReset={() => reset("copyOnSelect")}>{toggle(s.copyOnSelect, (v) => patch({ copyOnSelect: v }))}</Row>
+        <Row label="Right-click pastes" hint="Off by default — a right-click opens the context menu instead." changed={changed("rightClickPastes")} onReset={() => reset("rightClickPastes")}>
           {toggle(s.rightClickPastes, (v) => patch({ rightClickPastes: v }))}
         </Row>
         <Row
           label="Warn on multi-line paste"
           hint="A safety setting, not a preference: a pasted block ending in a newline runs the moment it lands."
-          field="warnMultilinePaste"
+          changed={changed("warnMultilinePaste")} onReset={() => reset("warnMultilinePaste")}
         >
           {toggle(s.warnMultilinePaste, (v) => patch({ warnMultilinePaste: v }))}
         </Row>
-        <Row label="Confirm close while running" hint="Closing a terminal tab kills its process." field="confirmCloseRunning">
+        <Row label="Confirm close while running" hint="Closing a terminal tab kills its process." changed={changed("confirmCloseRunning")} onReset={() => reset("confirmCloseRunning")}>
           {toggle(s.confirmCloseRunning, (v) => patch({ confirmCloseRunning: v }))}
         </Row>
-        <Row label="Bell" field="bell">{pick(s.bell, ["off", "visual", "sound"] as const, (v) => patch({ bell: v }))}</Row>
-        <Row label="Word separators" hint="Characters that end a word for double-click selection." field="wordSeparator">
+        <Row label="Bell" changed={changed("bell")} onReset={() => reset("bell")}>{pick(s.bell, ["off", "visual", "sound"] as const, (v) => patch({ bell: v }))}</Row>
+        <Row label="Word separators" hint="Characters that end a word for double-click selection." changed={changed("wordSeparator")} onReset={() => reset("wordSeparator")}>
           <input value={s.wordSeparator} onChange={(e) => patch({ wordSeparator: e.target.value })} className={`${input} w-64 font-mono`} />
         </Row>
       </Section>

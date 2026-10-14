@@ -17,7 +17,7 @@ Gather the facts yourself; do NOT rely on your summary of this session:
 
 Then write the prompt with these sections, in this order:
 
-- **Read first, in this order, don't skip**: `CLAUDE.md`, the relevant `docs/validation/*.md`,
+- **Read first, in this order, don't skip**: `AGENTS.md`, the relevant `docs/validation/*.md`,
   `git log --oneline -8`. End with: "Treat those as truth over anything I summarize here."
 - **What was just built** — one line per commit, newest last, with the real file paths touched.
   Say plainly whether it is local-only / unpushed.
@@ -27,7 +27,7 @@ Then write the prompt with these sections, in this order:
   (missing `DEEPSEEK_API_KEY`, no GUI pass, etc.). If a change was verified by
   tests/typecheck/build alone and never driven live, say exactly that.
 - **Known landmines** — repo traps that bit us this session, plus the standing ones from
-  CLAUDE.md that apply to this branch.
+  AGENTS.md that apply to this branch.
 - **Deliberate deferrals** — anything skipped on purpose, so the next session doesn't "fix" it
   silently. Point at the doc that records them.
 - **Open questions** — anything I asked that you did not answer.

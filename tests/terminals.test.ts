@@ -1,16 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { attachWriteErrorHandler, TerminalManager } from "../src/main/terminals";
-import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 
 const require_ = createRequire(import.meta.url);
 const settle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+// What a shell PRINTS or RUNS is polled for, never slept on: a loaded runner can take seconds to
+// bring the shell up. A fixed sleep stays only where the assertion is that something does NOT happen.
+const SHELL_UP = { timeout: 15_000, interval: 100 };
 
 // A POSIX shell on every platform (Git Bash on Windows) — see tests/shellFixture.ts
 // for why these tests do not switch to PowerShell syntax.
-import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
+import { FAST } from "./shellFixture";
 import { FOREGROUND_SUPPORTED as FOREGROUND, SHELL_NAME } from "./shellFixture";
 
 describe("node-pty packaging", () => {
@@ -47,8 +49,7 @@ describe("TerminalManager", () => {
     try {
       await settle(700);
       m.write(t.id, "echo HVMANAGER_$((6*7))\n");
-      await settle(1500);
-      expect(seen.join("")).toMatch(/HVMANAGER_42/);
+      await vi.waitFor(() => expect(seen.join("")).toMatch(/HVMANAGER_42/), SHELL_UP);
       // The mirror is fed the same bytes — this is what a re-attaching
       // renderer and part 2's agent read both depend on.
       expect(m.readText(t.id)).toMatch(/HVMANAGER_42/);
@@ -64,9 +65,8 @@ describe("TerminalManager", () => {
     try {
       await settle(700);
       m.write(t.id, "printf '\\033[31mRED\\033[0m\\n'\n");
-      await settle(1500);
+      await vi.waitFor(() => expect(m.readText(t.id)).toMatch(/RED/), SHELL_UP);
       const text = m.readText(t.id)!;
-      expect(text).toMatch(/RED/);
       // eslint-disable-next-line no-control-regex
       expect(text).not.toMatch(/\x1b\[/);
     } finally {
@@ -81,7 +81,8 @@ describe("TerminalManager", () => {
       await settle(800);
       expect(m.foreground(t.id)).toBeNull();
       m.write(t.id, "sleep 4\n");
-      await settle(1200);
+      if (FOREGROUND) await vi.waitFor(() => expect(m.foreground(t.id)).toBe("sleep"), SHELL_UP);
+      else await settle(1200);
       // Windows cannot answer this and says so by staying null (terminals.ts
       // FOREGROUND_SUPPORTED, measured). The assertion is written for BOTH arms
       // rather than skipped, so the Windows contract is covered rather than absent:
@@ -101,7 +102,8 @@ describe("TerminalManager", () => {
       expect(t.title).toBe(SHELL_NAME);
       await settle(800);
       m.write(t.id, "sleep 4\n");
-      await settle(1200);
+      if (FOREGROUND) await vi.waitFor(() => expect(titles).toContain("sleep"), SHELL_UP);
+      else await settle(1200);
       // On Windows the tab keeps the SHELL's name — there is no foreground source —
       // and the one thing that must never happen is the terminal NAME leaking into
       // the tab, which is what pty.process returns there.
@@ -144,7 +146,7 @@ describe("TerminalManager", () => {
       m.rename(t.id, "pinned");
       m.rename(t.id, "   ");
       m.write(t.id, "sleep 4\n");
-      await settle(1500);
+      await vi.waitFor(() => expect(m.get(t.id)!.title).toBe(FOREGROUND ? "sleep" : SHELL_NAME), SHELL_UP);
       // The point of the test is that clearing a user title RETURNS the tab to
       // whatever the platform can follow — the command on POSIX, the shell name on
       // Windows. What must not survive is the pinned title.
@@ -185,7 +187,7 @@ describe("TerminalManager", () => {
     try {
       await settle(800);
       m.write(t.id, "exit 3\n");
-      await settle(1500);
+      await vi.waitFor(() => expect(exits).toHaveLength(1), SHELL_UP);
       expect(exits[0]?.[0]).toBe(t.id);
       expect(exits[0]?.[1]).toBe(3);
       const info = m.get(t.id);
@@ -211,8 +213,7 @@ describe("TerminalManager", () => {
       info = m.create("ws1", process.cwd(), { ...FAST, shellPath: "/nope/not/a/shell" }, 80, 24);
     }).not.toThrow();
     try {
-      await settle(1500);
-      expect(exits).toHaveLength(1);
+      await vi.waitFor(() => expect(exits).toHaveLength(1), SHELL_UP);
       const after = m.get(info.id);
       expect(after?.running).toBe(false);
       expect(after?.exitCode).not.toBe(0);

@@ -216,7 +216,7 @@ function ImportPicker({
 }): React.JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(scan.skills.map((s) => s.id)));
   const [busy, setBusy] = useState(false);
-  const toggle = (id: string): void => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id: string): void => setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const doImport = async (): Promise<void> => {
     setBusy(true);
     try {

@@ -11,7 +11,6 @@ import {
   openTerminal,
   openBrowserTab,
   allBrowsers,
-  allChats,
   splitAt,
   splitHalf,
   type WorkspaceTabs,

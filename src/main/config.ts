@@ -920,7 +920,7 @@ export function writeTintinwebSettings(): void {
 /** Record the user's choice for one agent and re-derive the settings file the bridge reads. */
 export function setAgentEnabled(name: string, enabled: boolean): void {
   const cfg = load();
-  cfg.agentsEnabled = { ...(cfg.agentsEnabled ?? {}), [name]: enabled };
+  cfg.agentsEnabled = { ...cfg.agentsEnabled, [name]: enabled };
   save(cfg);
   writeSubagentSettings();
 }

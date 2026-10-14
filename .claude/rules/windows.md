@@ -17,6 +17,8 @@ paths:
 - **Kill the TREE.** `child.kill()` is TerminateProcess — no handler runs, so every bash command and
   stdio MCP server outlives the session. Use `taskkill /T /F` with NO grace period (Pi appends its
   session file with `appendFileSync`, and its own SIGTERM path skips the stdout flush anyway).
+  Never once the child has exited (`PiClient.stop()` checks): Windows reuses a freed pid within
+  moments, and `/T` would take the new owner's whole tree.
 - Paths fold separators and case on win32 via `hv-paths.ts` (permission rules, the outside-workspace
   ask, write confinement) — otherwise a `src/**` rule matches nothing and `D:\other` reads as inside
   the workspace. In the renderer `basename()` splits on both separators; the things that only LOOK

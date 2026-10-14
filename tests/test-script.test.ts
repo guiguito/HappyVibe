@@ -31,8 +31,8 @@ describe("npm test is portable", () => {
     expect(pkg.scripts.test).not.toContain("=");
   });
 
-  it("gate still runs build then the suite", () => {
-    expect(pkg.scripts.gate).toBe("npm run build && npm test");
+  it("gate runs lint, then the build, then the suite", () => {
+    expect(pkg.scripts.gate).toBe("npm run lint && npm run build && npm test");
   });
 });
 

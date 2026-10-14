@@ -82,6 +82,7 @@ export function McpCatalogSection({
     void refreshInstalled().catch(() => { /* non-fatal — cards just show uninstalled */ });
     // Optimistic default: only badge "needs Node" once we know it's missing.
     void window.hv.nodeAvailable().then(setHasNode).catch(() => setHasNode(true));
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- refreshInstalled is rebuilt every render; it reads only what is listed
   }, [workspaceId, refreshKey]);
 
   const browse = (

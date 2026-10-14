@@ -138,7 +138,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
       // Keep the full object in the console for anyone with devtools open.
       console.error("[voice] startCapture failed", err);
     }
-  }, [onError]);
+  }, [onError, instanceId, settings?.inputDeviceId, settings?.echoCancellation, settings?.noiseSuppression, settings?.autoGainControl]);
 
   const finish = useCallback(async () => {
     const s = session.current;
@@ -164,7 +164,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
     } finally {
       setTranscribing(false);
     }
-  }, [onError, onText]);
+  }, [onError, onText, instanceId]);
 
   const discard = useCallback(() => {
     runId.current++;
@@ -173,7 +173,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
     if (micHolder === instanceId) micHolder = null;
     setRecording(false);
     setLevel(0);
-  }, []);
+  }, [instanceId]);
 
   const dispatch = useCallback(
     (e: GestureEvent) => {
@@ -187,7 +187,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
       else if (r.action === "stop") void finish();
       else if (r.action === "cancel") discard();
     },
-    [begin, finish, discard],
+    [begin, finish, discard, settings?.holdThresholdMs, settings?.maxRecordingMs],
   );
 
   // The toggle-mode cap. One timer while recording, rather than a global tick.
@@ -196,7 +196,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
     const max = settings?.maxRecordingMs ?? 300_000;
     const t = setTimeout(() => dispatch({ type: "tick", at: Date.now() + max + 1 }), max);
     return () => clearTimeout(t);
-  }, [recording, dispatch]);
+  }, [recording, dispatch, settings?.maxRecordingMs]);
 
   const handleKey = useCallback(
     (e: React.KeyboardEvent | KeyboardEvent, kind: "down" | "up") => {
@@ -212,7 +212,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
       }
       dispatch({ type: kind === "down" ? "keydown" : "keyup", code, at: Date.now() });
     },
-    [dispatch, ready, onNeedsActivation],
+    [dispatch, ready, on, onNeedsActivation],
   );
 
   const toggle = useCallback(() => {
@@ -226,7 +226,7 @@ export function useDictation({ settings, onText, onError, onNeedsActivation }: O
       gesture.current = { ...initialGesture(), recording: true, latched: true, startedAt: Date.now() };
       void begin();
     }
-  }, [ready, recording, begin, finish, onNeedsActivation]);
+  }, [ready, on, recording, begin, finish, onNeedsActivation]);
 
   const cancelOnEscape = useCallback((): boolean => {
     if (!session.current && !recording) return false;

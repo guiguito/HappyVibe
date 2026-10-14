@@ -7034,7 +7034,7 @@ export function registerIpc(
 
   ipcMain.handle("hv:plugins-add-marketplace", async (_e, url: string) => {
     const clean = String(url ?? "").trim();
-    if (!/^https:\/\//.test(clean)) return { ok: false as const, error: "Use an https URL to a marketplace.json." };
+    if (!clean.startsWith("https://")) return { ok: false as const, error: "Use an https URL to a marketplace.json." };
     try {
       // Validates that the URL really is a marketplace before recording it.
       // Its plugins are NOT listed yet: phase 2 indexes a user-added marketplace
