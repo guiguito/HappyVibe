@@ -43,7 +43,8 @@ beforeAll(async () => {
   src = ((await c.send({ type: "get_state" })).data as { sessionFile: string }).sessionFile;
   c.stop();
 }, 90_000);
-afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+// stop() only signals: a fork's Pi can still be writing its last files while this runs (ENOTEMPTY).
+afterAll(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
 test("a live user message_end carries the file entry's own message.timestamp (the piTs key)", () => {
   expect(userTs).toHaveLength(2);
