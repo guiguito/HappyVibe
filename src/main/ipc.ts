@@ -1808,6 +1808,9 @@ export function registerIpc(
         // other two. Forced: the session is still marked busy at this instant,
         // so a gated push would drop exactly the refresh the user is waiting for.
         if (meta) pushGitChanged(meta.workspaceId, { force: true });
+        // §14: the fs watcher only runs while a file tree or tab is open — without this, a skill
+        // written with skill-creator stays needs-review and never spawns.
+        if (meta) autoApproveCreatedSkills(meta.workspaceId);
       }
     });
     client.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
@@ -6716,7 +6719,7 @@ export function registerIpc(
   // Auto-approve a NEW workspace skill the agent authored while skill-creator is
   // active in a live session for that workspace (the user drove the creation, so
   // no separate review). Content changes to an already-approved skill still flip
-  // to needs-review (unchanged). Called from the workspace watcher.
+  // to needs-review (unchanged). Called from the workspace watcher and at every turn end.
   const autoApproveCreatedSkills = (workspaceId: string): void => {
     const liveInWs = manager.activeIds().some((id) => index.get(id)?.workspaceId === workspaceId && sessionHasSkill(id, SKILL_CREATOR));
     if (!liveInWs) return;
