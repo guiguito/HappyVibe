@@ -17,8 +17,15 @@ describe("tintinwebSettings — every value stated, none inherited", () => {
       widgetMode: "off", fleetView: false, agentMentions: "off", outputTranscript: false,
       schedulingEnabled: false, worktreeIsolation: false, disableDefaultAgents: true,
       fallbackSubagent: "none", reportUsage: false, rememberAgents: true, maxConcurrent: 4,
-      workflowsEnabled: true,
+      workflowsEnabled: true, packageAgents: false, packageWorkflows: false,
     });
+  });
+
+  it("package agents/workflows (0.22) stay off — a fourth discovery source that would bypass P5", () => {
+    // The gates exist only if upstream still applies them from subagents.json.
+    const src = fs.readFileSync("pi-runtime/node_modules/@tintinweb/pi-subagents/src/settings.ts", "utf8");
+    expect(src).toContain("appliers.setPackageAgents(s.packageAgents)");
+    expect(src).toContain("appliers.setPackageWorkflows(s.packageWorkflows)");
   });
 
   it("keeps keys it does not own (upstream's schema, merge-written)", () => {

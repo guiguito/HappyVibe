@@ -87,3 +87,12 @@ describe("§13 round 27 — HV_IMAGE_MODEL", () => {
     expect(spawnWith({}).env.HV_IMAGE_MODEL).toBeUndefined();
   });
 });
+
+describe("Pi 1.3.0 — resume restores a session's active tools, but never past --exclude-tools", () => {
+  const AS = "pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js";
+  test.skipIf(!require("node:fs").existsSync(AS))("restored names pass the same check --exclude-tools feeds", () => {
+    const src = require("node:fs").readFileSync(AS, "utf8") as string;
+    expect(src).toMatch(/_pendingToolNames = new Set\(names\.filter\(\(name\) => this\._isAllowedTool\(name\)\)\)/);
+    expect(src).toMatch(/_isAllowedTool\(name\) \{\s*if \(this\._excludedTools\?\.\(name\)\)\s*return false;/);
+  });
+});

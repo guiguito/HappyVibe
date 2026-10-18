@@ -43,9 +43,8 @@ describe("afterPack signing", () => {
     "finds the real pi-runtime binaries, anydoc included",
     () => {
       const files: string[] = machOFiles(path.join(__dirname, "..", "pi-runtime", "node_modules"));
-      // 5 since §13 (2026-10-05) dropped pi-mcp-adapter and its @napi-rs/keyring binaries
-      // (7 before; Pi 1.0.1 had already stopped nesting its own pi-tui copy).
-      expect(files.length).toBeGreaterThanOrEqual(5);
+      // 3 since Pi 1.2 dropped esbuild and chord: anydoc + pi-tui's two darwin prebuilds.
+      expect(files.length).toBeGreaterThanOrEqual(3);
       expect(files.some((f) => f.endsWith("anydoc.darwin-arm64.node"))).toBe(true);
     },
   );

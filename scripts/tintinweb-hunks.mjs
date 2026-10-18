@@ -1,9 +1,9 @@
 /**
- * The hunks of HappyVibe's owned patch to @tintinweb/pi-subagents 0.19.0 (PRD §3 2026-09-26;
+ * The hunks of HappyVibe's owned patch to @tintinweb/pi-subagents 0.22.0 (PRD §3 2026-09-26;
  * spec: Notion "tintinweb/pi-subagents — evaluation & migration plan" §3.4). Anchors are copied
  * verbatim from the pinned version; a pin bump that moves one fails `npm ci` loudly.
  *
- *  P1  children inherit the parent's project trust (loader AND session share one manager)
+ *  P1  retired at 0.21: upstream now hands children the parent's project trust (tintinweb-trust pins it)
  *  P2  an `extensions:` list of paths only stops discovery (upstream-worthy on its own)
  *  P3  the host's child policy decides what loads, who is being built, and what is refused
  *  P4  a project's own subagents.json is never read under HappyVibe
@@ -55,23 +55,30 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
     replace: `  if (agentConfig?.memory && !hvChildPolicy()) { // hv-patch:P3-memory — agent memory is HappyVibe's (§33), never an agent file's`,
   },
   {
-    id: "P1-loader",
+    id: "P3-policy",
     file: "src/agent-runner.ts",
     find: `  const loader = new DefaultResourceLoader({
-    cwd: configCwd,
+    settingsManager,
+`,
+    replace: `  const hvPolicy = hvChildPolicy(); // hv-patch:P3-policy
+  const loader = new DefaultResourceLoader({
+    settingsManager,
+`,
+  },
+  {
+    id: "P2-loader",
+    file: "src/agent-runner.ts",
+    find: `    cwd: configCwd,
     agentDir,
     noExtensions,
     additionalExtensionPaths,
     extensionsOverride,
     noSkills,
 `,
-    replace: `  // hv-patch:P1-loader — P1 inherit the parent's trust; P2 no discovery for path-only lists; P3 the host decides what loads.
-  const hvPolicy = hvChildPolicy();
-  const hvSettings = SettingsManager.create(configCwd, agentDir, { projectTrusted: ctx.isProjectTrusted?.() ?? false });
-  const loader = new DefaultResourceLoader({
-    cwd: configCwd,
+    replace: `    cwd: configCwd,
     agentDir,
-    settingsManager: hvSettings,
+    // hv-patch:P2-loader — P2 no discovery for path-only lists; P3 the host decides what loads. Under the
+    // policy noExtensions also keeps Pi's built-ins (mcp, codemode, tool-search) out: only the guard loads.
     // P2: path entries put their canonical name in keepNames too, so "path-only" = every kept name came from a path.
     noExtensions: hvPolicy ? true : noExtensions || (!!additionalExtensionPaths && !loadAll && [...keepNames].every((n) => additionalExtensionPaths.some((p) => extensionCanonicalName(p) === n))),
     additionalExtensionPaths: hvPolicy ? hvPolicy.extensionPaths() : additionalExtensionPaths,
@@ -85,12 +92,6 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
     file: "src/agent-runner.ts",
     find: `  await runInChildSessionContext(() => loader.reload());`,
     replace: `  await runInChildSessionContext(() => loader.reload(), { agentId: options.agentId, type }); // hv-patch:P3-identity`,
-  },
-  {
-    id: "P1-settings",
-    file: "src/agent-runner.ts",
-    find: `  const settingsManager = SettingsManager.create(configCwd, agentDir);`,
-    replace: `  const settingsManager = hvSettings; // hv-patch:P1-settings — one trust-inheriting manager for the loader AND the session`,
   },
   {
     id: "P3-sessiondir",
