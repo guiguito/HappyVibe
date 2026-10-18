@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolvePiSpawn } from "../src/main/pi/spawn";
+import { haveRuntime, piAiDist } from "../tools/pi-ai-dir.mjs";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -24,11 +25,8 @@ test("off by default — we add nothing, so the 5min TTL stands", () => {
 });
 
 // ── docs round #18: who honours it, pinned against pi-ai itself ─────────────
-const PI_AI = path.resolve(
-  __dirname,
-  "../pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist",
-);
-const HAVE_RUNTIME = fs.existsSync(path.join(PI_AI, "api"));
+const PI_AI = piAiDist(runtime);
+const HAVE_RUNTIME = haveRuntime(runtime); // not pi-ai's path: a moved pi-ai must fail here, not skip
 /** The pi-ai api modules that read PI_CACHE_RETENTION. A bump that adds or drops one fails here — re-check the Models copy. */
 const READERS = [
   "anthropic-messages.js",

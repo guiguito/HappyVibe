@@ -12,6 +12,7 @@ import {
 import { KEY_RESOLVED_PLAN_PROVIDERS, PLAN_PROVIDERS } from "../src/main/calls";
 import { offeredImageModels } from "../pi-runtime/extensions/hv-images";
 import imageProbe from "../tools/provider-catalog/image-probe.json";
+import { haveRuntime, piAiDist } from "../tools/pi-ai-dir.mjs";
 
 /**
  * Pin-bump gate for the generated provider catalog (key-free).
@@ -24,11 +25,10 @@ import imageProbe from "../tools/provider-catalog/image-probe.json";
  * Skips itself when pi-runtime/node_modules is absent (fresh clone, CI without
  * the runtime install) rather than failing for a reason that is not a defect.
  */
-const PI_AI_PROVIDERS = path.resolve(
-  __dirname,
-  "../pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/all.js",
-);
-const HAVE_RUNTIME = fs.existsSync(PI_AI_PROVIDERS);
+const RUNTIME = path.resolve(__dirname, "../pi-runtime");
+const PI_AI_PROVIDERS = path.join(piAiDist(RUNTIME), "providers/all.js");
+// Skip only when Pi itself is absent: gating on pi-ai's path skipped this gate when the layout moved.
+const HAVE_RUNTIME = haveRuntime(RUNTIME);
 
 interface UpstreamProvider {
   id: string;
@@ -90,10 +90,9 @@ describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", 
   });
 
   test("the registry is reachable at the path the generator uses", async () => {
-    // The reach itself is the contract: pi-ai is a NESTED scoped dep of
-    // pi-coding-agent, not a top-level `pi-ai`. If a bump moves it, the
-    // generator silently produces nothing — so assert the path, not just the data.
-    expect(HAVE_RUNTIME).toBe(true);
+    // The reach itself is the contract: if a bump moves pi-ai somewhere piAiDist doesn't look,
+    // the generator produces nothing — so assert the path, not just the data.
+    expect(fs.existsSync(PI_AI_PROVIDERS), PI_AI_PROVIDERS).toBe(true);
     expect((await upstream()).length).toBeGreaterThan(30);
   });
 

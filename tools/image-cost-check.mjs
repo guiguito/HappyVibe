@@ -3,8 +3,9 @@
 //   set -a; . ./.env; set +a; node tools/image-cost-check.mjs [model-id]
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { piAiDist } from "./pi-ai-dir.mjs";
 
-const PA = path.resolve("pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist");
+const PA = piAiDist(path.resolve("pi-runtime"));
 const { getBuiltinImageModels } = await import(pathToFileURL(path.join(PA, "providers/all.js")).href);
 const { generateImages } = await import(pathToFileURL(path.join(PA, "images.js")).href);
 const key = process.env.OPENROUTER_API_KEY;
