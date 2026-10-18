@@ -40,8 +40,11 @@ into a day.
 On `main`? `git checkout -b chore/bump-<pkg>-<version>`. Never commit to `main`.
 
 ```
-cd pi-runtime && npm install <pkg>@<version> --save-exact
+cd pi-runtime && npm install <pkg>@<version> --save-exact && npm ci
 ```
+
+`npm install <pkg>` does NOT run our postinstall, so it exits 0 with tintinweb unpatched — the
+`npm ci` is what applies (or fails on) the owned patches.
 
 Then **check the lockfile diff for collateral**:
 
