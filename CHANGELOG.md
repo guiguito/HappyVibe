@@ -41,7 +41,7 @@
 - **Each MCP tool has its own row on Agent tools**, with the rule name your permissions use for it.
   The agent can no longer add an MCP server or sign in to one by itself; only you can, on **MCP**.
 
-Runtime: Pi 1.0.2 · sub-agents 0.19.0
+Runtime: Pi 1.3.0 · sub-agents 0.22.0
 
 ## [0.1.0] — 2026-09-30
 

@@ -34,14 +34,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { offeredImageModels } from "../../pi-runtime/extensions/hv-images.ts";
+import { piAiDist } from "../pi-ai-dir.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** Where pi-ai really lives: nested under pi-coding-agent, scoped. */
-const PI_AI_PROVIDERS = path.join(
-  ROOT,
-  "pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/all.js",
-);
+/** Where Pi's pi-ai really lives (nested or hoisted — see tools/pi-ai-dir.mjs). */
+const PI_AI_PROVIDERS = path.join(piAiDist(path.join(ROOT, "pi-runtime")), "providers/all.js");
 
 /**
  * The one hand-written exclusion, and it is a PRODUCT decision rather than a

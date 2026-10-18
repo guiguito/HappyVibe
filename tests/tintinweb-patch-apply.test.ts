@@ -69,9 +69,9 @@ describe("the vendored package carries every hunk", () => {
 
   it("is pinned exactly, installed, and patched at install", () => {
     const pkg = JSON.parse(fs.readFileSync("pi-runtime/package.json", "utf8"));
-    expect(pkg.dependencies["@tintinweb/pi-subagents"]).toBe("0.19.0");
+    expect(pkg.dependencies["@tintinweb/pi-subagents"]).toBe("0.22.0");
     expect(pkg.scripts.postinstall).toMatch(/node \.\.\/scripts\/patch-tintinweb\.mjs/);
-    expect(JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8")).version).toBe("0.19.0");
+    expect(JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8")).version).toBe("0.22.0");
   });
 
   it("every hunk id is unique", () => {

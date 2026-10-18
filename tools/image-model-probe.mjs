@@ -9,8 +9,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { piAiDist } from "./pi-ai-dir.mjs";
 
-const PA = path.resolve("pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist");
+const PA = piAiDist(path.resolve("pi-runtime"));
 const OUT = path.resolve("tools/provider-catalog/image-probe.json");
 const { getBuiltinImageModels } = await import(pathToFileURL(path.join(PA, "providers/all.js")).href);
 const { generateImages } = await import(pathToFileURL(path.join(PA, "images.js")).href);

@@ -19,7 +19,7 @@ const INDEX = src("index.ts");
 describe("the package", () => {
   it("is the pinned version, with the entry spawn.ts loads", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8"));
-    expect(pkg.version).toBe("0.19.0");
+    expect(pkg.version).toBe("0.22.0");
     expect(fs.existsSync(path.join(RT, TW_RELPATH))).toBe(true);
   });
 
@@ -28,7 +28,10 @@ describe("the package", () => {
     // upstream now has an opinion about which files are public. Re-check the import.
     const pkg = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8"));
     expect(pkg.exports).toBeUndefined();
-    expect(src("custom-agents.ts")).toMatch(/export function loadCustomAgents\(cwd: string, strict = false\)/);
+    expect(src("custom-agents.ts")).toMatch(/export function loadCustomAgents\(\s*cwd: string,\s*strict = false,\s*opts: LoadCustomAgentsOptions = \{\},?\s*\)/);
+    // 0.22: package agents. The bridge passes these two as [] (NO_PACKAGE_AGENTS) — a rename would re-open them.
+    expect(src("custom-agents.ts")).toMatch(/opts\.packageDirs \?\?/);
+    expect(src("custom-agents.ts")).toMatch(/opts\.packageFiles \?\?/);
   });
 });
 
@@ -74,8 +77,10 @@ describe("the lifecycle the relay and the busy gate listen to", () => {
 describe("Pi still loads an explicit extension path under --no-extensions (P2/P3 rest on it)", () => {
   it("additionalExtensionPaths survive noExtensions", () => {
     const rl = fs.readFileSync(path.join(RT, "node_modules/@earendil-works/pi-coding-agent/dist/core/resource-loader.js"), "utf8");
-    // The CLI/explicit list is kept; only DISCOVERED extensions are dropped.
-    expect(rl).toMatch(/const extensionPaths = this\.noExtensions\s*\?\s*cliEnabledExtensions\s*:/);
+    // The CLI/explicit list is kept; only DISCOVERED extensions are dropped — settings-enabled
+    // built-ins (mcp, codemode, tool-search; tintinweb 0.21 hands them to children) included,
+    // so a child under the host policy loads the guard and nothing else.
+    expect(rl).toMatch(/const extensionPaths = \(?this\.noExtensions\s*\?\s*cliEnabledExtensions\s*:/);
     expect(rl).toContain("this.packageManager.resolveExtensionSources(this.additionalExtensionPaths");
   });
 });
@@ -102,7 +107,8 @@ describe("pi-tui is an explicit pin — tintinweb imports it and only peer-decla
   it("declared, pinned to what Pi declares, and installed", () => {
     const pin = dep(rtPkg("package.json"), TUI);
     expect(pin).toBeDefined();
-    expect(`^${pin}`).toBe(dep(rtPkg("node_modules/@earendil-works/pi-coding-agent/package.json"), TUI));
+    // Pi 1.3.0 pins its internal packages exact (upstream #10865); it declared `^` before.
+    expect(pin).toBe(dep(rtPkg("node_modules/@earendil-works/pi-coding-agent/package.json"), TUI));
     expect(rtPkg("node_modules/@earendil-works/pi-tui/package.json").version).toBe(pin);
   });
   it("tintinweb still needs it — the reason the pin exists", () => {

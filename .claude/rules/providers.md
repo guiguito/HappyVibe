@@ -15,14 +15,11 @@ paths:
   `npm run catalog:providers`; `BYOK_PROVIDERS`/`BYOK_PROVIDER_IDS`/`OAUTH_PROVIDERS` are views over
   it. `tests/provider-catalog.test.ts` RE-DERIVES it from the vendored tree, so a bump that adds a
   provider fails there instead of drifting.
-- pi-ai is a NESTED scoped dep:
-  `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/` —
-  since Pi 1.0.1 dropped its shrinkwrap, because tintinweb's open peer range (`>=0.84.0`) keeps a
-  stale top-level pi-ai from the lockfile (extensions never see that copy; Pi serves its embedded
-  one). Never `npm dedupe` pi-runtime to "fix" it: dedupe hoists the NEWEST matching pi-ai (1.0.3
-  under Pi 1.0.2, measured 2026-10-05) — a silent runtime change behind the pin. If the nested
-  copy ever disappears, the generator plus `provider-catalog` / `cache-retention` tests fail loudly
-  at the nested path — repoint them then.
+- Find pi-ai ONLY through `tools/pi-ai-dir.mjs` (`piAiDist`): nested under pi-coding-agent when
+  npm nests it, else hoisted (Pi 1.3.0 pins it exact, so it hoists). Never hard-code either path —
+  a test gated on `existsSync(<path>)` skips silently when the layout moves; gate on `haveRuntime`.
+  Never `npm dedupe` pi-runtime: it can hoist a NEWER matching pi-ai than Pi pins, a silent
+  runtime change behind the pin.
 - A new OAuth flow can need the options Pi's own `/login` passes as `login()`'s 4th argument
   (`interactive-mode.js` `loginProvider`); "Sign in with ChatGPT" throws without `getDeviceId`. The
   bridge's `/hv-login` passes the same one — diff the two on a bump. `tests/auth-bridge.test.ts`.

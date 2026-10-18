@@ -14,7 +14,8 @@ paths:
   `scripts/tintinweb-hunks.mjs` at `pi-runtime` postinstall: two-pass (every anchor checked before
   anything is written), anchor-EXACT, each replacement marked `hv-patch:<id>` so a re-run is a no-op.
   A missing or ambiguous anchor FAILS `npm ci` and writes nothing.
-- Parts: **P1** a child inherits the parent's project trust · **P2** no discovery for a path-only
+- Parts: **P1** retired at 0.21 — upstream now hands a child the parent's project trust
+  (`tintinweb-trust` still pins the behaviour) · **P2** no discovery for a path-only
   extension list · **P3** the host child policy, memory/session-dir clamps, exact-model-only
   resolution (refuse, never substitute) and the refusal inside `spawn()` · **P4** a project's
   `.pi/subagents.json` is ignored · **P5** a workflow's `gate:` shell command never runs; saved
@@ -55,7 +56,11 @@ paths:
   FIRST — before the boundary, under bypass too, never as an ask — and `twBoundary` doesn't list it.
   The Sub-agents switch off means tintinweb isn't loaded and the bridge injects no roster.
 - Discovery: `<agentDir>/agents`, `.pi/agents`, `.agents/agents` only. Upstream defaults are off:
-  `disableDefaultAgents`, `fallbackSubagent: "none"` (an unknown type FAILS). Locked settings:
+  `disableDefaultAgents`, `fallbackSubagent: "none"` (an unknown type FAILS), and
+  `packageAgents`/`packageWorkflows` (Pi `packages[]` would bypass P5); the bridge's own
+  `loadCustomAgents` calls pass empty package lists, since its import may not share the gate.
+- Children never load Pi's built-ins (mcp, codemode, tool-search): P3 forces `noExtensions`, and
+  under it Pi keeps only the guard path (`tintinweb-contract` pins the loader line). Locked settings:
   `TINTINWEB_SETTINGS` (`subagentSettings.ts` → `<agentDir>/subagents.json`). The per-agent switch is
   `<agentDir>/settings.json` `agentOverrides`, read LIVE by the bridge.
 - Plan mode routes `subagent` to `needs-boundary`, not blocked — a read-only explorer is the most

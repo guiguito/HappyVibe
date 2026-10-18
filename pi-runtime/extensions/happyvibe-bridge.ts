@@ -366,12 +366,15 @@ const readonly = readonlyFromEnv(process.env);
  */
 const approvedBoundaries = new Map<string, string[]>();
 
+/** Never package agents (TINTINWEB_SETTINGS packageAgents:false) — passed explicitly, since this import may not share tintinweb's gate state. */
+const NO_PACKAGE_AGENTS = { packageDirs: [], packageFiles: [] };
+
 /** What tintinweb would give one agent, plus whether its FILE declared `tools:` (see hv-tw-gate.ts). */
 async function twAgentInfo(name: string): Promise<TwAgentInfo | undefined> {
   // Relative path, never a bare specifier: the package has no exports map and the
   // bridge must read the SAME discovery tintinweb uses (pinned by the contract test).
   const { loadCustomAgents } = await import("../node_modules/@tintinweb/pi-subagents/src/custom-agents.ts");
-  const cfg = loadCustomAgents(process.cwd()).get(name);
+  const cfg = loadCustomAgents(process.cwd(), false, NO_PACKAGE_AGENTS).get(name);
   if (!cfg) return undefined;
   let declared = false;
   try {
@@ -392,7 +395,7 @@ async function twEnumerateAgents(): Promise<AgentDef[]> {
   let all: Map<string, { description?: string; enabled?: boolean; model?: string; systemPrompt?: string; sourcePath?: string; source?: string; builtinToolNames?: string[] }>;
   try {
     const { loadCustomAgents } = await import("../node_modules/@tintinweb/pi-subagents/src/custom-agents.ts");
-    all = loadCustomAgents(process.cwd());
+    all = loadCustomAgents(process.cwd(), false, NO_PACKAGE_AGENTS);
   } catch {
     return []; // discovery must never take the session down
   }

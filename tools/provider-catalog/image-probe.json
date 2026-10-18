@@ -1,5 +1,5 @@
 {
-  "probedAt": "2026-10-08",
+  "probedAt": "2026-10-18",
   "models": {
     "black-forest-labs/flux-3-image": {
       "verdict": "wrong-endpoint",
@@ -246,6 +246,21 @@
     "x-ai/grok-imagine-image-quality": {
       "verdict": "ok",
       "charged": 0.0495
+    },
+    "black-forest-labs/flux-3-image-klein": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"black-forest-labs/flux-3-image-klein is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
+    },
+    "google/gemini-nano-banana-2.1": {
+      "verdict": "failed",
+      "charged": null,
+      "error": "429: {\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemini-nano-banana-2.1 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your"
+    },
+    "tencent/hy-image-v3.5-preview": {
+      "verdict": "wrong-endpoint",
+      "charged": null,
+      "error": "404: {\"message\":\"tencent/hy-image-v3.5-preview is an image generation model and cannot be used with the chat/completions endpoint. Use the /api/v1/images endpoint instead.\",\"code\":404}"
     }
   }
 }

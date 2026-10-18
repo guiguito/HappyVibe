@@ -71,6 +71,8 @@ export function disabledAgentOverrides(
  *  - rememberAgents on: the child's session file is what transcripts, cost and
  *    thinking read.
  *  - maxConcurrent 4: children share the session's process (R1); measured to hold.
+ *  - packageAgents/packageWorkflows off (0.22): agents and workflow scripts from Pi
+ *    `packages[]` would be a fourth discovery source and bypass P5's agent-dir-only rule.
  */
 export const TINTINWEB_SETTINGS = {
   widgetMode: "off",
@@ -85,6 +87,8 @@ export const TINTINWEB_SETTINGS = {
   rememberAgents: true,
   maxConcurrent: 4,
   workflowsEnabled: true,
+  packageAgents: false,
+  packageWorkflows: false,
 } as const;
 
 /** Merge the locked set over whatever is there (the file's schema is upstream's). */
