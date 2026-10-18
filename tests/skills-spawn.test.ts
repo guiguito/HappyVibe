@@ -29,3 +29,12 @@ test("skillsFile → HV_SKILLS_FILE env", () => {
   const spec = resolvePiSpawn("/ws", "/sessions", runtime, { skillsFile: "/tmp/manifest.json" });
   expect(spec.env.HV_SKILLS_FILE).toBe("/tmp/manifest.json");
 });
+
+// The fs watcher only runs while a file tree or file tab is open, so a skill the agent wrote with
+// skill-creator stayed needs-review — never spawned — unless that panel happened to be open.
+test("turn end auto-approves skills created with skill-creator, panel open or not", async () => {
+  const ipc = (await import("node:fs")).readFileSync(path.join(process.cwd(), "src/main/ipc.ts"), "utf8");
+  const at = ipc.indexOf('if (e.type === "agent_end") {\n        // §35');
+  expect(at).toBeGreaterThan(-1);
+  expect(ipc.slice(at, ipc.indexOf("\n      }\n", at))).toContain("autoApproveCreatedSkills(meta.workspaceId)");
+});
