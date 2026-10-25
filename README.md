@@ -32,7 +32,7 @@ Everything is already set up — terminals, a browser, documents, git, sub-agent
 open it and start. You follow what the agent does in plain language, and nothing happens behind
 your back. That's what lets you relax and enjoy it.
 
-> **Status:** v0.1.0, pre-1.0 and moving fast. macOS, Windows and Linux.
+> **Status:** pre-1.0 and moving fast. macOS, Windows and Linux.
 
 ## Why HappyVibe
 
@@ -62,7 +62,7 @@ connection the app makes on its own has a switch.
 | **Work** | Streaming chat with tool cards and real diffs · file tree and editor · terminals · a built-in browser · documents (PDF, Office) · image generation (with OpenRouter) · voice dictation on your computer | [Session view](https://happyvibe.dev/docs/session-view/) · [Terminal](https://happyvibe.dev/docs/terminal/) · [Voice](https://happyvibe.dev/docs/voice/) |
 | **Git** | Save a version · Sync · Undo on top, real git underneath, every command shown · worktrees · a pull request written up for you, created only when you press Create | [Files and changes](https://happyvibe.dev/docs/files-and-changes/) |
 | **Delegate** | Plan mode · sub-agents · schedules that run on their own · memory across sessions · the agent asks you when it's unsure | [Schedules](https://happyvibe.dev/docs/schedules/) · [Memory](https://happyvibe.dev/docs/memory/) · [Agents](https://happyvibe.dev/docs/agents/) |
-| **Extend** | A plugin store · MCP servers with in-app sign-in · skills · prompt templates — each approved one by one | [Plugins](https://happyvibe.dev/docs/plugins/) · [MCP](https://happyvibe.dev/docs/mcp/) · [Skills](https://happyvibe.dev/docs/skills/) · [Prompts](https://happyvibe.dev/docs/prompts/) |
+| **Extend** | A plugin store · MCP servers with in-app sign-in · skills · prompts — each approved one by one | [Plugins](https://happyvibe.dev/docs/plugins/) · [MCP](https://happyvibe.dev/docs/mcp/) · [Skills](https://happyvibe.dev/docs/skills/) · [Prompts](https://happyvibe.dev/docs/prompts/) |
 | **See** | Context gauge · cost ledger · audit log of every permission decision · usage stats · the system prompt | [Stats](https://happyvibe.dev/docs/stats/) · [Audit log](https://happyvibe.dev/docs/audit-log/) · [System prompt](https://happyvibe.dev/docs/system-prompt/) |
 | **Control** | Permission rules · a switch and a token cost on every built-in tool · privacy switches · rewind, fork and duplicate a session | [Permissions](https://happyvibe.dev/docs/permissions/) · [Built-in tools](https://happyvibe.dev/docs/built-in-tools/) · [Privacy](https://happyvibe.dev/docs/privacy/) |
 
