@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] — 2026-10-25
 
 ### Heads up
 
@@ -8,23 +8,43 @@
   keychain, so each server that needed a sign-in asks again, once. The old entries stay in the
   keychain, unused: to remove them, search it for `pi-mcp-adapter.oauth` (**Keychain Access** on
   macOS, **Credential Manager** on Windows).
+- **Workflows is now off unless you turned it on yourself.** It costs about 5.5k tokens on every
+  request. If you use it, switch it back on under **Built-in tools** → **Sub-agents**.
 
 ### Added
 
+- **Switch off any tool the agent gets.** **Built-in tools** has a switch for MCP, sub-agents,
+  Workflows, skills, images and each core tool, and shows what each one costs your context every
+  turn. A tool you switch off is gone for sub-agents too, even with all permissions bypassed. The
+  shell is one switch: off means no bash and no PowerShell.
+- **Fork from a message.** **Fork from here** on a message opens a new tab with everything before
+  it, and puts that message back in the box. **Duplicate** in the tab menu copies a whole session.
+  The original is never changed.
+- **While the agent works, the busy dots say what it is doing**: the file it is writing, the tool
+  it is running, or how long it has been waiting on the model. **Take back** puts every message you
+  queued back in the box.
+- **The agent can make images** with OpenRouter models (only those with a known price). It asks
+  before each one, because each costs money, and saves it as a new file without overwriting yours.
+  Any picture in the chat opens full size with **Copy** and **Save…**.
+- **Compact automatically** on **Models** turns automatic compaction off. When it's off and the
+  context fills up, the chat says so instead of compacting.
+- **When the agent asks you something while you're in another app**, the Dock icon bounces (the
+  taskbar flashes on Windows) and the badge counts how many questions are waiting.
+- **Clear all data** on **Privacy** starts you over as if HappyVibe were just installed. It refuses
+  while a worktree has unsaved work, and never touches your project folders.
+- **First launch has a Personalize step** that picks which tools, skills and agents to start with,
+  and shows what each one costs.
 - **Everything HappyVibe sends on its own can now be turned off, in one click each.** **Privacy**
   gains switches for the feedback button, the "how is this session going" rating, remote
   settings, and Pi's check for new models (off means models released after your version only appear
   when you update). The **Changelog** gains **Check for updates automatically**. Everything still
   starts on. Thanks to @plyd.
-
 - **On a managed computer, an administrator can lock any of these off before the first launch.**
   A locked switch stays off and says why. The guide's **Privacy** page explains how to set it up
   on macOS, Windows and Linux. Your conversations still go to the model you picked.
-
 - **The approval dialog tells you what a server says about its tool**: "Server says: read-only"
   or "Server says: may delete data". It's the server's own claim, not a check. In plan mode, a tool
   its server calls read-only now follows your rules instead of always asking.
-
 - **A new way to sign in with your ChatGPT plan.** On **Models**, **ChatGPT** replaces the older
   ChatGPT (Codex) sign-in. It can use only the models your plan includes; pick one above your plan
   and the session tells you so. If you already signed in the old way, it keeps working and stays
@@ -32,14 +52,22 @@
 
 ### Changed
 
-- **The bundled coding agent moved up to Pi 1.0**, and with it more models to choose from on most
+- **The bundled coding agent moved up to Pi 1.3**, and with it more models to choose from on most
   providers.
 - **MCP runs inside the agent itself now, with no keychain password prompts.** The agent searches
   for a server's tools when it needs them, so servers you rarely use stop costing context on every
   turn. On **MCP**, a server's tool list shows tool names only, and a workspace server that a
   global one of the same name replaces is marked **overridden**.
+- **Plugins** lists 207 plugins, up from 194, checked against the store on 2026-10-25.
 - **Each MCP tool has its own row on Agent tools**, with the rule name your permissions use for it.
   The agent can no longer add an MCP server or sign in to one by itself; only you can, on **MCP**.
+
+### Fixed
+
+- A message the agent refused, for example while it was busy, used to vanish without a word. It
+  now shows what happened and the words go back in the box.
+- The session cost now counts tool calls, cache refreshes and compaction summaries, so it matches
+  what the provider charges again. All costs are estimates.
 
 Runtime: Pi 1.3.0 · sub-agents 0.22.0
 
