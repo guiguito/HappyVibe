@@ -114,6 +114,15 @@ export const ALLOWED_MANIFEST_KEYS = new Set<string>([
   "minClaudeCodeVersion",
   // A URL to the vendor's privacy policy (real, from `dynatrace`, 2026-09-16).
   "privacyPolicy",
+  // Vendor links and an asset path (real, from `bigdata-com`, `dropbox`, `stackhawk-api`,
+  // chronograph, 2026-10-25): `icon` is `logo` under another name; the rest are URLs.
+  "privacy",
+  "privacy_policies",
+  "privacyPolicyUrl",
+  "termsOfServiceUrl",
+  "supportUrl",
+  "documentationUrl",
+  "icon",
   // Allowed as a KEY only — its contents are inspected for component types by
   // detectComponents, because `experimental.monitors` is how a monitor is
   // declared (real, from `convex`) and a monitor is an out-of-band shell-exec
