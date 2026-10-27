@@ -14,8 +14,17 @@ paths:
   `floor-ask` default clamps allow→ask, so a read tool that is polled must be in `PLAN_PASS_TOOLS`
   or it prompts on every poll.
 - Typed `/hv-dangerous on` is refused by `slashGuard.ts`; only main's `client.send` (`applyBypassLive`) and the banner's `/hv-dangerous off` reach the bridge command.
-- Session grants and dangerous mode are in-memory: any respawn (MCP reload, hibernation wake) resets
-  them to safe defaults.
+- Session grants live in the bridge but MAIN keeps a copy (`sessionGrants.ts`, fed by
+  `allow-session` audit rows) and hands it back as `HV_GRANTS` on every respawn of the same session
+  id; an MCP-config reload drops only `mcp:` grants; a fork/duplicate (new id) and an app quit start empty.
+- The engine's safe defaults beyond `SAFE_TOOLS` (round 29): `write`/`edit` inside the workspace
+  unless a path part starts with `.` or it is `AGENTS.md`/`CLAUDE.md` (`isProtectedPath`), resolved
+  through symlinks via `realPath`; `bash` when `isReadOnlyShellCommand` (`hv-shell.ts` — plan mode's
+  ported classifier, wrapped, never edited; refuses anything that runs project code); and, in the
+  bridge, a delegation whose boundary `isReadOnlyBoundary`.
+- Command rules: deny/ask match ANY part (`commandPositions`, permissive); allow needs EVERY part
+  covered (`allowByParts`, strict split) — an exact no-wildcard allow is the one whole-string match.
+  One-click grants go through `grantRules` (escaped); on a shell prompt `commandGrantPatterns`.
 
 ## Plan mode (§23, `hv-plan.ts` + bridge + `src/main/plans.ts`)
 - Per-session read-only mode. `gatePlanCall` runs BEFORE the bypass check and the rule engine —

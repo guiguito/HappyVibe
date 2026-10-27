@@ -24,7 +24,7 @@ export const HOWTO_COPY = {
   rules: {
     title: "How rules combine",
     body:
-      "Three layers answer every tool call: your global rules, this workspace's rules, and any grants you have given the running session. The most restrictive answer wins — deny beats ask, ask beats allow — so a workspace rule can tighten a global allow, but it can never loosen a global deny. When no rule matches, a short list of safe tools runs on its own; everything else asks you. “Allow for session” lives in memory only, so it is gone when the session restarts — which also happens when you change MCP configuration.",
+      "Three layers answer every tool call: your global rules, this workspace's rules, and any grants you have given the running session. The most restrictive answer wins — deny beats ask, ask beats allow — so a workspace rule can tighten a global allow, but it can never loosen a global deny. When no rule matches, a short list of safe tools runs on its own, and so do edits inside the workspace, read-only shell commands and read-only sub-agents; everything else asks you. “Allow for session” lasts until you quit HappyVibe, through any restart of the session; changing MCP configuration clears it for MCP tools only.",
   },
   mcpBadge: {
     title: "What the badge means",

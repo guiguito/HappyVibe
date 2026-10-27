@@ -23,7 +23,7 @@ export class SessionGrants {
   /** An MCP configuration change can point a server name somewhere else: its grants go. */
   dropMcp(sessionId: string): void {
     const s = this.bySession.get(sessionId);
-    if (s) for (const t of [...s]) if (t.startsWith("mcp:")) s.delete(t);
+    if (s) for (const t of s) if (t.startsWith("mcp:")) s.delete(t); // deleting while iterating a Set is safe
   }
 
   forget(sessionId: string): void {
