@@ -37,8 +37,8 @@ const CI_PATHS = process.platform === "win32";
  */
 export const CONFINED_WRITE_TOOLS = new Set(["write", "edit"]);
 
-/** realpath the nearest EXISTING ancestor, then re-attach the rest. */
-function resolveThroughLinks(target: string): string {
+/** realpath the nearest EXISTING ancestor, then re-attach the rest. Exported for the bridge (round 29). */
+export function resolveThroughLinks(target: string): string {
   let head = target;
   const tail: string[] = [];
   for (;;) {
@@ -147,7 +147,7 @@ export function guardDecision(args: {
   const { tool, input, workspace } = args;
   const d = childDecision(
     args.rules,
-    { tool, input, workspace, caseInsensitivePaths: CI_PATHS },
+    { tool, input, workspace, caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks },
     { bypass: args.bypass, rulesReadable: args.rulesReadable },
   );
   // §13 round 26: first, and under bypass too — a switched-off tool is absent, not a permission.

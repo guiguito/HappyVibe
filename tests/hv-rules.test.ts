@@ -20,8 +20,8 @@ describe("no-match defaults (pre-B4 behavior preserved)", () => {
     }
   });
   test("everything else asks by default", () => {
-    expect(evaluate(EMPTY_RULES, call("bash", { command: "ls" }))).toEqual({ action: "ask", source: "default" });
-    expect(evaluate(EMPTY_RULES, call("write", { path: "a.txt" }))).toEqual({ action: "ask", source: "default" });
+    expect(evaluate(EMPTY_RULES, call("bash", { command: "npm install" }))).toEqual({ action: "ask", source: "default" });
+    expect(evaluate(EMPTY_RULES, call("write", { path: ".env" }))).toEqual({ action: "ask", source: "default" });
   });
 });
 
@@ -49,7 +49,8 @@ describe("v5: workspace confinement", () => {
   });
   test("in-workspace file tools keep their defaults", () => {
     expect(evaluate(EMPTY_RULES, call("read", { path: "src/a.ts" }))).toEqual({ action: "allow", source: "safe-default" });
-    expect(evaluate(EMPTY_RULES, call("write", { path: "src/a.ts" }))).toEqual({ action: "ask", source: "default" });
+    // Round 29: an in-workspace edit is a safe default too.
+    expect(evaluate(EMPTY_RULES, call("write", { path: "src/a.ts" }))).toEqual({ action: "allow", source: "safe-default" });
   });
   test("bash is NOT path-confined (stays under command rules)", () => {
     expect(evaluate(EMPTY_RULES, call("bash", { command: "cat /etc/passwd" }))).toEqual({ action: "ask", source: "default" });
@@ -68,7 +69,7 @@ describe("tool layer", () => {
   test("exact tool name match", () => {
     const r = rules([{ layer: "tool", pattern: "bash", action: "deny" }]);
     expect(evaluate(r, call("bash", { command: "ls" }))).toMatchObject({ action: "deny", source: "rule" });
-    expect(evaluate(r, call("write", { path: "x" }))).toMatchObject({ action: "ask", source: "default" });
+    expect(evaluate(r, call("write", { path: ".env" }))).toMatchObject({ action: "ask", source: "default" });
   });
   test("glob tool pattern", () => {
     const r = rules([{ layer: "tool", pattern: "*", action: "deny" }]);
@@ -84,7 +85,7 @@ describe("command layer", () => {
   test("glob matches across spaces", () => {
     const r = rules([{ layer: "command", pattern: "git push*", action: "ask" }]);
     expect(evaluate(r, call("bash", { command: "git push origin main" })).action).toBe("ask");
-    expect(evaluate(r, call("bash", { command: "git status" })).source).toBe("default");
+    expect(evaluate(r, call("bash", { command: "git status" })).source).not.toBe("rule");
   });
   test("leading/trailing whitespace in the command is trimmed", () => {
     const r = rules([{ layer: "command", pattern: "rm *", action: "deny" }]);
@@ -97,12 +98,12 @@ describe("command layer", () => {
   });
   test("no command arg → command rules never match", () => {
     const r = rules([{ layer: "command", pattern: "*", action: "deny" }]);
-    expect(evaluate(r, call("write", { path: "a.txt" })).source).toBe("default");
+    expect(evaluate(r, call("write", { path: ".env" })).source).toBe("default");
   });
   test("regex specials in patterns are literal", () => {
     const r = rules([{ layer: "command", pattern: "echo (hi)", action: "deny" }]);
     expect(evaluate(r, call("bash", { command: "echo (hi)" })).action).toBe("deny");
-    expect(evaluate(r, call("bash", { command: "echo hi" })).source).toBe("default");
+    expect(evaluate(r, call("bash", { command: "echo hi" })).source).not.toBe("rule");
   });
 });
 
@@ -118,7 +119,7 @@ describe("path layer", () => {
   test("* stays within a segment; ** crosses segments", () => {
     const star = rules([{ layer: "path", pattern: "src/*.ts", action: "allow" }]);
     expect(evaluate(star, call("write", { path: "src/a.ts" })).action).toBe("allow");
-    expect(evaluate(star, call("write", { path: "src/deep/a.ts" })).source).toBe("default");
+    expect(evaluate(star, call("write", { path: "src/deep/a.ts" })).source).not.toBe("rule");
     const dstar = rules([{ layer: "path", pattern: "src/**", action: "allow" }]);
     expect(evaluate(dstar, call("write", { path: "src/deep/a.ts" })).action).toBe("allow");
   });
@@ -129,7 +130,7 @@ describe("path layer", () => {
   });
   test("no path-ish args → path rules never match", () => {
     const r = rules([{ layer: "path", pattern: "**", action: "deny" }]);
-    expect(evaluate(r, call("bash", { command: "ls" })).source).toBe("default");
+    expect(evaluate(r, call("bash", { command: "ls" })).source).not.toBe("rule");
   });
   test("absolute path outside the workspace still matches absolute patterns", () => {
     const r = rules([{ layer: "path", pattern: "/etc/**", action: "deny" }]);
@@ -339,5 +340,48 @@ describe("command rules read each part (round 29)", () => {
     const r = rf({ layer: "tool", pattern: "mcp-manage:https://\\*/mcp", action: "allow" });
     expect(evaluate(r, { tool: "mcp-manage:https://*/mcp", input: {}, workspace: "/ws" }).action).toBe("allow");
     expect(evaluate(r, { tool: "mcp-manage:https://evil.example/mcp", input: {}, workspace: "/ws" }).action).toBe("ask");
+  });
+});
+
+describe("safe defaults (round 29)", () => {
+  const ev = (tool: string, input: Record<string, unknown>, extra: Partial<Parameters<typeof evaluate>[1]> = {}) =>
+    evaluate(EMPTY_RULES, { tool, input, workspace: "/ws", ...extra });
+
+  test.each(["src/a.ts", "/ws/src/a.ts", "docs/notes.md"])("edit/write inside the workspace runs: %s", (p) => {
+    expect(ev("edit", { path: p })).toEqual({ action: "allow", source: "safe-default" });
+    expect(ev("write", { path: p, content: "x" })).toEqual({ action: "allow", source: "safe-default" });
+  });
+
+  test.each([".env", ".git/hooks/pre-commit", ".github/workflows/ci.yml", ".pi/settings.json", ".agents/plans/001-x.md",
+    "AGENTS.md", "packages/api/AGENTS.md", "agents.md", "CLAUDE.md"])("a protected path still asks: %s", (p) => {
+    expect(ev("edit", { path: p })).toEqual({ action: "ask", source: "default" });
+  });
+
+  test.each(["../x.ts", "/tmp/x.ts", "~/x.ts"])("outside the workspace asks: %s", (p) => {
+    expect(ev("write", { path: p })).toMatchObject({ action: "ask", source: "outside-workspace" });
+  });
+
+  test("a symlink that lands outside asks (Review Focus 3)", () => {
+    const realPath = (p: string): string => p.replace("/ws/link", "/tmp");
+    expect(ev("write", { path: "/ws/link/a.txt" }, { realPath }).action).toBe("ask");
+    expect(ev("write", { path: "link/a.txt" }, { realPath }).action).toBe("ask");
+  });
+
+  test("windows paths, case-insensitive (Review Focus 4)", () => {
+    const win = { workspace: "C:\\ws", caseInsensitivePaths: true };
+    expect(ev("edit", { path: "C:\\ws\\.git\\config" }, win).action).toBe("ask");
+    expect(ev("edit", { path: "c:/ws/src/a.ts" }, win).action).toBe("allow");
+  });
+
+  test("an explicit ask rule on edit still wins", () => {
+    const rules: RulesFile = { global: [{ layer: "tool", pattern: "edit", action: "ask" }], workspaces: {} };
+    expect(evaluate(rules, { tool: "edit", input: { path: "src/a.ts" }, workspace: "/ws" })).toMatchObject({ action: "ask", source: "rule" });
+  });
+
+  test("read-only bash runs; anything else, and other shells, ask", () => {
+    expect(ev("bash", { command: "git status" })).toEqual({ action: "allow", source: "safe-default" });
+    expect(ev("bash", { command: "cat ~/.ssh/id_rsa" })).toEqual({ action: "ask", source: "default" });
+    expect(ev("powershell", { command: "ls" }).action).toBe("ask");
+    expect(ev("terminal_run", { command: "ls" }).action).toBe("ask");
   });
 });

@@ -127,11 +127,12 @@ describe("what the rules actually do in the engine", () => {
     expect(call("git -C repo push -f")).toBe("ask");
   });
 
-  it("still asks for every git command when the user has added no allow", () => {
+  it("with no allow, a read-only git query runs and anything that changes the repo asks", () => {
     seedDefaultGitRules(rulesPath, false);
     const rules = read();
-    // bash is not a safe-default tool, so this is true with or without our rules.
-    expect(evaluate(rules, { tool: "bash", input: { command: "git status" }, workspace: "/ws" }).action).toBe("ask");
+    // Round 29: a read-only git query (`git status`) is a safe default; anything that changes the repo asks.
+    expect(evaluate(rules, { tool: "bash", input: { command: "git status" }, workspace: "/ws" }).action).toBe("allow");
+    expect(evaluate(rules, { tool: "bash", input: { command: "git commit -m x" }, workspace: "/ws" }).action).toBe("ask");
   });
 });
 

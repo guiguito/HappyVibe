@@ -27,7 +27,7 @@ export interface RulesFile {
 }
 
 import { containsPath, foldCase, isAbsolutePath, stripTrailingSep, toPosix } from "./hv-paths";
-import { commandParts, commandPositions, isReadOnlyPart } from "./hv-shell";
+import { commandParts, commandPositions, isReadOnlyPart, isReadOnlyShellCommand } from "./hv-shell";
 
 export interface ToolCall {
   tool: string;
@@ -41,6 +41,12 @@ export interface ToolCall {
    * seam — because this module is import-free by contract (the renderer loads it).
    */
   caseInsensitivePaths?: boolean;
+  /**
+   * Round 29: resolves an ABSOLUTE path through symlinks. Set by the bridge and the child
+   * guard (they have fs); absent in main's "test a call" preview — the one place a symlink
+   * inside the workspace is not followed. Only consulted for the edit safe default.
+   */
+  realPath?: (p: string) => string;
 }
 
 export interface Verdict {
@@ -346,6 +352,33 @@ function ruleMatches(rule: Rule, call: ToolCall): boolean {
   });
 }
 
+/** Round 29: the tools whose in-workspace calls are a safe default (Pi's own file writers). */
+export const WORKSPACE_EDIT_TOOLS: ReadonlySet<string> = new Set(["write", "edit"]);
+
+/**
+ * Round 29: an edit that still asks inside the workspace — any part starting with `.`
+ * (`.git`, `.env`, `.github`…: what Rewind does not snapshot, or what runs on its own)
+ * and `AGENTS.md`/`CLAUDE.md` at any depth, in any case (what every future session is told).
+ */
+export function isProtectedPath(relPosix: string): boolean {
+  const parts = relPosix.split("/").filter((s) => s !== "" && s !== ".");
+  if (parts.some((s) => s.startsWith(".") && s !== "..")) return true;
+  const last = (parts[parts.length - 1] ?? "").toLowerCase();
+  return last === "agents.md" || last === "claude.md";
+}
+
+/** Inside the workspace (through symlinks when the caller can resolve them) and not protected. */
+function editRunsFreely(raw: string, call: ToolCall): boolean {
+  const ci = call.caseInsensitivePaths === true;
+  if (escapesWorkspace(raw, call.workspace, ci)) return false;
+  const ws = stripTrailingSep(toPosix(call.workspace));
+  const p = toPosix(raw);
+  const abs = isAbsolutePath(raw) ? p : `${ws}/${p}`;
+  const rel = abs.slice(ws.length).replace(/^\/+/, "");
+  if (isProtectedPath(rel)) return false;
+  return !call.realPath || containsPath(call.realPath(call.workspace), call.realPath(abs), ci);
+}
+
 const RESTRICTIVENESS: Record<RuleAction, number> = { deny: 2, ask: 1, allow: 0 };
 
 /**
@@ -358,7 +391,7 @@ const RESTRICTIVENESS: Record<RuleAction, number> = { deny: 2, ask: 1, allow: 0 
  * Returns the first allow rule that covered a part (what the audit row credits).
  */
 function allowByParts<R extends Rule>(allows: R[], call: ToolCall): R | undefined {
-  const raw = call.input.command;
+  const raw = call.input?.command;
   if (typeof raw !== "string" || allows.length === 0) return undefined;
   const cmd = raw.trim();
   const exact = allows.find((r) => !hasWildcard(r.pattern) && globToRegExp(r.pattern, "command").test(cmd));
@@ -395,6 +428,16 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
     const outside = pathArgs(call.input).find((p) =>
       escapesWorkspace(p, call.workspace, call.caseInsensitivePaths === true));
     if (outside) return { action: "ask", source: "outside-workspace", outsidePath: outside };
+  }
+  // Round 29: an edit Rewind can undo, inside the workspace, runs without asking.
+  if (WORKSPACE_EDIT_TOOLS.has(call.tool)) {
+    const paths = pathArgs(call.input ?? {});
+    if (paths.length > 0 && paths.every((p) => editRunsFreely(p, call))) return { action: "allow", source: "safe-default" };
+  }
+  // Round 29: a read-only, workspace-confined shell command (bash only — hv-shell.ts).
+  if (call.tool === "bash" && typeof call.input?.command === "string" &&
+      isReadOnlyShellCommand(call.input.command, call.workspace, call.caseInsensitivePaths === true)) {
+    return { action: "allow", source: "safe-default" };
   }
   if (SAFE_TOOLS.has(call.tool)) return { action: "allow", source: "safe-default" };
   return { action: "ask", source: "default" };

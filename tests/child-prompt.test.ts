@@ -90,7 +90,7 @@ describe("the in-process guard asks instead of refusing", () => {
     expect(await h.call("bash", { command: "npm test" })).toBeUndefined();
     expect(await h.call("bash", { command: "npm run lint" })).toBeUndefined();
     expect(h.asks).toHaveLength(1);
-    expect(await h.call("write", { path: "x.txt", content: "hi" })).toMatchObject({ block: true });
+    expect(await h.call("write", { path: ".env", content: "hi" })).toMatchObject({ block: true });
     expect(h.asks.map((a) => a.tool)).toEqual(["bash", "write"]);
   });
 

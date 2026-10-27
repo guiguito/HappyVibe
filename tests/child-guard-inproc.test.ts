@@ -28,7 +28,7 @@ describe("guardDecision", () => {
   });
 
   it("inside the boundary, an ask is still denied (Phase 1: nobody to ask)", () => {
-    const d = guardDecision({ ...base, tool: "write", input: { path: path.join(ws, "a.txt"), content: "x" }, boundary: ["read", "write"] });
+    const d = guardDecision({ ...base, tool: "write", input: { path: path.join(ws, ".env"), content: "x" }, boundary: ["read", "write"] });
     expect(d).toMatchObject({ action: "deny", wouldHave: "ask" });
   });
 
@@ -44,7 +44,7 @@ describe("guardDecision", () => {
   });
 
   it("bypass extends to children inside their boundary, and still reports what the rules would have said", () => {
-    const d = guardDecision({ ...base, bypass: true, tool: "bash", input: { command: "ls" }, boundary: ["bash"] });
+    const d = guardDecision({ ...base, bypass: true, tool: "bash", input: { command: "npm install" }, boundary: ["bash"] });
     expect(d).toMatchObject({ action: "allow", wouldHave: "ask" });
   });
 
@@ -68,5 +68,14 @@ describe("guardDecision", () => {
 
   it("safe reads inside the boundary need no rule", () => {
     expect(guardDecision({ ...base, tool: "read", input: { path: "a.txt" }, boundary: READ_ONLY }).action).toBe("allow");
+  });
+});
+
+describe("round 29: a symlink inside the workspace", () => {
+  it("a write through a link that lands outside is refused", () => {
+    const link = path.join(ws, "link");
+    if (!fs.existsSync(link)) fs.symlinkSync(os.tmpdir(), link);
+    const d = guardDecision({ ...base, tool: "write", input: { path: path.join(link, "a.txt"), content: "x" }, boundary: ["read", "write"] });
+    expect(d.action).toBe("deny");
   });
 });

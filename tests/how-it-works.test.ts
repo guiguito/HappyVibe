@@ -61,7 +61,7 @@ describe("HOWTO_COPY", () => {
     expect(SAFE_TOOLS.size).toBeGreaterThan(0);
     const none: RulesFile = { global: [], workspaces: {} };
     expect(evaluate(none, { tool: [...SAFE_TOOLS][0], input: {}, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
-    expect(evaluate(none, { tool: "bash", input: { command: "ls" }, workspace: "/ws" })).toEqual({ action: "ask", source: "default" });
+    expect(evaluate(none, { tool: "bash", input: { command: "npm install" }, workspace: "/ws" })).toEqual({ action: "ask", source: "default" });
     expect(b).toContain("When no rule matches, a short list of safe tools runs on its own; everything else asks you.");
     expect(b).not.toMatch(/by silence/i);
   });

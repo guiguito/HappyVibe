@@ -22,6 +22,7 @@ import {
 import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef } from "./hv-agents";
 import { CHILD_CHOICES, WORKFLOW_CHOICES, WORKFLOW_TOOL, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource, type TwAgentInfo } from "./hv-tw-gate";
 import { setChildPolicy } from "./hv-child-policy";
+import { resolveThroughLinks } from "./hv-child-guard";
 import { registerTwRelay } from "./hv-tw-relay";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
@@ -1275,7 +1276,7 @@ export default function (pi: ExtensionAPI) {
       // the audit log back into a record of decisions rather than a record of
       // one setting being on.
       const shadow = evaluate(rules, {
-        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS,
+        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks,
       });
       audit(ctx.ui, {
         tool: permTool,
@@ -1296,7 +1297,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const v = evaluate(rules, {
-      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS,
+      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks,
     });
 
     if (v.action === "deny") {
