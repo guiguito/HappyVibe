@@ -690,6 +690,11 @@ interface HvRule {
   action: "allow" | "ask" | "deny";
 }
 
+/** Round 29: per scope, `layer|action|pattern` → ISO time the rule last decided a call. */
+interface HvRulesLastDecided {
+  global: Record<string, string>;
+  workspaces: Record<string, Record<string, string>>;
+}
 interface HvRulesFile {
   global: HvRule[];
   workspaces: Record<string, HvRule[]>;
@@ -1038,6 +1043,7 @@ interface HvApi {
   // B4: permissions v1
   getRules(): Promise<HvRulesFile>;
   setRules(rules: HvRulesFile): Promise<HvRulesFile>;
+  rulesLastDecided(): Promise<HvRulesLastDecided>;
   /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
   /** Round 29: `commands` (a shell prompt's patterns) writes command rules instead of a tool rule. */
   addPermissionRule(workspace: string | null, tool: string, commands?: string[]): Promise<HvRulesFile>;

@@ -716,6 +716,7 @@ export default function (pi: ExtensionAPI) {
           tool: row.tool, decision: row.decision, summary: row.summary, source: "subagent",
           wouldHave: row.wouldHave, ...(row.type ? { agent: row.type } : {}), ...(row.agentId ? { runId: row.agentId } : {}),
           ...(row.bypass ? { bypass: true } : {}),
+          ...(row.rule ? { rule: row.rule } : {}),
         });
       },
       // §10 (2026-09-26, Phase 4, decision 10): a child inherits the parent's session grants…

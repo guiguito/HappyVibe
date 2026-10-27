@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { HowItWorks } from "./HowItWorks";
 import { checkedAs, testedAction } from "../agents";
+import { timeagoLong } from "../timeago";
 
 /**
  * B4 rules editor, parameterized by scope (W1.4): no `workspace` prop → the
@@ -85,14 +86,23 @@ function TestBox({ workspace }: { workspace: string }): React.JSX.Element {
   );
 }
 
+/** Round 29: the line under each rule. `ts` is the ISO time it last decided a call. */
+export function lastDecidedLine(ts: string | undefined, now: number = Date.now()): string {
+  return ts ? `Last decided a call ${timeagoLong(Date.parse(ts), now)}` : "Never decided a call";
+}
+
 export function PermissionRulesSection({ workspace }: { workspace?: string }): React.JSX.Element {
   const [rules, setRules] = useState<HvRulesFile>(EMPTY);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Round 29: when each saved rule last decided a call, read from the audit log by main.
+  const [used, setUsed] = useState<HvRulesLastDecided>({ global: {}, workspaces: {} });
   useEffect(() => {
     void window.hv.getRules().then(setRules);
+    void window.hv.rulesLastDecided().then(setUsed);
   }, []);
+  const usedHere = (workspace ? used.workspaces[workspace] : used.global) ?? {};
 
   const current: HvRule[] = workspace ? (rules.workspaces[workspace] ?? []) : rules.global;
 
@@ -108,6 +118,7 @@ export function PermissionRulesSection({ workspace }: { workspace?: string }): R
 
   const save = async (): Promise<void> => {
     setRules(await window.hv.setRules(rules)); // main sanitizes + broadcasts reload
+    void window.hv.rulesLastDecided().then(setUsed);
     setDirty(false);
     setSaved(true);
   };
@@ -128,7 +139,8 @@ export function PermissionRulesSection({ workspace }: { workspace?: string }): R
       <div className="flex flex-col gap-2">
         {current.length === 0 && <EmptyState copy="rules" />}
         {current.map((r, i) => (
-          <div key={i} className="flex gap-2 items-center">
+          <div key={i}>
+          <div className="flex gap-2 items-center">
             <select value={r.layer} onChange={(e) => patch(i, { layer: e.target.value as HvRule["layer"] })} className={`${field} cursor-pointer`}>
               {LAYERS.map((l) => (
                 <option key={l} value={l}>
@@ -157,6 +169,8 @@ export function PermissionRulesSection({ workspace }: { workspace?: string }): R
             >
               ×
             </button>
+          </div>
+          {r.pattern.trim() && <p className="text-[11px] text-ink-soft mt-0.5 ml-1">{lastDecidedLine(usedHere[`${r.layer}|${r.action}|${r.pattern}`])}</p>}
           </div>
         ))}
       </div>

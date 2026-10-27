@@ -32,6 +32,8 @@ export interface PolicyAuditRow {
   reason?: string;
   /** docs-round #7: the bypass decided this call (an allow under HV_BYPASS). */
   bypass?: boolean;
+  /** Round 29: the rule that decided it, so a child-only rule doesn't read "Never decided a call". */
+  rule?: { layer: "tool" | "path" | "command"; pattern: string; action: "allow" | "ask" | "deny"; scope: "global" | "workspace" };
 }
 
 /** A child's `ask`, raised on the parent's channel (Phase 4). */

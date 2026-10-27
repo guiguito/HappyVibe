@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 import { containsPath } from "./hv-paths";
 import * as path from "node:path";
 import { EMPTY_RULES, parseRulesFile, SAFE_TOOLS, type RuleAction, type RulesFile } from "./hv-rules";
-import { childDecision } from "./hv-child-rules";
+import { childDecision, type ChildDecision } from "./hv-child-rules";
 import { offToolRefusal, parseBuiltins } from "./hv-builtins";
 import { childPolicy, currentChildSpawn, type ChildPolicy } from "./hv-child-policy";
 
@@ -143,7 +143,7 @@ export function guardDecision(args: {
   writeRoots?: readonly string[];
   /** §13 round 26: core tools the user switched off (HV_BUILTINS coreOff). */
   off?: readonly string[];
-}): { action: "allow" | "deny"; reason?: string; wouldHave: RuleAction; askable?: { grantable: boolean } } {
+}): { action: "allow" | "deny"; reason?: string; wouldHave: RuleAction; askable?: { grantable: boolean }; rule?: ChildDecision["rule"] } {
   const { tool, input, workspace } = args;
   const d = childDecision(
     args.rules,
@@ -170,7 +170,7 @@ export function guardDecision(args: {
     const askable = d.wouldHave === "ask" && args.rulesReadable && d.source !== undefined
       ? { grantable: d.source === "default" || d.source === "outside-workspace" }
       : undefined;
-    return { action: "deny", reason: d.reason, wouldHave: d.wouldHave, ...(askable ? { askable } : {}) };
+    return { action: "deny", reason: d.reason, wouldHave: d.wouldHave, ...(askable ? { askable } : {}), ...(d.rule ? { rule: d.rule } : {}) };
   }
   const escaped = args.bypass ? undefined : escapesWorkspace(tool, input, workspace, args.writeRoots ?? []);
   if (escaped) {
@@ -182,7 +182,7 @@ export function guardDecision(args: {
         `Write inside the workspace instead — it is ${workspace}, and a relative path lands there.`,
     };
   }
-  return { action: "allow", wouldHave: d.wouldHave };
+  return { action: "allow", wouldHave: d.wouldHave, ...(d.rule ? { rule: d.rule } : {}) };
 }
 
 /** Rules as the child sees them: read once, when the child is built. Unreadable ⇒ fail closed. */
@@ -216,13 +216,14 @@ function inProcessGuard(
   const canAsk = process.env.HV_READONLY !== "1" && typeof policy.ask === "function";
   // "Allow for this run": per CHILD (this factory runs once per child), so it dies with the run.
   const runGrants = new Set<string>();
-  const report = (tool: string, input: Record<string, unknown>, decision: "allow" | "deny", wouldHave: RuleAction, reason?: string): void => {
+  const report = (tool: string, input: Record<string, unknown>, decision: "allow" | "deny", wouldHave: RuleAction, reason?: string, rule?: ChildDecision["rule"]): void => {
     try {
       // docs-round #7: only an ALLOW under bypass is the bypass's decision. A boundary
       // refusal still holds under bypass, and marking it would read "bypass" on a deny.
       policy.audit({
         tool, decision, wouldHave, summary: summarise(input), agentId: who?.agentId, type: who?.type, reason,
         ...(bypass && decision === "allow" ? { bypass: true } : {}),
+        ...(rule ? { rule } : {}),
       });
     } catch {
       // An audit failure must NEVER change a permission outcome.
@@ -246,7 +247,7 @@ function inProcessGuard(
       report(tool, input, "deny", d.wouldHave, reason);
       return { block: true, reason };
     }
-    report(tool, input, d.action, d.wouldHave, d.reason);
+    report(tool, input, d.action, d.wouldHave, d.reason, d.rule);
     return d.action === "deny" ? { block: true, reason: d.reason } : undefined;
   });
 }

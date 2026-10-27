@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import { SessionGrants } from "./sessionGrants";
+import { lastDecidedByScope } from "./ruleUsage";
 import { parseImageDataUrl } from "./imageData";
 import { slashRefusal } from "./slashGuard";
 import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
@@ -4384,6 +4385,10 @@ export function registerIpc(
   };
 
   ipcMain.handle("hv:get-rules", () => readRules());
+
+  // Round 29: when each rule last decided a call (ruleUsage.ts), for the Permissions page.
+  ipcMain.handle("hv:rules-last-decided", async () =>
+    lastDecidedByScope(readRules(), (await log.read({ type: "permission.decision" })) as never, normPath));
 
   ipcMain.handle("hv:set-rules", (_e, rules: RulesFile) => writeRulesAndReload(rules));
 

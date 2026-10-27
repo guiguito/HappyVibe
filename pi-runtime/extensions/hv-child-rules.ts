@@ -32,6 +32,8 @@ export interface ChildDecision {
   /** Why the engine said what it said — present when the rules were actually evaluated.
    *  A parent session grant covers `default` / `outside-workspace` asks only, never an ask RULE. */
   source?: Verdict["source"];
+  /** Round 29: the rule that decided, for the audit row ("last decided a call"). */
+  rule?: Verdict["rule"];
 }
 
 function denyReason(tool: string, wouldHave: RuleAction): string {
@@ -66,10 +68,10 @@ export function childDecision(
   // still records the verdict it overrode, exactly like the parent's
   // source:"bypass". Checked before the fail-closed branch so an unreadable rules
   // file cannot re-arm a gate the user explicitly turned off.
-  if (opts.bypass) return { action: "allow", wouldHave: v.action, source: v.source };
+  if (opts.bypass) return { action: "allow", wouldHave: v.action, source: v.source, ...(v.rule ? { rule: v.rule } : {}) };
   if (!opts.rulesReadable && !SAFE_TOOLS.has(call.tool)) {
     return { action: "deny", reason: denyReason(call.tool, "ask"), wouldHave: "ask" };
   }
-  if (v.action === "allow") return { action: "allow", wouldHave: v.action, source: v.source };
-  return { action: "deny", reason: denyReason(call.tool, v.action), wouldHave: v.action, source: v.source };
+  if (v.action === "allow") return { action: "allow", wouldHave: v.action, source: v.source, ...(v.rule ? { rule: v.rule } : {}) };
+  return { action: "deny", reason: denyReason(call.tool, v.action), wouldHave: v.action, source: v.source, ...(v.rule ? { rule: v.rule } : {}) };
 }

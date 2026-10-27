@@ -136,3 +136,10 @@ describe("round 29 in children", () => {
     expect(childDecision(EMPTY_RULES, call("edit", { path: "/ws/a.ts" }), { bypass: false, rulesReadable: true }).action).toBe("allow");
   });
 });
+
+describe("round 29: a child's decision names its rule", () => {
+  it("an allow command rule is carried through for the audit row", () => {
+    const rules = withRules({ layer: "command", pattern: "npm test", action: "allow" });
+    expect(childDecision(rules, call("bash", { command: "npm test" }), open).rule?.pattern).toBe("npm test");
+  });
+});
