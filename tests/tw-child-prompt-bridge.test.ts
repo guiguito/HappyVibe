@@ -25,7 +25,7 @@ let client: PiClient | undefined;
 afterEach(() => { client?.stop(); client = undefined; });
 
 /** `answer` decides each CHILD prompt; the parent's own prompts are answered by `parent`. */
-async function boot(answer: (p: Perm) => string, opts: { readonly?: boolean; parent?: (p: Perm) => string } = {}) {
+async function boot(answer: (p: Perm) => string, opts: { readonly?: boolean; parent?: (p: Perm) => string; askWrite?: boolean } = {}) {
   const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-twask-agent-"));
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "hv-twask-ws-"));
   const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-twask-sess-"));
@@ -33,7 +33,10 @@ async function boot(answer: (p: Perm) => string, opts: { readonly?: boolean; par
   fs.writeFileSync(path.join(agentDir, "agents", "writer.md"), WRITER);
   fs.writeFileSync(path.join(agentDir, "subagents.json"), JSON.stringify(TINTINWEB_SETTINGS));
   const rulesFile = path.join(agentDir, "rules.json");
-  fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }], workspaces: {} }));
+  // Round 29: an in-workspace write is a safe default, so an explicit ask rule makes the child ask.
+  // A session grant never covers an ask RULE, so the grant test turns it off and writes dotfiles instead.
+  const askWrite = opts.askWrite === false ? [] : [{ layer: "tool", pattern: "write", action: "ask" }];
+  fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }, ...askWrite], workspaces: {} }));
   const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL, readonly: opts.readonly });
   const prompts: Array<{ perm: Perm; options?: string[] }> = [];
   const audits: Array<Record<string, unknown>> = [];
@@ -86,10 +89,11 @@ test.skipIf(!KEY)("a NEW run prompts again — a run grant dies with its run", a
 
 test.skipIf(!KEY)("the parent's session grant is inherited — the child writes with no prompt", async () => {
   // The parent's own write prompt is answered "Allow for session" first; then the child writes.
-  const b = await boot(() => "Deny", { parent: (p) => (p.tool === "write" ? "Allow for session" : "Deny") });
-  const ok1 = await askUntil(() => b.c.send({ type: "prompt", message: "Use the write tool yourself right now to create parent.txt containing P. Do nothing else." }), () => fs.existsSync(path.join(b.ws, "parent.txt")), { waitMs: 90_000 });
+  // Round 29: dotfiles still ask by default (protected), which is the ask a session grant covers.
+  const b = await boot(() => "Deny", { askWrite: false, parent: (p) => (p.tool === "write" ? "Allow for session" : "Deny") });
+  const ok1 = await askUntil(() => b.c.send({ type: "prompt", message: "Use the write tool yourself right now to create .parent.txt containing P. Do nothing else." }), () => fs.existsSync(path.join(b.ws, ".parent.txt")), { waitMs: 90_000 });
   expect(ok1).toBe(true);
-  const ok2 = await askUntil(() => b.c.send({ type: "prompt", message: delegate("create a file child.txt containing C") }), () => fs.existsSync(path.join(b.ws, "child.txt")), { waitMs: 120_000 });
+  const ok2 = await askUntil(() => b.c.send({ type: "prompt", message: delegate("create a file .child.txt containing C") }), () => fs.existsSync(path.join(b.ws, ".child.txt")), { waitMs: 120_000 });
   expect(ok2, JSON.stringify(b.childPrompts())).toBe(true);
   expect(b.childPrompts()).toEqual([]);
 }, 300_000);

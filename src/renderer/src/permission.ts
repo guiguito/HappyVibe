@@ -14,6 +14,11 @@ export interface PermissionInfo {
   tool: string;
   summary: string;
   /**
+   * Round 29: on a shell prompt, the command rules "Allow for workspace" and "Always allow"
+   * save — or null when none is safe to offer (both buttons are then hidden). Absent elsewhere.
+   */
+  commandGrant?: string[] | null;
+  /**
    * §12: the child's resolved reach, present only on a delegation prompt.
    *
    * Typed from the bridge's own pure module so the renderer cannot drift from
@@ -107,6 +112,9 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
         info.child = { agent: ch.agent, runId: ch.runId };
       }
       if (p.serverHint === "read-only" || p.serverHint === "may delete data") info.serverHint = p.serverHint;
+      if ("commandGrant" in p) {
+        info.commandGrant = Array.isArray(p.commandGrant) ? (p.commandGrant as unknown[]).filter((s): s is string => typeof s === "string") : null;
+      }
       if (p.reason === "outside-workspace") {
         info.reason = "outside-workspace";
         if (typeof p.path === "string") info.path = p.path;
@@ -210,3 +218,25 @@ export function parsePlanBlocked(r: UiRequest & { message?: string }): { toolCal
   }
   return null;
 }
+
+/** Round 3 #13: the choices a standard prompt offers — the bridge's three plus the two persistent grants. */
+export const EXPANDED_CHOICES: PermissionChoice[] = [
+  "Allow",
+  "Allow for session",
+  "Allow for workspace",
+  "Always allow",
+  "Deny",
+];
+
+/**
+ * Round 29: a shell prompt with nothing safe to save (null, or no part left to grant) offers
+ * no persistent grant at all — a button that writes nothing would be a lie.
+ */
+export function persistentChoices(info: PermissionInfo): PermissionChoice[] {
+  const none = info.commandGrant === null || (Array.isArray(info.commandGrant) && info.commandGrant.length === 0);
+  return none ? ["Allow", "Allow for session", "Deny"] : EXPANDED_CHOICES;
+}
+
+/** Round 29: the line a shell prompt shows above its buttons. */
+export const commandGrantLine = (patterns: string[]): string =>
+  `“Allow for workspace” and “Always allow” save: ${patterns.join(", ")}`;

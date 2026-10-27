@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, evaluate, isResultWait, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { commandGrantPatterns, EMPTY_RULES, evaluate, isResultWait, parseGrants, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   createChildOutputStore, rememberTwResult, substituteDeliveries,
 } from "./hv-subagent-delivery";
@@ -22,6 +22,7 @@ import {
 import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef } from "./hv-agents";
 import { CHILD_CHOICES, WORKFLOW_CHOICES, WORKFLOW_TOOL, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource, type TwAgentInfo } from "./hv-tw-gate";
 import { setChildPolicy } from "./hv-child-policy";
+import { resolveThroughLinks } from "./hv-child-guard";
 import { registerTwRelay } from "./hv-tw-relay";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
@@ -31,7 +32,7 @@ import {
 import { buildReadonlyPrompt, gateReadonlyCall, readonlyFromEnv } from "./hv-readonly";
 import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
-import { boundaryRuleName, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
+import { boundaryRuleName, isReadOnlyBoundary, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
 import {
   ensureSkillsBlock, findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
@@ -44,7 +45,8 @@ import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from
  */
 const CI_PATHS = process.platform === "win32";
 
-const sessionGrants = new Set<string>();
+// Round 29: seeded from HV_GRANTS, so a respawn of the same session keeps its grants (main holds them).
+const sessionGrants = new Set<string>(parseGrants(process.env.HV_GRANTS));
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
   // §35: the only schedule tool that reaches a permission prompt is delete (the
@@ -714,6 +716,7 @@ export default function (pi: ExtensionAPI) {
           tool: row.tool, decision: row.decision, summary: row.summary, source: "subagent",
           wouldHave: row.wouldHave, ...(row.type ? { agent: row.type } : {}), ...(row.agentId ? { runId: row.agentId } : {}),
           ...(row.bypass ? { bypass: true } : {}),
+          ...(row.rule ? { rule: row.rule } : {}),
         });
       },
       // §10 (2026-09-26, Phase 4, decision 10): a child inherits the parent's session grants…
@@ -1275,7 +1278,7 @@ export default function (pi: ExtensionAPI) {
       // the audit log back into a record of decisions rather than a record of
       // one setting being on.
       const shadow = evaluate(rules, {
-        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS,
+        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")),
       });
       audit(ctx.ui, {
         tool: permTool,
@@ -1296,7 +1299,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const v = evaluate(rules, {
-      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS,
+      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")),
     });
 
     if (v.action === "deny") {
@@ -1314,6 +1317,14 @@ export default function (pi: ExtensionAPI) {
     // explicit rules are honored by falling through to the prompt.
     if (v.action === "allow" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      grantBoundary();
+      return;
+    }
+
+    // Round 29: a read-only delegation is a safe default — the child can do nothing this
+    // session cannot do without asking. An explicit ask rule on subagent:<agent> still prompts.
+    if (boundary && !planFloorAsk && v.source === "default" && isReadOnlyBoundary(boundary.tools)) {
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "safe-default" });
       grantBoundary();
       return;
     }
@@ -1356,6 +1367,11 @@ export default function (pi: ExtensionAPI) {
             ...(boundary ? { boundary } : {}),
             // §13 (2026-10-05): the server's own claim about the tool, shown as a claim.
             ...(mcp?.hint ? { serverHint: mcp.hint } : {}),
+            // Round 29: on a shell prompt, the command rules a persistent grant saves —
+            // null when none is safe to offer (the renderer then hides both buttons).
+            ...((isShellTool(tool) || tool === "terminal_run") && typeof input.command === "string"
+              ? { commandGrant: commandGrantPatterns(input.command, process.cwd(), CI_PATHS) }
+              : {}),
           },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).

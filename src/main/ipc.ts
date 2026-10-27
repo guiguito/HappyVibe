@@ -1,4 +1,6 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { SessionGrants } from "./sessionGrants";
+import { lastDecidedByScope } from "./ruleUsage";
 import { parseImageDataUrl } from "./imageData";
 import { slashRefusal } from "./slashGuard";
 import { attentionPlan, dotBitmap, ATTENTION_BODY } from "./attentionPlan";
@@ -11,7 +13,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { EMPTY_RULES, delegationAgent, delegationRunId, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
+import { EMPTY_RULES, delegationAgent, grantRules, delegationRunId, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { WEB_CAPS } from "../../pi-runtime/extensions/hv-web";
 import { hostOf } from "../../pi-runtime/extensions/hv-browser";
 import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UNAVAILABLE_TEXT } from "./webTools";
@@ -661,6 +663,8 @@ export function registerIpc(
     isScheduleSession: (sid) => !!(sid && index.get(sid)?.scheduleId),
     inWorktree: (ws) => !!ws && worktrees.projectOf(ws) !== ws,
   };
+  // Round 29: each session's "Allow for session" grants, handed back on every respawn of it.
+  const sessionGrants = new SessionGrants();
   const log = new EventLog(path.join(userData, "events.jsonl"), (e) => {
     const r = eventFromLog(e, tap);
     if (r) track(r.name, r.params);
@@ -1063,6 +1067,8 @@ export function registerIpc(
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass,
+      // Round 29: "Allow for session" survives the respawn (never a fork — a fork is a new id).
+      grants: sessionId ? sessionGrants.list(sessionId) : undefined,
       // §35: a run whose schedule says Read-only spawns clamped. Re-derived here
       // rather than stored on the session, so a resume, a hibernation wake and
       // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
@@ -1818,6 +1824,7 @@ export function registerIpc(
       // and land in the EventLog, not the renderer.
       const audit = parseAuditNotify(r);
       if (audit) {
+        if (audit.decision === "allow-session" && typeof audit.tool === "string") sessionGrants.record(sessionId, audit.tool);
         void log.append({ type: "permission.decision", sessionId, workspaceId: meta?.workspaceId, data: audit });
         return;
       }
@@ -2907,7 +2914,12 @@ export function registerIpc(
       .filter((s): s is ReloadSession => s !== null);
     const affected = new Set<string>();
     for (const { scope, workspaceId, reason, alive } of scopes)
-      for (const id of affectedSessionIds(scope, workspaceId, live, alive)) { affected.add(id); reloadReasons.set(id, reason); }
+      for (const id of affectedSessionIds(scope, workspaceId, live, alive)) {
+        affected.add(id);
+        reloadReasons.set(id, reason);
+        // Round 29: a server name may point elsewhere after the change — its grants go.
+        if (reason === "mcp") sessionGrants.dropMcp(id);
+      }
     for (const id of affected) {
       if (activity.isIdle(id)) await reloadSession(id); // sequential — avoid a spawn burst
       else pendingMcpReload.add(id);
@@ -3350,6 +3362,7 @@ export function registerIpc(
   });
 
   ipcMain.handle("hv:close-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
+    sessionGrants.forget(sessionId);
     await endSession(sessionId, terminals_);
     return { deleted: purgeIfEmpty(sessionId) };
   });
@@ -3379,6 +3392,7 @@ export function registerIpc(
   // live (same stats/session.end capture as close), drop the index entry,
   // delete the Pi session file (sessionDir-confined; missing file fine).
   ipcMain.handle("hv:delete-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
+    sessionGrants.forget(sessionId);
     const meta = index.get(sessionId);
     if (!meta) return;
     if (manager.get(sessionId)) await endSession(sessionId, terminals_);
@@ -4372,17 +4386,22 @@ export function registerIpc(
 
   ipcMain.handle("hv:get-rules", () => readRules());
 
+  // Round 29: when each rule last decided a call (ruleUsage.ts), for the Permissions page.
+  ipcMain.handle("hv:rules-last-decided", async () =>
+    lastDecidedByScope(readRules(), (await log.read({ type: "permission.decision" })) as never, normPath));
+
   ipcMain.handle("hv:set-rules", (_e, rules: RulesFile) => writeRulesAndReload(rules));
 
   // Round 3 #13: one-click persistent grant from the permission prompt.
   // "Allow for Workspace" (workspace set) / "Always allow" (workspace null)
   // append a tool-layer allow rule at the matching scope. ponytail: tool-layer
   // granularity for V1; add command-pattern grants later if asked.
-  ipcMain.handle("hv:add-permission-rule", (_e, workspace: string | null, tool: string) => {
+  ipcMain.handle("hv:add-permission-rule", (_e, workspace: string | null, tool: string, commands?: string[]) => {
     const rules = readRules();
     const list = workspace ? (rules.workspaces[workspace] ??= []) : rules.global;
-    if (!list.some((r) => r.layer === "tool" && r.pattern === tool && r.action === "allow")) {
-      list.push({ layer: "tool", pattern: tool, action: "allow" });
+    // Round 29: escaped, and command rules on a shell prompt (grantRules, hv-rules.ts).
+    for (const add of grantRules(tool, Array.isArray(commands) ? commands.filter((c) => typeof c === "string" && c) : undefined)) {
+      if (!list.some((r) => r.layer === add.layer && r.pattern === add.pattern && r.action === add.action)) list.push(add);
     }
     return writeRulesAndReload(rules);
   });

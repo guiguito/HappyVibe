@@ -22,13 +22,13 @@ const withRules = (...rules: RulesFile["global"]): RulesFile => ({ global: rules
 
 describe("the ask→deny clamp", () => {
   it("clamps a default ask to DENY — there is nobody in a child to ask", () => {
-    const d = childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), open);
+    const d = childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), open);
     expect(d.action).toBe("deny");
     expect(d.wouldHave, "the engine's own verdict is preserved, not squashed").toBe("ask");
   });
 
   it("names the boundary and points escalation at the parent turn", () => {
-    const d = childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), open);
+    const d = childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), open);
     expect(d.reason).toMatch(/sub-agent/i);
     expect(d.reason).toMatch(/report|main session/i);
     // It must not invite a retry: a child looping on a denied tool burns the
@@ -73,7 +73,7 @@ describe("the ask→deny clamp", () => {
 describe("fail-closed on unreadable rules", () => {
   it("denies a gated tool when the rules file could not be read", () => {
     expect(childDecision(EMPTY_RULES, call("bash", { command: "ls" }), closed).action).toBe("deny");
-    expect(childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), closed).action).toBe("deny");
+    expect(childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), closed).action).toBe("deny");
   });
 
   it("still allows a safe-default read, because a blind child is a useless one", () => {
@@ -94,12 +94,12 @@ describe("bypass parity (FR6)", () => {
   const bypass = { bypass: true, rulesReadable: true };
 
   it("bypass means bypass, for children too", () => {
-    expect(childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), bypass).action).toBe("allow");
+    expect(childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), bypass).action).toBe("allow");
     expect(childDecision(EMPTY_RULES, call("bash", { command: "rm -rf /" }), bypass).action).toBe("allow");
   });
 
   it("records what the rules WOULD have said, so the row is not just 'bypass'", () => {
-    const d = childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), bypass);
+    const d = childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), bypass);
     expect(d.wouldHave).toBe("ask");
   });
 
@@ -119,7 +119,7 @@ describe("every decision carries the engine's verdict", () => {
   it("wouldHave is always one of allow | ask | deny", () => {
     const cases = [
       childDecision(EMPTY_RULES, call("read", { path: "/ws/a.ts" }), open),
-      childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), open),
+      childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), open),
       childDecision(withRules({ layer: "tool", pattern: "bash", action: "deny" }), call("bash", { command: "x" }), open),
     ];
     for (const d of cases) expect(["allow", "ask", "deny"]).toContain(d.wouldHave);
@@ -127,6 +127,19 @@ describe("every decision carries the engine's verdict", () => {
 
   it("an allow carries no reason, a deny always does", () => {
     expect(childDecision(EMPTY_RULES, call("read", { path: "/ws/a.ts" }), open).reason).toBeUndefined();
-    expect(childDecision(EMPTY_RULES, call("write", { path: "/ws/a.ts" }), open).reason).toBeTruthy();
+    expect(childDecision(EMPTY_RULES, call("bash", { command: "npm install" }), open).reason).toBeTruthy();
+  });
+});
+
+describe("round 29 in children", () => {
+  it("a child's edit inside the workspace is a safe default", () => {
+    expect(childDecision(EMPTY_RULES, call("edit", { path: "/ws/a.ts" }), { bypass: false, rulesReadable: true }).action).toBe("allow");
+  });
+});
+
+describe("round 29: a child's decision names its rule", () => {
+  it("an allow command rule is carried through for the audit row", () => {
+    const rules = withRules({ layer: "command", pattern: "npm test", action: "allow" });
+    expect(childDecision(rules, call("bash", { command: "npm test" }), open).rule?.pattern).toBe("npm test");
   });
 });

@@ -54,7 +54,8 @@ const delegate = (agent: string, task: string) =>
 // Since Phase 4 (2026-09-26) that ask is PUT TO THE USER on the parent's channel; this harness
 // answers every select "Deny", so the child is still refused — by the user now, not by a clamp.
 test.skipIf(!KEY)("inside its boundary, a write the rules would ASK about is asked, and a Deny holds", async () => {
-  const { c, ws, childRows } = await boot([{ layer: "tool", pattern: "subagent*", action: "allow" }]);
+  // Round 29: an in-workspace write is a safe default, so an explicit ask rule makes it ask.
+  const { c, ws, childRows } = await boot([{ layer: "tool", pattern: "subagent*", action: "allow" }, { layer: "tool", pattern: "write", action: "ask" }]);
   const denied = () => childRows().some((r) => r.tool === "write" && r.decision === "deny");
   const ok = await askUntil(() => c.send({ type: "prompt", message: delegate("writer", "create a file called note.txt containing the word HI") }), denied, { waitMs: 90_000 });
   expect(ok, JSON.stringify(childRows())).toBe(true);

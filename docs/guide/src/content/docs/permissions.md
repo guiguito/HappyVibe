@@ -17,11 +17,15 @@ The screen says what it holds: "Global rules for every workspace. Per-workspace 
 
 ### Rules
 
-"Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). With no match, a short list of safe tools runs on its own and everything else asks you." The safe tools are a short list that can't change your files, such as reading and searching them. The **Test a call** box below says "(safe tool default)" for one.
+"Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). With no match, safe tools, edits inside the workspace and read-only shell commands run on their own, and everything else asks you." The safe tools are a short list that can't change your files, such as reading and searching them. The **Test a call** box below says "(safe tool default)" for one.
 
 Under that line, **How rules combine** opens the longer explanation.
 
-Each rule is one row with three parts: its type, a pattern, and an action. The **×** at the end of a row deletes it.
+Each rule is one row with three parts: its type, a pattern, and an action. The **×** at the end of a row deletes it. Under each rule, a line says when it last decided a call, such as "Last decided a call 3d ago", or "Never decided a call". An allow rule that never decides anything may be one you no longer need. A rule that names a tool the app no longer has never matches. A deny rule that never fires is still guarding you.
+
+Below the list: "A command rule checks every part of a chained command. It guards against mistakes; it is not a sandbox." So a **deny** on `git push --force*` also stops `cd my-app && git push --force`, and an **allow** on `npm run *` covers `npm run build && npm run lint`, but not `npm run build; rm -rf build`, because the `rm` part has no rule of its own.
+
+**Shell commands that run without asking** opens the list of read-only commands, such as `ls`, `cat` and `git status`. One runs without the approval dialog only when every part of it is on that list and every path it names stays inside your workspace.
 
 The type says what the pattern is matched against:
 
@@ -93,7 +97,9 @@ Two buttons in the [approval dialog](/docs/approve-a-tool-call/#the-five-buttons
 - **Always allow** adds an allow rule for that tool to the list on this screen, for every workspace.
 - **Allow for workspace** adds the same rule to that workspace's [workspace settings](/docs/first-session/#workspace-settings), so it applies to that workspace only.
 
-Either way, the call you were asked about runs, and from then on that tool runs without asking, unless a stricter rule also matches it. For `bash`, that means every shell command, not just this one. For a narrower grant, add a **command** rule here instead.
+Either way, the call you were asked about runs, and from then on that tool runs without asking, unless a stricter rule also matches it.
+
+For a shell command, the two buttons save a **command** rule instead of allowing the shell: the dialog says which one before you click, for example "“Allow for workspace” and “Always allow” save: npm run *". When no rule would be safe to save, for example because the command starts another shell, uses `sudo`, or writes its output into a file, the two buttons aren't there. To allow every shell command, add a **tool** rule for `bash` here (or `powershell` on Windows without Git Bash).
 
 To take the permission back, delete the rule's row here and click **Save rules**.
 
@@ -106,6 +112,9 @@ When a call needs your answer, the approval dialog opens over the session. It ne
 With no rule matching, these run without the approval dialog:
 
 - Tools that only read or look things up: reading, searching and listing files inside your workspace, reading the page open in the app's browser, searching the web, and recalling a memory.
+- Editing or writing a file inside your workspace. Rewind can undo it. A file or folder whose name starts with a dot (`.env`, `.git`, `.github`) and `AGENTS.md` or `CLAUDE.md` still ask, because Rewind can't undo them or every future session reads them.
+- A read-only shell command, such as `git status` or `grep -rn todo src`, when every path it names stays inside your workspace. A command that runs your project's code, such as `npm test`, asks. On Windows without Git Bash, where the agent uses PowerShell, every command asks.
+- Handing a task to a subagent that can only read, such as `code-explorer`. A subagent that can change files asks, and shows what it can reach.
 - Opening a page on your own computer (localhost) in the app's browser, the usual way to preview what you're building.
 - Creating or changing a schedule. That opens the schedule form for you to fill in and confirm instead, so you're never asked the same thing twice. Deleting a schedule asks.
 
@@ -121,8 +130,8 @@ Opening a site other than localhost in the app's browser, or fetching a page fro
 
 **Allow for session**, **Allow for workspace** and **Always allow** remember the tool, under the name it's checked by. For web and browser calls that's one site. For an MCP tool, that one tool. For a subagent, that one agent.
 
-- **Allow for session** writes no rule. It covers calls that would have asked by default, including the outside-your-workspace question, but not calls an **ask** rule sends to you. Subagents the session starts get the same yes.
-- **Allow for workspace** and **Always allow** write an allow rule, and a rule decides before the outside-your-workspace question. For `bash` that means every command, and for file edits it means edits anywhere on your computer, without asking again.
+- **Allow for session** writes no rule. It covers calls that would have asked by default, including the outside-your-workspace question, but not calls an **ask** rule sends to you. Subagents the session starts get the same yes. It lasts until you close the session or quit HappyVibe, through any restart in between; changing your MCP servers clears it for MCP tools only. A forked session starts without it.
+- **Allow for workspace** and **Always allow** write an allow rule, and a rule decides before the outside-your-workspace question. For file edits it means edits anywhere on your computer, without asking again. For a shell command it's the command rule the dialog showed.
 
 ### Subagents and workflows
 

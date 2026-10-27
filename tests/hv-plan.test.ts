@@ -223,7 +223,7 @@ describe("buildPlanPrompt", () => {
     expect(bare).not.toMatch(/sub-agent/i);
     const full = buildPlanPrompt("", ["read", "bash", "Agent"]);
     expect(full).toMatch(/bash is limited to a\s+read-only allowlist/);
-    expect(full).toMatch(/Delegating to a sub-agent works/);
+    expect(full).toMatch(/Delegating to a read-only sub-agent starts without asking/);
     // Windows: the clause names the shell the session actually has. On macOS Pi registers an
     // inactive powershell too, so the clause follows the session's shell, never "any shell".
     expect(buildPlanPrompt("", ["read", "powershell"], "powershell")).toMatch(/powershell is limited/);
@@ -422,10 +422,17 @@ describe("resolvePlanVerdict", () => {
   const rw = { agent: "writer", tools: ["read", "write"] };
   const needs = { kind: "needs-boundary" } as const;
 
-  test("a read-only delegation becomes floor-ask — allowed, but still prompts", () => {
-    // floor-ask rather than pass on purpose: planning must never SILENTLY spawn a
-    // child. The user sees the boundary and clicks.
-    expect(resolvePlanVerdict(needs, ro)).toEqual({ kind: "floor-ask" });
+  test("a read-only delegation passes — it runs as a safe default, as outside plan mode (round 29)", () => {
+    // A read-only child can do nothing the planning session itself cannot do without
+    // asking (read, grep, find, ls), so a prompt here protected nothing.
+    expect(resolvePlanVerdict(needs, ro)).toEqual({ kind: "pass" });
+  });
+
+  test("the plan prompt says read-only delegation starts without asking", () => {
+    const p = buildPlanPrompt();
+    expect(p).toContain("Delegating to a read-only sub-agent starts without asking");
+    expect(p).toContain("a sub-agent that can change things needs the user's approval first.");
+    expect(p).not.toContain("approves its\nboundary first");
   });
 
   test("a write-capable delegation is blocked, naming the offending tools", () => {

@@ -27,6 +27,7 @@ export interface RulesFile {
 }
 
 import { containsPath, foldCase, isAbsolutePath, stripTrailingSep, toPosix } from "./hv-paths";
+import { commandParts, commandPositions, hasSubstitution, isReadOnlyPart, isReadOnlyShellCommand, shellWords } from "./hv-shell";
 
 export interface ToolCall {
   tool: string;
@@ -40,6 +41,17 @@ export interface ToolCall {
    * seam — because this module is import-free by contract (the renderer loads it).
    */
   caseInsensitivePaths?: boolean;
+  /**
+   * Round 29: resolves an ABSOLUTE path through symlinks. Set by the bridge and the child
+   * guard (they have fs); absent in main's "test a call" preview — the one place a symlink
+   * inside the workspace is not followed. Only consulted for the edit safe default.
+   */
+  realPath?: (p: string) => string;
+  /**
+   * Final review #2: the workspace root has a real `.git` (the caller has fs). Without it a
+   * `git` command is never a read-only default — free edits could have planted a repo config.
+   */
+  workspaceHasGit?: boolean;
 }
 
 export interface Verdict {
@@ -237,6 +249,19 @@ export function escapesWorkspace(p: string, workspace: string, caseInsensitive =
 
 export const EMPTY_RULES: RulesFile = { global: [], workspaces: {} };
 
+/**
+ * Round 29: the session grants main hands back on a respawn (HV_GRANTS). A JSON array of
+ * non-empty strings; anything else is NO grant — failing closed costs a prompt, never reach.
+ */
+export function parseGrants(raw: string | undefined): string[] {
+  try {
+    const v: unknown = JSON.parse(raw ?? "");
+    return Array.isArray(v) && v.every((x) => typeof x === "string" && x !== "") ? (v as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 const LAYERS: readonly string[] = ["tool", "path", "command"];
 const ACTIONS: readonly string[] = ["allow", "ask", "deny"];
 
@@ -273,11 +298,19 @@ export function parseRulesFile(raw: string): RulesFile {
  *  - command mode: `*` matches anything incl. spaces, `?` one char
  */
 export function globToRegExp(pattern: string, mode: "path" | "command"): RegExp {
+  // Round 29: in command mode a trailing ` *` also covers the bare command (`npm test *` ⊇ `npm test`).
+  const optionalArgs = mode === "command" && pattern.endsWith(" *");
+  const body = optionalArgs ? pattern.slice(0, -2) : pattern;
   let out = "";
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    // Round 29: `\*`, `\?` and `\\` are literals — how a one-click grant stores what it approved.
+    if (c === "\\" && (body[i + 1] === "*" || body[i + 1] === "?" || body[i + 1] === "\\")) {
+      out += `\\${body[++i]}`;
+      continue;
+    }
     if (c === "*") {
-      if (mode === "path" && pattern[i + 1] === "*") {
+      if (mode === "path" && body[i + 1] === "*") {
         out += ".*";
         i++;
       } else {
@@ -289,8 +322,16 @@ export function globToRegExp(pattern: string, mode: "path" | "command"): RegExp 
       out += /[.+^${}()|[\]\\]/.test(c) ? `\\${c}` : c;
     }
   }
-  return new RegExp(`^${out}$`);
+  return new RegExp(`^${out}${optionalArgs ? "( .*)?" : ""}$`);
 }
+
+/** A literal as a glob that matches only itself (round 29: every one-click grant stores this). */
+export function escapeGlob(s: string): string {
+  return s.replace(/[\\*?]/g, (c) => `\\${c}`);
+}
+
+/** Has the pattern an UNESCAPED `*` or `?`? */
+const hasWildcard = (pattern: string): boolean => /(^|[^\\])[*?]/.test(pattern);
 
 /** Input keys that carry file paths across Pi's built-in tools. */
 const PATH_KEYS = /^(path|file_?path|file|dir|directory)$/i;
@@ -308,8 +349,11 @@ function ruleMatches(rule: Rule, call: ToolCall): boolean {
     return globToRegExp(rule.pattern, "command").test(call.tool);
   }
   if (rule.layer === "command") {
+    // DENY and ASK only — an allow command rule is decided per part, in allowByParts.
     const cmd = call.input.command;
-    return typeof cmd === "string" && globToRegExp(rule.pattern, "command").test(cmd.trim());
+    if (typeof cmd !== "string") return false;
+    const re = globToRegExp(rule.pattern, "command");
+    return re.test(cmd.trim()) || commandPositions(cmd).some((p) => re.test(p));
   }
   // path layer — match any file-ish arg, relative to the workspace when inside it.
   //
@@ -326,7 +370,71 @@ function ruleMatches(rule: Rule, call: ToolCall): boolean {
   });
 }
 
+/** Round 29: the tools whose in-workspace calls are a safe default (Pi's own file writers). */
+export const WORKSPACE_EDIT_TOOLS: ReadonlySet<string> = new Set(["write", "edit"]);
+
+/**
+ * Round 29: an edit that still asks inside the workspace — any part starting with `.`
+ * (`.git`, `.env`, `.github`…: what Rewind does not snapshot, or what runs on its own)
+ * and `AGENTS.md`/`CLAUDE.md` at any depth, in any case (what every future session is told).
+ */
+export function isProtectedPath(relPosix: string, caseInsensitive = false): boolean {
+  // Final review #5: on Windows `AGENTS.md.`, `AGENTS.md ` and `agents.md::$DATA` name the same
+  // file, and `GIT~1` is `.git`'s 8.3 short name — normalise, and treat any short name as protected.
+  const parts = relPosix.split("/").filter((s) => s !== "" && s !== ".")
+    .map((s) => (caseInsensitive ? s.replace(/:.*$/, "").replace(/[. ]+$/, "") || s : s));
+  if (caseInsensitive && parts.some((s) => /~\d/.test(s))) return true;
+  if (parts.some((s) => s.startsWith(".") && s !== "..")) return true;
+  const last = (parts[parts.length - 1] ?? "").toLowerCase();
+  return last === "agents.md" || last === "claude.md";
+}
+
+/** Inside the workspace (through symlinks when the caller can resolve them) and not protected. */
+function editRunsFreely(raw: string, call: ToolCall): boolean {
+  const ci = call.caseInsensitivePaths === true;
+  if (escapesWorkspace(raw, call.workspace, ci)) return false;
+  const ws = stripTrailingSep(toPosix(call.workspace));
+  const p = toPosix(raw);
+  const abs = isAbsolutePath(raw) ? p : `${ws}/${p}`;
+  const rel = abs.slice(ws.length).replace(/^\/+/, "");
+  if (isProtectedPath(rel, ci)) return false;
+  if (!call.realPath) return true;
+  // Final review #3: a link inside the workspace can point AT a protected path (`tools -> .git/hooks`).
+  const realWs = stripTrailingSep(toPosix(call.realPath(call.workspace)));
+  const real = toPosix(call.realPath(abs));
+  return containsPath(realWs, real, ci) && !isProtectedPath(real.slice(realWs.length).replace(/^\/+/, ""), ci);
+}
+
 const RESTRICTIVENESS: Record<RuleAction, number> = { deny: 2, ask: 1, allow: 0 };
+
+/**
+ * Round 29: a command ALLOW rule covers a call only when EVERY part of the command
+ * is covered — by some allow rule, or by being a read-only part (a `cd` into the
+ * workspace included). Before this, `npm run *` also allowed `npm run x; rm -rf ~`.
+ * A command the strict splitter cannot vouch for (substitution, here-doc, a redirect
+ * into a file) is never allowed by a rule. One exception keeps old rules working: an
+ * allow with NO wildcard that equals the whole command — nothing can ride along.
+ * Returns the first allow rule that covered a part (what the audit row credits).
+ */
+function allowByParts<R extends Rule>(allows: R[], call: ToolCall): R | undefined {
+  const raw = call.input?.command;
+  if (typeof raw !== "string" || allows.length === 0) return undefined;
+  const cmd = raw.trim();
+  const exact = allows.find((r) => !hasWildcard(r.pattern) && globToRegExp(r.pattern, "command").test(cmd));
+  if (exact) return exact;
+  const parts = commandParts(cmd);
+  // Final review #6: a substitution (even inside double quotes) is never vouched for by a rule.
+  if (!parts || parts.some(hasSubstitution)) return undefined;
+  let first: R | undefined;
+  let afterCd = false;
+  for (const part of parts) {
+    const hit = allows.find((r) => globToRegExp(r.pattern, "command").test(part));
+    if (hit) first ??= hit;
+    else if (!isReadOnlyPart(part, call.workspace, call.caseInsensitivePaths === true, { gitOk: call.workspaceHasGit === true, afterCd })) return undefined;
+    if (/^\s*cd\s/.test(part)) afterCd = true;
+  }
+  return first;
+}
 
 /** Evaluate one tool call against global + workspace rules. */
 export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
@@ -336,9 +444,12 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
   ];
   let winner: (Rule & { scope: "global" | "workspace" }) | undefined;
   for (const r of scoped) {
+    if (r.layer === "command" && r.action === "allow") continue;
     if (!ruleMatches(r, call)) continue;
     if (!winner || RESTRICTIVENESS[r.action] > RESTRICTIVENESS[winner.action]) winner = r;
   }
+  // An allow is the least restrictive answer, so a command allow can only decide when nothing else matched.
+  if (!winner) winner = allowByParts(scoped.filter((r) => r.layer === "command" && r.action === "allow"), call);
   if (winner) return { action: winner.action, source: "rule", rule: winner };
   // v5: a file tool reaching outside the workspace asks — even reads that would
   // otherwise be safe-default-allowed. Explicit rules above still win.
@@ -347,6 +458,71 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
       escapesWorkspace(p, call.workspace, call.caseInsensitivePaths === true));
     if (outside) return { action: "ask", source: "outside-workspace", outsidePath: outside };
   }
+  // Round 29: an edit Rewind can undo, inside the workspace, runs without asking.
+  if (WORKSPACE_EDIT_TOOLS.has(call.tool)) {
+    const paths = pathArgs(call.input ?? {});
+    if (paths.length > 0 && paths.every((p) => editRunsFreely(p, call))) return { action: "allow", source: "safe-default" };
+  }
+  // Round 29: a read-only, workspace-confined shell command (bash only — hv-shell.ts).
+  if (call.tool === "bash" && typeof call.input?.command === "string" &&
+      isReadOnlyShellCommand(call.input.command, call.workspace, call.caseInsensitivePaths === true, { gitOk: call.workspaceHasGit === true })) {
+    return { action: "allow", source: "safe-default" };
+  }
   if (SAFE_TOOLS.has(call.tool)) return { action: "allow", source: "safe-default" };
   return { action: "ask", source: "default" };
+}
+
+// ── Round 29: what a one-click grant writes ──────────────────────────────────
+
+/** Programs a one-click grant never names: allowing one is allowing every command. */
+const NEVER_GRANT = new Set(["bash", "sh", "zsh", "fish", "dash", "eval", "env", "sudo", "xargs", "exec", "command", "nohup", "time", "powershell", "pwsh"]);
+/** Programs whose first word after them is what the user is really approving. */
+const SUBCOMMAND_PROGRAMS = new Set(["npm", "npx", "pnpm", "yarn", "git", "uv"]);
+/** Final review #8: interpreters — a grant names the SCRIPT, never the interpreter alone. */
+const INTERPRETERS = new Set(["node", "python", "python3", "perl", "ruby", "deno", "bun", "php", "awk", "osascript", "rscript", "lua"]);
+
+/**
+ * The command rules "Allow for workspace" / "Always allow" save on a shell prompt: one
+ * `<program> [<subcommand>] *` per part that is not already read-only, escaped, deduped.
+ * `null` when no pattern is safe to offer — a part the strict splitter cannot vouch for
+ * (substitution, here-doc, a redirect into a file), a leading `VAR=value`, or a shell or
+ * wrapper that would turn the grant into "every command". The prompt then hides both buttons.
+ */
+export function commandGrantPatterns(cmd: string, workspace: string, caseInsensitive = false): string[] | null {
+  const parts = commandParts(cmd.trim());
+  if (!parts || parts.some(hasSubstitution)) return null;
+  const out: string[] = [];
+  for (const part of parts) {
+    if (isReadOnlyPart(part, workspace, caseInsensitive)) continue;
+    const words = shellWords(part);
+    if (!words || words.length === 0) return null;
+    const [program, first, second] = words;
+    const name = program.toLowerCase();
+    // Final review #8: a pattern must never equal "every command" — a quoted program name,
+    // a subcommand program led by a flag (`npx -y`, `git -C`), or an interpreter's inline code.
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(program) || /\s/.test(program) || NEVER_GRANT.has(name)) return null;
+    let prefix: string;
+    if (SUBCOMMAND_PROGRAMS.has(name)) {
+      if (!first || first.startsWith("-")) return null;
+      prefix = `${program} ${first}`;
+    } else if (INTERPRETERS.has(name)) {
+      if (/^python3?$/.test(name) && first === "-m" && second && !second.startsWith("-")) prefix = `${program} -m ${second}`;
+      else if (first && !first.startsWith("-")) prefix = `${program} ${first}`;
+      else return null;
+    } else prefix = program;
+    const pattern = `${escapeGlob(prefix)} *`;
+    if (!out.includes(pattern)) out.push(pattern);
+  }
+  return out;
+}
+
+/**
+ * The rules a one-click persistent grant appends: the shell prompt's command patterns
+ * (already escaped by commandGrantPatterns), or the tool's own name, escaped so a `*` in
+ * an approved name can never become a wildcard (docs-round finding).
+ */
+export function grantRules(tool: string, commands?: string[]): Rule[] {
+  return commands
+    ? commands.map((pattern) => ({ layer: "command", pattern, action: "allow" }))
+    : [{ layer: "tool", pattern: escapeGlob(tool), action: "allow" }];
 }

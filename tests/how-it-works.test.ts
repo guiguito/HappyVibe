@@ -61,8 +61,14 @@ describe("HOWTO_COPY", () => {
     expect(SAFE_TOOLS.size).toBeGreaterThan(0);
     const none: RulesFile = { global: [], workspaces: {} };
     expect(evaluate(none, { tool: [...SAFE_TOOLS][0], input: {}, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
-    expect(evaluate(none, { tool: "bash", input: { command: "ls" }, workspace: "/ws" })).toEqual({ action: "ask", source: "default" });
-    expect(b).toContain("When no rule matches, a short list of safe tools runs on its own; everything else asks you.");
+    expect(evaluate(none, { tool: "bash", input: { command: "npm install" }, workspace: "/ws" })).toEqual({ action: "ask", source: "default" });
+    // Round 29: the no-match sentence names every safe default the engine has — each derived here.
+    expect(evaluate(none, { tool: "edit", input: { path: "src/a.ts" }, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
+    expect(evaluate(none, { tool: "edit", input: { path: ".env" }, workspace: "/ws" }).action).toBe("ask");
+    expect(evaluate(none, { tool: "bash", input: { command: "git status" }, workspace: "/ws", workspaceHasGit: true })).toEqual({ action: "allow", source: "safe-default" });
+    expect(b).toContain("When no rule matches, a short list of safe tools runs on its own, and so do edits inside the workspace, read-only shell commands and read-only sub-agents; everything else asks you.");
+    expect(b).toContain("“Allow for session” lasts until you close the session or quit HappyVibe, through any restart in between; changing MCP configuration clears it for MCP tools only.");
+    expect(b).not.toContain("gone when the session restarts");
     expect(b).not.toMatch(/by silence/i);
   });
 
@@ -238,6 +244,9 @@ describe("docs-round #20 — a button named in guidance is a button the prompt h
   it("the rules subtitle says what the long form says", () => {
     const src = rendered(path.join(R, "components", "PermissionRulesSection.tsx"));
     expect(src).not.toContain("No match falls back to asking you.");
-    expect(src).toContain("With no match, a short list of safe tools runs on its own and everything else asks you.");
+    expect(src).toContain("With no match, safe tools, edits inside the workspace and read-only shell commands run on their own, and everything else asks you.");
+    expect(src).toContain("A command rule checks every part of a chained command. It guards against mistakes; it is not a sandbox.");
+    expect(src).toContain("Shell commands that run without asking");
+    expect(src).toContain("READ_ONLY_SHELL_SUMMARY");
   });
 });

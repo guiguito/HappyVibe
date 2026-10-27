@@ -119,17 +119,28 @@ describe("what the rules actually do in the engine", () => {
     const call = (command: string): string =>
       evaluate(rules, { tool: "bash", input: { command }, workspace: "/ws" }).action;
 
-    // The engine anchors on the WHOLE command string, so these slip past the
-    // deny. Recorded here deliberately: they fall back to ask, so the default
-    // fails safe, and the docs must not claim more than that.
-    expect(call("cd x && git push --force")).toBe("ask");
+    // Round 29: every part of a chain is checked, so a `cd` in front no longer
+    // slips past the deny. A spelling the pattern does not name still does —
+    // recorded deliberately: it falls back to ask, so the default fails safe,
+    // and the docs must not claim more than that.
+    expect(call("cd x && git push --force")).toBe("deny");
     expect(call("git -C repo push -f")).toBe("ask");
   });
 
-  it("still asks for every git command when the user has added no allow", () => {
+  it("with no allow, a read-only git query runs and anything that changes the repo asks", () => {
     seedDefaultGitRules(rulesPath, false);
     const rules = read();
-    // bash is not a safe-default tool, so this is true with or without our rules.
-    expect(evaluate(rules, { tool: "bash", input: { command: "git status" }, workspace: "/ws" }).action).toBe("ask");
+    // Round 29: a read-only git query (`git status`) is a safe default; anything that changes the repo asks.
+    expect(evaluate(rules, { tool: "bash", input: { command: "git status" }, workspace: "/ws", workspaceHasGit: true }).action).toBe("allow");
+    expect(evaluate(rules, { tool: "bash", input: { command: "git commit -m x" }, workspace: "/ws" }).action).toBe("ask");
+  });
+});
+
+describe("the seeded git rules hold for a chained command (round 29)", () => {
+  it("cd … && git push asks, and --force is denied", () => {
+    const rules = { global: [...DEFAULT_GIT_RULES], workspaces: {} };
+    const at = (command: string) => evaluate(rules, { tool: "bash", input: { command }, workspace: "/ws" }).action;
+    expect(at("cd /ws && git push origin main")).toBe("ask");
+    expect(at("cd /ws && git push --force")).toBe("deny");
   });
 });

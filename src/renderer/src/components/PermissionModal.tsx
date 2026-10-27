@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } from "../paneDialog";
-import { SERVER_HINT_COPY, type PermissionChoice, type PermissionInfo, type UiRequest } from "../permission";
+import { commandGrantLine, EXPANDED_CHOICES, persistentChoices, SERVER_HINT_COPY, type PermissionChoice, type PermissionInfo, type UiRequest } from "../permission";
+
+export { EXPANDED_CHOICES };
 import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
 import { ToolIcon } from "./ToolCard";
@@ -35,16 +37,9 @@ const CHOICE_STYLE: Record<string, string> = {
   Deny: "bg-card text-berry border-berry hover:bg-berry-soft",
 };
 
-/** Round 3 #13: the bridge only offers Allow / Allow for session / Deny. The
-    renderer adds two persistent-grant choices (workspace / global) that write a
-    rule; App maps them to a bridge "Allow". */
-export const EXPANDED_CHOICES: PermissionChoice[] = [
-  "Allow",
-  "Allow for session",
-  "Allow for workspace",
-  "Always allow",
-  "Deny",
-];
+/* Round 3 #13: the bridge only offers Allow / Allow for session / Deny. The
+   renderer adds two persistent-grant choices (workspace / global) that write a
+   rule; App maps them to a bridge "Allow". EXPANDED_CHOICES lives in permission.ts. */
 
 /**
  * §12 FR1 — the delegation boundary, as sentences a person can act on.
@@ -149,7 +144,7 @@ export function PermissionModal({
   // §12/§10 (2026-09-26): a workflow (code) and a sub-agent's own ask are offered EXACTLY
   // the bridge's choices — never the persistent grants, which would outlive what was approved.
   const shown = info.workflow || info.child ? (wire as PermissionChoice[])
-    : wire.includes("Allow") && wire.includes("Deny") ? EXPANDED_CHOICES : (wire as PermissionChoice[]);
+    : wire.includes("Allow") && wire.includes("Deny") ? persistentChoices(info) : (wire as PermissionChoice[]);
   return (
     <Dialog.Root open>
       <Dialog.Portal container={container ?? undefined}>
@@ -271,6 +266,10 @@ export function PermissionModal({
               {info.summary}
             </pre>
           </details>
+          {/* Round 29: what the two persistent grants will save on a shell prompt. */}
+          {info.commandGrant && info.commandGrant.length > 0 && !info.child && (
+            <p className="text-xs text-ink-soft mb-3">{commandGrantLine(info.commandGrant)}</p>
+          )}
           <div className="flex flex-col gap-2">
             {shown.map((o) => (
               <button
