@@ -38,17 +38,17 @@ The app writes the approval dialog, never the model. The line you approve agains
 
 !["The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny](/docs/media/approve-a-tool-call/permission-modal.png)
 
-Each button answers this call. Three buttons also remember your answer. What they remember is the whole tool, never just this one file, so pick them when you trust the tool, not just the call. A shell command is the exception, explained below. For web and browser calls, "the tool" is one site; for a tool from an MCP server, that one tool; for a subagent (a helper agent the main agent hands a task to), that one agent.
+Each button answers this call. Three buttons also remember your answer. What they remember is the whole tool, never just this one file, so pick them when you trust the tool, not just the call. A shell command is the exception for **Allow for workspace** and **Always allow**, explained below. For web and browser calls, "the tool" is one site; for a tool from an MCP server, that one tool; for a subagent (a helper agent the main agent hands a task to), that one agent.
 
 - **Allow:** yes to this one call, and nothing more. The next one asks again.
-- **Allow for session:** yes to this tool for the rest of this session. For running commands, that means every command the agent runs in this session, so use it when you trust where the session is going. It lasts until you quit HappyVibe, even if the session restarts; changing your MCP servers clears it for MCP tools only. The card gets a clock whose tooltip reads "Allowed for this session".
+- **Allow for session:** yes to this tool for the rest of this session. For running commands, that means every command the agent runs in this session, so use it when you trust where the session is going. It lasts until you close the session or quit HappyVibe, even if the session restarts in between; changing your MCP servers clears it for MCP tools only. The card gets a clock whose tooltip reads "Allowed for this session".
 - **Allow for workspace:** yes, and it adds a rule allowing this tool in this workspace, for every future session there.
 - **Always allow:** yes, and it adds a rule allowing this tool in every workspace.
 - **Deny:** no. The call doesn't run, its card shows as denied, and the agent is told you said no, so it can try another way or explain what it needed.
 
 The rules **Allow for workspace** and **Always allow** add appear on the [Permissions](/docs/permissions/) page, where you can delete them any time.
 
-For a shell command, those two buttons remember the command, not the whole shell. The dialog says what they save, for example "“Allow for workspace” and “Always allow” save: npm run *". When nothing safe can be saved, such as for a command that starts another shell, they aren't shown.
+For a shell command, those two buttons remember the command, not the whole shell. The dialog says what they save, for example "“Allow for workspace” and “Always allow” save: npm run *". When nothing safe can be saved, such as for a command that starts another shell, uses `sudo`, or writes its output into a file, they aren't shown.
 
 :::note[The fine print]
 A yes that remembers also covers the same tool reaching outside your workspace. So **Always allow** on file edits means edits anywhere on your computer. When a subagent or a workflow asks, the dialog offers fewer buttons, and none of them becomes a rule. [Permissions](/docs/permissions/) has the details.

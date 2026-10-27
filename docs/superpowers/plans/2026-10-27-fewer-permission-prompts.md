@@ -214,7 +214,7 @@
 - Modify: `.claude/rules/permissions-plan.md` (session-grant bullet; new bullet: the engine's safe defaults and `hv-shell.ts`), `AGENTS.md` (import hygiene: `hv-shell.ts` imports only `hv-paths`)
 
 **Exact copy:**
-- HowItWorks, replace the no-match sentence with: `When no rule matches, a short list of safe tools runs on its own, and so do edits inside the workspace, read-only shell commands and read-only sub-agents; everything else asks you.` Replace the session sentence with: `“Allow for session” lasts until you quit HappyVibe, through any restart of the session; changing MCP configuration clears it for MCP tools only.`
+- HowItWorks, replace the no-match sentence with: `When no rule matches, a short list of safe tools runs on its own, and so do edits inside the workspace, read-only shell commands and read-only sub-agents; everything else asks you.` Replace the session sentence with: `“Allow for session” lasts until you close the session or quit HappyVibe, through any restart in between; changing MCP configuration clears it for MCP tools only.`
 - PermissionRulesSection subtitle: `With no match, safe tools, edits inside the workspace and read-only shell commands run on their own, and everything else asks you.`
 - Command-layer note: `A command rule checks every part of a chained command. It guards against mistakes; it is not a sandbox.`
 - List heading: `Shell commands that run without asking`.

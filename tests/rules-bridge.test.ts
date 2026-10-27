@@ -186,7 +186,9 @@ test.skipIf(!KEY)(
     // Fresh client with a real key; rules file back to the deny rule.
     fs.writeFileSync(
       rulesPath,
-      JSON.stringify({ global: [{ layer: "command", pattern: "touch *", action: "deny" }], workspaces: {} }),
+      // Round 29: an in-workspace write is a safe default, so the model's usual fallback
+      // ("let me use write instead") is denied by a path rule rather than by the old default ask.
+      JSON.stringify({ global: [{ layer: "command", pattern: "touch *", action: "deny" }, { layer: "path", pattern: "forbidden.txt", action: "deny" }], workspaces: {} }),
     );
     const c = makeClient(PROVIDER_ENV);
     try {

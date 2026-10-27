@@ -67,7 +67,7 @@ describe("HOWTO_COPY", () => {
     expect(evaluate(none, { tool: "edit", input: { path: ".env" }, workspace: "/ws" }).action).toBe("ask");
     expect(evaluate(none, { tool: "bash", input: { command: "git status" }, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
     expect(b).toContain("When no rule matches, a short list of safe tools runs on its own, and so do edits inside the workspace, read-only shell commands and read-only sub-agents; everything else asks you.");
-    expect(b).toContain("“Allow for session” lasts until you quit HappyVibe, through any restart of the session; changing MCP configuration clears it for MCP tools only.");
+    expect(b).toContain("“Allow for session” lasts until you close the session or quit HappyVibe, through any restart in between; changing MCP configuration clears it for MCP tools only.");
     expect(b).not.toContain("gone when the session restarts");
     expect(b).not.toMatch(/by silence/i);
   });
