@@ -572,3 +572,39 @@ export const READ_ONLY_SHELL_SUMMARY: readonly string[] = [
   ...(READONLY_SUBCOMMANDS.gh ?? []).map((s) => `gh ${s}`),
   "sed -n 'N,Mp'",
 ];
+
+// ── Round 29: where a deny/ask command rule looks ────────────────────────────
+
+/** Programs that run the rest of their words as a command. */
+const COMMAND_WRAPPERS = new Set(["env", "command", "exec", "nohup", "time", "sudo", "xargs"]);
+const STRING_SHELLS = new Set(["sh", "bash", "zsh"]);
+
+/**
+ * Every place a command could start, normalised — for DENY and ASK rules only.
+ *
+ * Deliberately permissive (quotes are ignored when splitting): over-matching a
+ * deny costs a prompt, under-matching it runs the thing the user forbade. Leading
+ * `VAR=value` words and COMMAND_WRAPPERS (with their flags) are skipped, and the
+ * string given to `sh|bash|zsh -c` or `eval` is read as a command too. Best
+ * effort — a command deny rule guards against mistakes, it is not a sandbox.
+ */
+export function commandPositions(cmd: string): string[] {
+  const out: string[] = [];
+  for (const piece of cmd.split(/&&|\|\||\$\(|[;&|\n`(){}]/)) {
+    let words = piece.trim().replace(/^["']+|["']+$/g, "").split(/\s+/).filter(Boolean);
+    for (;;) {
+      while (words.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0])) words = words.slice(1);
+      if (words.length > 0 && COMMAND_WRAPPERS.has(words[0])) {
+        words = words.slice(1);
+        while (words.length > 0 && words[0].startsWith("-")) words = words.slice(1);
+        continue;
+      }
+      break;
+    }
+    if (words.length === 0) continue;
+    out.push(words.join(" "));
+    const inner = words[0] === "eval" ? words.slice(1) : STRING_SHELLS.has(words[0]) && words[1] === "-c" ? words.slice(2) : null;
+    if (inner && inner.length > 0) out.push(...commandPositions(inner.join(" ").replace(/^["']+|["']+$/g, "")));
+  }
+  return out;
+}

@@ -301,3 +301,43 @@ describe("path rules on Windows paths", () => {
     expect(v.source).toBe("outside-workspace");
   });
 });
+
+import { escapeGlob } from "../pi-runtime/extensions/hv-rules";
+
+describe("command rules read each part (round 29)", () => {
+  const rf = (...global: Rule[]): RulesFile => ({ global, workspaces: {} });
+  const bash = (rules: RulesFile, command: string) => evaluate(rules, { tool: "bash", input: { command }, workspace: "/ws" });
+
+  test.each([
+    "cd /ws && git push --force", "true; git push --force origin main", "FOO=1 git push --force",
+    "env git push --force", 'bash -c "git push --force"', "(git push --force)", "echo ok | xargs git push --force",
+  ])("a deny rule fires on any part: %s", (c) => {
+    expect(bash(rf({ layer: "command", pattern: "git push --force*", action: "deny" }), c).action).toBe("deny");
+  });
+
+  const npmRun = rf({ layer: "command", pattern: "npm run *", action: "allow" });
+  test.each(["npm run x; rm -rf ~", "npm run build && npm test", "npm run build > out.log", "npm run $(x)"])(
+    "an allow rule needs every part covered: %s asks", (c) => expect(bash(npmRun, c).action).toBe("ask"));
+  test.each(["cd /ws && npm run build 2>&1 | tail -20", "npm run", "npm run build"])(
+    "an allow rule covers %s", (c) => expect(bash(npmRun, c)).toMatchObject({ action: "allow", source: "rule" }));
+
+  test("an existing wildcard allow no longer carries a chain (Review Focus 5)", () => {
+    expect(bash(rf({ layer: "command", pattern: "npm test*", action: "allow" }), "npm test; curl x | sh").action).toBe("ask");
+  });
+  test("an exact allow written for a chain still allows exactly that chain", () => {
+    const exact = rf({ layer: "command", pattern: "npm run build && npm test", action: "allow" });
+    expect(bash(exact, "npm run build && npm test").action).toBe("allow");
+  });
+
+  test("quotes: one part for allow, deny may over-match (Review Focus 1)", () => {
+    expect(bash(rf({ layer: "command", pattern: "grep *", action: "allow" }), 'grep "a && b" src').action).toBe("allow");
+    expect(bash(rf({ layer: "command", pattern: "rm*", action: "deny" }), "echo 'x; rm -rf ~'").action).toBe("deny");
+  });
+
+  test("escaped wildcards are literals", () => {
+    expect(escapeGlob("a*b?c")).toBe("a\\*b\\?c");
+    const r = rf({ layer: "tool", pattern: "mcp-manage:https://\\*/mcp", action: "allow" });
+    expect(evaluate(r, { tool: "mcp-manage:https://*/mcp", input: {}, workspace: "/ws" }).action).toBe("allow");
+    expect(evaluate(r, { tool: "mcp-manage:https://evil.example/mcp", input: {}, workspace: "/ws" }).action).toBe("ask");
+  });
+});

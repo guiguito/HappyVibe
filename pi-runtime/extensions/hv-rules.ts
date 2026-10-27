@@ -27,6 +27,7 @@ export interface RulesFile {
 }
 
 import { containsPath, foldCase, isAbsolutePath, stripTrailingSep, toPosix } from "./hv-paths";
+import { commandParts, commandPositions, isReadOnlyPart } from "./hv-shell";
 
 export interface ToolCall {
   tool: string;
@@ -273,11 +274,19 @@ export function parseRulesFile(raw: string): RulesFile {
  *  - command mode: `*` matches anything incl. spaces, `?` one char
  */
 export function globToRegExp(pattern: string, mode: "path" | "command"): RegExp {
+  // Round 29: in command mode a trailing ` *` also covers the bare command (`npm test *` ⊇ `npm test`).
+  const optionalArgs = mode === "command" && pattern.endsWith(" *");
+  const body = optionalArgs ? pattern.slice(0, -2) : pattern;
   let out = "";
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    // Round 29: `\*`, `\?` and `\\` are literals — how a one-click grant stores what it approved.
+    if (c === "\\" && (body[i + 1] === "*" || body[i + 1] === "?" || body[i + 1] === "\\")) {
+      out += `\\${body[++i]}`;
+      continue;
+    }
     if (c === "*") {
-      if (mode === "path" && pattern[i + 1] === "*") {
+      if (mode === "path" && body[i + 1] === "*") {
         out += ".*";
         i++;
       } else {
@@ -289,8 +298,16 @@ export function globToRegExp(pattern: string, mode: "path" | "command"): RegExp 
       out += /[.+^${}()|[\]\\]/.test(c) ? `\\${c}` : c;
     }
   }
-  return new RegExp(`^${out}$`);
+  return new RegExp(`^${out}${optionalArgs ? "( .*)?" : ""}$`);
 }
+
+/** A literal as a glob that matches only itself (round 29: every one-click grant stores this). */
+export function escapeGlob(s: string): string {
+  return s.replace(/[\\*?]/g, (c) => `\\${c}`);
+}
+
+/** Has the pattern an UNESCAPED `*` or `?`? */
+const hasWildcard = (pattern: string): boolean => /(^|[^\\])[*?]/.test(pattern);
 
 /** Input keys that carry file paths across Pi's built-in tools. */
 const PATH_KEYS = /^(path|file_?path|file|dir|directory)$/i;
@@ -308,8 +325,11 @@ function ruleMatches(rule: Rule, call: ToolCall): boolean {
     return globToRegExp(rule.pattern, "command").test(call.tool);
   }
   if (rule.layer === "command") {
+    // DENY and ASK only — an allow command rule is decided per part, in allowByParts.
     const cmd = call.input.command;
-    return typeof cmd === "string" && globToRegExp(rule.pattern, "command").test(cmd.trim());
+    if (typeof cmd !== "string") return false;
+    const re = globToRegExp(rule.pattern, "command");
+    return re.test(cmd.trim()) || commandPositions(cmd).some((p) => re.test(p));
   }
   // path layer — match any file-ish arg, relative to the workspace when inside it.
   //
@@ -328,6 +348,32 @@ function ruleMatches(rule: Rule, call: ToolCall): boolean {
 
 const RESTRICTIVENESS: Record<RuleAction, number> = { deny: 2, ask: 1, allow: 0 };
 
+/**
+ * Round 29: a command ALLOW rule covers a call only when EVERY part of the command
+ * is covered — by some allow rule, or by being a read-only part (a `cd` into the
+ * workspace included). Before this, `npm run *` also allowed `npm run x; rm -rf ~`.
+ * A command the strict splitter cannot vouch for (substitution, here-doc, a redirect
+ * into a file) is never allowed by a rule. One exception keeps old rules working: an
+ * allow with NO wildcard that equals the whole command — nothing can ride along.
+ * Returns the first allow rule that covered a part (what the audit row credits).
+ */
+function allowByParts<R extends Rule>(allows: R[], call: ToolCall): R | undefined {
+  const raw = call.input.command;
+  if (typeof raw !== "string" || allows.length === 0) return undefined;
+  const cmd = raw.trim();
+  const exact = allows.find((r) => !hasWildcard(r.pattern) && globToRegExp(r.pattern, "command").test(cmd));
+  if (exact) return exact;
+  const parts = commandParts(cmd);
+  if (!parts) return undefined;
+  let first: R | undefined;
+  for (const part of parts) {
+    const hit = allows.find((r) => globToRegExp(r.pattern, "command").test(part));
+    if (hit) first ??= hit;
+    else if (!isReadOnlyPart(part, call.workspace, call.caseInsensitivePaths === true)) return undefined;
+  }
+  return first;
+}
+
 /** Evaluate one tool call against global + workspace rules. */
 export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
   const scoped: Array<Rule & { scope: "global" | "workspace" }> = [
@@ -336,9 +382,12 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
   ];
   let winner: (Rule & { scope: "global" | "workspace" }) | undefined;
   for (const r of scoped) {
+    if (r.layer === "command" && r.action === "allow") continue;
     if (!ruleMatches(r, call)) continue;
     if (!winner || RESTRICTIVENESS[r.action] > RESTRICTIVENESS[winner.action]) winner = r;
   }
+  // An allow is the least restrictive answer, so a command allow can only decide when nothing else matched.
+  if (!winner) winner = allowByParts(scoped.filter((r) => r.layer === "command" && r.action === "allow"), call);
   if (winner) return { action: winner.action, source: "rule", rule: winner };
   // v5: a file tool reaching outside the workspace asks — even reads that would
   // otherwise be safe-default-allowed. Explicit rules above still win.
