@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, evaluate, isResultWait, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, evaluate, isResultWait, parseGrants, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   createChildOutputStore, rememberTwResult, substituteDeliveries,
 } from "./hv-subagent-delivery";
@@ -45,7 +45,8 @@ import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from
  */
 const CI_PATHS = process.platform === "win32";
 
-const sessionGrants = new Set<string>();
+// Round 29: seeded from HV_GRANTS, so a respawn of the same session keeps its grants (main holds them).
+const sessionGrants = new Set<string>(parseGrants(process.env.HV_GRANTS));
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
   // §35: the only schedule tool that reaches a permission prompt is delete (the

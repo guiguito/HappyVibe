@@ -244,6 +244,19 @@ export function escapesWorkspace(p: string, workspace: string, caseInsensitive =
 
 export const EMPTY_RULES: RulesFile = { global: [], workspaces: {} };
 
+/**
+ * Round 29: the session grants main hands back on a respawn (HV_GRANTS). A JSON array of
+ * non-empty strings; anything else is NO grant — failing closed costs a prompt, never reach.
+ */
+export function parseGrants(raw: string | undefined): string[] {
+  try {
+    const v: unknown = JSON.parse(raw ?? "");
+    return Array.isArray(v) && v.every((x) => typeof x === "string" && x !== "") ? (v as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 const LAYERS: readonly string[] = ["tool", "path", "command"];
 const ACTIONS: readonly string[] = ["allow", "ask", "deny"];
 

@@ -385,3 +385,15 @@ describe("safe defaults (round 29)", () => {
     expect(ev("terminal_run", { command: "ls" }).action).toBe("ask");
   });
 });
+
+import { parseGrants } from "../pi-runtime/extensions/hv-rules";
+
+describe("parseGrants (round 29)", () => {
+  test("a JSON array of names; anything else is no grant at all", () => {
+    expect(parseGrants('["bash"]')).toEqual(["bash"]);
+    expect(parseGrants("nope")).toEqual([]);
+    expect(parseGrants(undefined)).toEqual([]);
+    expect(parseGrants('[1,""]')).toEqual([]);
+    expect(parseGrants('{"a":1}')).toEqual([]);
+  });
+});

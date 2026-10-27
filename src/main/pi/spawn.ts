@@ -77,6 +77,8 @@ export interface PiSpawnOptions {
   /** Round 3 #14: persistent "bypass all permissions" resolved for this session
       (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
   bypass?: boolean;
+  /** Round 29: this session's "Allow for session" grants, handed back on a respawn → HV_GRANTS. */
+  grants?: string[];
   /**
    * §35: this session is a scheduled run whose schedule says "Read-only" →
    * HV_READONLY=1 → the bridge clamps every tool call (hv-readonly.ts).
@@ -291,6 +293,7 @@ export function resolvePiSpawn(
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
+      ...(opts.grants && opts.grants.length > 0 ? { HV_GRANTS: JSON.stringify(opts.grants) } : {}),
       ...(opts.readonly ? { HV_READONLY: "1" } : {}),
       // §13: tells the bridge Pi's MCP is loaded, so it may register workspace servers.
       ...(mcpOn ? { HV_MCP: "1" } : {}),
