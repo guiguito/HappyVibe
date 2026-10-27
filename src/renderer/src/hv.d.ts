@@ -1039,7 +1039,8 @@ interface HvApi {
   getRules(): Promise<HvRulesFile>;
   setRules(rules: HvRulesFile): Promise<HvRulesFile>;
   /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
-  addPermissionRule(workspace: string | null, tool: string): Promise<HvRulesFile>;
+  /** Round 29: `commands` (a shell prompt's patterns) writes command rules instead of a tool rule. */
+  addPermissionRule(workspace: string | null, tool: string, commands?: string[]): Promise<HvRulesFile>;
   getAutoCompaction(): Promise<boolean>;
   setAutoCompaction(on: boolean): Promise<void>;
   /** Round 3 #14: persistent "bypass all permissions". */

@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, evaluate, isResultWait, parseGrants, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { commandGrantPatterns, EMPTY_RULES, evaluate, isResultWait, parseGrants, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   createChildOutputStore, rememberTwResult, substituteDeliveries,
 } from "./hv-subagent-delivery";
@@ -1366,6 +1366,11 @@ export default function (pi: ExtensionAPI) {
             ...(boundary ? { boundary } : {}),
             // §13 (2026-10-05): the server's own claim about the tool, shown as a claim.
             ...(mcp?.hint ? { serverHint: mcp.hint } : {}),
+            // Round 29: on a shell prompt, the command rules a persistent grant saves —
+            // null when none is safe to offer (the renderer then hides both buttons).
+            ...((isShellTool(tool) || tool === "terminal_run") && typeof input.command === "string"
+              ? { commandGrant: commandGrantPatterns(input.command, process.cwd(), CI_PATHS) }
+              : {}),
           },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).

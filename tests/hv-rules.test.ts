@@ -397,3 +397,34 @@ describe("parseGrants (round 29)", () => {
     expect(parseGrants('{"a":1}')).toEqual([]);
   });
 });
+
+import { commandGrantPatterns, grantRules } from "../pi-runtime/extensions/hv-rules";
+
+describe("commandGrantPatterns (round 29)", () => {
+  const g = (c: string) => commandGrantPatterns(c, "/ws");
+  test.each([
+    ["npm run build", ["npm run *"]],
+    ["cd /ws && npm run build 2>&1 | tail -20", ["npm run *"]],
+    ["npm run build && npm test", ["npm run *", "npm test *"]],
+    ["node scripts/x.mjs", ["node *"]],
+    ["python3 -m pytest -q", ["python3 -m pytest *"]],
+    ["git commit -m x", ["git commit *"]],
+    ["ls", []],
+  ] as const)("%s → %j", (c, want) => expect(g(c)).toEqual(want));
+
+  test.each(['bash -c "x"', "sudo rm x", "FOO=1 npm test", "npm run $(x)", "cat <<EOF\nx\nEOF", "npm run build > out.log", "env npm test", "xargs rm"])(
+    "no pattern is safe to offer: %s", (c) => expect(g(c)).toBeNull());
+
+  test("a literal * in the command is saved escaped", () => {
+    expect(g("./run*.sh")).toEqual(["./run\\*.sh *"]);
+  });
+});
+
+describe("grantRules — what a one-click grant writes (round 29)", () => {
+  test("a tool grant stores the name escaped", () => {
+    expect(grantRules("mcp-manage:https://*/mcp")).toEqual([{ layer: "tool", pattern: "mcp-manage:https://\\*/mcp", action: "allow" }]);
+  });
+  test("a shell grant stores command rules, never the shell", () => {
+    expect(grantRules("bash", ["npm run *"])).toEqual([{ layer: "command", pattern: "npm run *", action: "allow" }]);
+  });
+});

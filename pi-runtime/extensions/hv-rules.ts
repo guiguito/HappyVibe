@@ -27,7 +27,7 @@ export interface RulesFile {
 }
 
 import { containsPath, foldCase, isAbsolutePath, stripTrailingSep, toPosix } from "./hv-paths";
-import { commandParts, commandPositions, isReadOnlyPart, isReadOnlyShellCommand } from "./hv-shell";
+import { commandParts, commandPositions, isReadOnlyPart, isReadOnlyShellCommand, shellWords } from "./hv-shell";
 
 export interface ToolCall {
   tool: string;
@@ -454,4 +454,48 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
   }
   if (SAFE_TOOLS.has(call.tool)) return { action: "allow", source: "safe-default" };
   return { action: "ask", source: "default" };
+}
+
+// ── Round 29: what a one-click grant writes ──────────────────────────────────
+
+/** Programs a one-click grant never names: allowing one is allowing every command. */
+const NEVER_GRANT = new Set(["bash", "sh", "zsh", "fish", "dash", "eval", "env", "sudo", "xargs", "exec", "command", "nohup", "time", "powershell", "pwsh"]);
+/** Programs whose first word after them is what the user is really approving. */
+const SUBCOMMAND_PROGRAMS = new Set(["npm", "npx", "pnpm", "yarn", "git", "uv"]);
+
+/**
+ * The command rules "Allow for workspace" / "Always allow" save on a shell prompt: one
+ * `<program> [<subcommand>] *` per part that is not already read-only, escaped, deduped.
+ * `null` when no pattern is safe to offer — a part the strict splitter cannot vouch for
+ * (substitution, here-doc, a redirect into a file), a leading `VAR=value`, or a shell or
+ * wrapper that would turn the grant into "every command". The prompt then hides both buttons.
+ */
+export function commandGrantPatterns(cmd: string, workspace: string, caseInsensitive = false): string[] | null {
+  const parts = commandParts(cmd.trim());
+  if (!parts) return null;
+  const out: string[] = [];
+  for (const part of parts) {
+    if (isReadOnlyPart(part, workspace, caseInsensitive)) continue;
+    const words = shellWords(part);
+    if (!words || words.length === 0) return null;
+    const [program, first, second] = words;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(program) || NEVER_GRANT.has(program.toLowerCase())) return null;
+    const prefix = SUBCOMMAND_PROGRAMS.has(program) && first && !first.startsWith("-") ? `${program} ${first}`
+      : /^python3?$/.test(program) && first === "-m" && second ? `${program} -m ${second}`
+      : program;
+    const pattern = `${escapeGlob(prefix)} *`;
+    if (!out.includes(pattern)) out.push(pattern);
+  }
+  return out;
+}
+
+/**
+ * The rules a one-click persistent grant appends: the shell prompt's command patterns
+ * (already escaped by commandGrantPatterns), or the tool's own name, escaped so a `*` in
+ * an approved name can never become a wildcard (docs-round finding).
+ */
+export function grantRules(tool: string, commands?: string[]): Rule[] {
+  return commands
+    ? commands.map((pattern) => ({ layer: "command", pattern, action: "allow" }))
+    : [{ layer: "tool", pattern: escapeGlob(tool), action: "allow" }];
 }

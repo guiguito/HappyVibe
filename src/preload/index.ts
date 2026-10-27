@@ -336,8 +336,8 @@ contextBridge.exposeInMainWorld("hv", {
   // ── B4: permissions v1 (additive) ───────────────────────────────
   getRules: () => ipcRenderer.invoke("hv:get-rules"),
   setRules: (rules: unknown) => ipcRenderer.invoke("hv:set-rules", rules),
-  addPermissionRule: (workspace: string | null, tool: string) =>
-    ipcRenderer.invoke("hv:add-permission-rule", workspace, tool),
+  addPermissionRule: (workspace: string | null, tool: string, commands?: string[]) =>
+    ipcRenderer.invoke("hv:add-permission-rule", workspace, tool, commands),
   getAutoCompaction: () => ipcRenderer.invoke("hv:get-auto-compaction"),
   setAutoCompaction: (on: boolean) => ipcRenderer.invoke("hv:set-auto-compaction", on),
   getGlobalBypass: () => ipcRenderer.invoke("hv:get-global-bypass"),

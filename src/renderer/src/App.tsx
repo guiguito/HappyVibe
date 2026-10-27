@@ -3038,7 +3038,8 @@ export default function App(): React.JSX.Element {
     // §10 (Phase 4): a sub-agent's answer never becomes a rule — it covers that run at most.
     if (!uiReq.info.child && (choice === "Allow for workspace" || choice === "Always allow")) {
       const ws = choice === "Allow for workspace" ? (sessions.find((s) => s.id === sid)?.workspaceId ?? null) : null;
-      void window.hv.addPermissionRule(ws, tool);
+      // Round 29: a shell prompt saves its command patterns, never the shell itself.
+      void window.hv.addPermissionRule(ws, tool, uiReq.info.commandGrant ?? undefined);
       bridgeChoice = "Allow";
     } else if (choice !== "Allow for workspace" && choice !== "Always allow") {
       bridgeChoice = choice;

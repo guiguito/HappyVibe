@@ -12,7 +12,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { EMPTY_RULES, delegationAgent, delegationRunId, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
+import { EMPTY_RULES, delegationAgent, grantRules, delegationRunId, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { WEB_CAPS } from "../../pi-runtime/extensions/hv-web";
 import { hostOf } from "../../pi-runtime/extensions/hv-browser";
 import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UNAVAILABLE_TEXT } from "./webTools";
@@ -4391,11 +4391,12 @@ export function registerIpc(
   // "Allow for Workspace" (workspace set) / "Always allow" (workspace null)
   // append a tool-layer allow rule at the matching scope. ponytail: tool-layer
   // granularity for V1; add command-pattern grants later if asked.
-  ipcMain.handle("hv:add-permission-rule", (_e, workspace: string | null, tool: string) => {
+  ipcMain.handle("hv:add-permission-rule", (_e, workspace: string | null, tool: string, commands?: string[]) => {
     const rules = readRules();
     const list = workspace ? (rules.workspaces[workspace] ??= []) : rules.global;
-    if (!list.some((r) => r.layer === "tool" && r.pattern === tool && r.action === "allow")) {
-      list.push({ layer: "tool", pattern: tool, action: "allow" });
+    // Round 29: escaped, and command rules on a shell prompt (grantRules, hv-rules.ts).
+    for (const add of grantRules(tool, Array.isArray(commands) ? commands.filter((c) => typeof c === "string" && c) : undefined)) {
+      if (!list.some((r) => r.layer === add.layer && r.pattern === add.pattern && r.action === add.action)) list.push(add);
     }
     return writeRulesAndReload(rules);
   });
