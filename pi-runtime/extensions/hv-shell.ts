@@ -7,6 +7,8 @@
  * "improve" it — wrap it.
  */
 
+import { containsPath, isAbsolutePath, toPosix } from "./hv-paths";
+
 /**
  * Read-only extras enabled by default (the ported policy leaves these opt-in;
  * all are read-only).
@@ -490,3 +492,83 @@ function hasGhJsonOutput(args: string[]): boolean {
 
 /** The git subcommands the classifier always accepts (display: READ_ONLY_SHELL_SUMMARY). */
 export const READONLY_GIT_SUBCOMMANDS: readonly string[] = Object.keys(BUILTIN_GIT_VALIDATORS);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Round 29 — the read-only shell DEFAULT: the classifier above, wrapped.
+// The classifier answers "is this read-only?" for Plan Mode, where a passing
+// command still meets the permission rules. Running WITHOUT asking needs more,
+// so this wrapper adds it around the classifier instead of relaxing it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** The only redirects that change nothing on disk. */
+const HARMLESS_REDIRECTS = new Set(["2>&1", "2>/dev/null", ">/dev/null"]);
+
+/**
+ * The classifier accepts these as "checks" for Plan Mode, but each one RUNS
+ * project code — code the agent may have just written without asking. A
+ * read-only default must never execute what it was handed.
+ */
+const RUNS_PROJECT_CODE = new Set(["cargo", "go", "pytest", "vitest", "jest"]);
+const NPM_RUNS_CODE = new Set(["test", "run", "t", "tst", "start", "exec", "x"]);
+
+/** Removes unquoted `2>&1`, `2>/dev/null` and `>/dev/null` words; everything else is kept as typed. */
+export function stripHarmlessRedirects(cmd: string): string {
+  let out = "";
+  let quote: "'" | '"' | undefined;
+  let i = 0;
+  while (i < cmd.length) {
+    const c = cmd[i];
+    if (!quote && (i === 0 || /\s/.test(cmd[i - 1]))) {
+      const hit = [...HARMLESS_REDIRECTS].find((r) => cmd.startsWith(r, i) && (i + r.length === cmd.length || /[\s|;&]/.test(cmd[i + r.length])));
+      if (hit) { i += hit.length; continue; }
+    }
+    if (c === "\\" && quote !== "'") { out += c + (cmd[i + 1] ?? ""); i += 2; continue; }
+    if (quote) { if (c === quote) quote = undefined; }
+    else if (c === "'" || c === '"') quote = c;
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/** The parts of a command the classifier can vouch for, or null when it cannot split it safely. */
+export function commandParts(cmd: string): string[] | null {
+  return splitShellSegments(stripHarmlessRedirects(cmd)) ?? null;
+}
+
+/** Does one word (or a `--flag=value`'s value) point outside the workspace? */
+function wordEscapes(word: string, workspace: string, ci: boolean): boolean {
+  const v = word.startsWith("-") && word.includes("=") ? word.slice(word.indexOf("=") + 1) : word;
+  if (v.startsWith("~")) return true;
+  if (toPosix(v).split("/").includes("..")) return true;
+  // `C:foo` is drive-relative on Windows: not provably inside, so treated like an absolute path.
+  if (isAbsolutePath(v) || /^[A-Za-z]:/.test(v)) return v !== "/dev/null" && !containsPath(workspace, v, ci);
+  return false;
+}
+
+/** One part: a `cd` into the workspace, or a classifier-safe, workspace-confined, code-free command. */
+export function isReadOnlyPart(part: string, workspace: string, caseInsensitive = false): boolean {
+  const words = shellWords(part);
+  if (!words || words.length === 0) return false;
+  const [program, ...args] = words;
+  if (program === "cd") return args.length === 1 && !wordEscapes(args[0], workspace, caseInsensitive);
+  const name = program.toLowerCase();
+  if (name === "printenv" || RUNS_PROJECT_CODE.has(name)) return false;
+  if (name === "npm" && NPM_RUNS_CODE.has((args.find((a) => !a.startsWith("-")) ?? "").toLowerCase())) return false;
+  if (args.some((a) => wordEscapes(a, workspace, caseInsensitive))) return false;
+  return isSafeCommand(part, READONLY_SUBCOMMANDS);
+}
+
+/** True when every part of the command is read-only and stays inside the workspace. */
+export function isReadOnlyShellCommand(cmd: string, workspace: string, caseInsensitive = false): boolean {
+  const parts = commandParts(cmd);
+  return !!parts && parts.length > 0 && parts.every((p) => isReadOnlyPart(p, workspace, caseInsensitive));
+}
+
+/** What the Permissions page lists — derived from the classifier, never re-typed. */
+export const READ_ONLY_SHELL_SUMMARY: readonly string[] = [
+  ...[...READ_ONLY_COMMANDS].filter((c) => c !== "printenv"),
+  ...[...READONLY_GIT_SUBCOMMANDS, ...(READONLY_SUBCOMMANDS.git ?? [])].map((s) => `git ${s}`),
+  ...(READONLY_SUBCOMMANDS.gh ?? []).map((s) => `gh ${s}`),
+  "sed -n 'N,Mp'",
+];
