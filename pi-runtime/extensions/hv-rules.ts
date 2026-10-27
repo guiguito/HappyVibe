@@ -27,7 +27,7 @@ export interface RulesFile {
 }
 
 import { containsPath, foldCase, isAbsolutePath, stripTrailingSep, toPosix } from "./hv-paths";
-import { commandParts, commandPositions, isReadOnlyPart, isReadOnlyShellCommand, shellWords } from "./hv-shell";
+import { commandParts, commandPositions, hasSubstitution, isReadOnlyPart, isReadOnlyShellCommand, shellWords } from "./hv-shell";
 
 export interface ToolCall {
   tool: string;
@@ -47,6 +47,11 @@ export interface ToolCall {
    * inside the workspace is not followed. Only consulted for the edit safe default.
    */
   realPath?: (p: string) => string;
+  /**
+   * Final review #2: the workspace root has a real `.git` (the caller has fs). Without it a
+   * `git` command is never a read-only default — free edits could have planted a repo config.
+   */
+  workspaceHasGit?: boolean;
 }
 
 export interface Verdict {
@@ -373,8 +378,12 @@ export const WORKSPACE_EDIT_TOOLS: ReadonlySet<string> = new Set(["write", "edit
  * (`.git`, `.env`, `.github`…: what Rewind does not snapshot, or what runs on its own)
  * and `AGENTS.md`/`CLAUDE.md` at any depth, in any case (what every future session is told).
  */
-export function isProtectedPath(relPosix: string): boolean {
-  const parts = relPosix.split("/").filter((s) => s !== "" && s !== ".");
+export function isProtectedPath(relPosix: string, caseInsensitive = false): boolean {
+  // Final review #5: on Windows `AGENTS.md.`, `AGENTS.md ` and `agents.md::$DATA` name the same
+  // file, and `GIT~1` is `.git`'s 8.3 short name — normalise, and treat any short name as protected.
+  const parts = relPosix.split("/").filter((s) => s !== "" && s !== ".")
+    .map((s) => (caseInsensitive ? s.replace(/:.*$/, "").replace(/[. ]+$/, "") || s : s));
+  if (caseInsensitive && parts.some((s) => /~\d/.test(s))) return true;
   if (parts.some((s) => s.startsWith(".") && s !== "..")) return true;
   const last = (parts[parts.length - 1] ?? "").toLowerCase();
   return last === "agents.md" || last === "claude.md";
@@ -388,8 +397,12 @@ function editRunsFreely(raw: string, call: ToolCall): boolean {
   const p = toPosix(raw);
   const abs = isAbsolutePath(raw) ? p : `${ws}/${p}`;
   const rel = abs.slice(ws.length).replace(/^\/+/, "");
-  if (isProtectedPath(rel)) return false;
-  return !call.realPath || containsPath(call.realPath(call.workspace), call.realPath(abs), ci);
+  if (isProtectedPath(rel, ci)) return false;
+  if (!call.realPath) return true;
+  // Final review #3: a link inside the workspace can point AT a protected path (`tools -> .git/hooks`).
+  const realWs = stripTrailingSep(toPosix(call.realPath(call.workspace)));
+  const real = toPosix(call.realPath(abs));
+  return containsPath(realWs, real, ci) && !isProtectedPath(real.slice(realWs.length).replace(/^\/+/, ""), ci);
 }
 
 const RESTRICTIVENESS: Record<RuleAction, number> = { deny: 2, ask: 1, allow: 0 };
@@ -410,12 +423,15 @@ function allowByParts<R extends Rule>(allows: R[], call: ToolCall): R | undefine
   const exact = allows.find((r) => !hasWildcard(r.pattern) && globToRegExp(r.pattern, "command").test(cmd));
   if (exact) return exact;
   const parts = commandParts(cmd);
-  if (!parts) return undefined;
+  // Final review #6: a substitution (even inside double quotes) is never vouched for by a rule.
+  if (!parts || parts.some(hasSubstitution)) return undefined;
   let first: R | undefined;
+  let afterCd = false;
   for (const part of parts) {
     const hit = allows.find((r) => globToRegExp(r.pattern, "command").test(part));
     if (hit) first ??= hit;
-    else if (!isReadOnlyPart(part, call.workspace, call.caseInsensitivePaths === true)) return undefined;
+    else if (!isReadOnlyPart(part, call.workspace, call.caseInsensitivePaths === true, { gitOk: call.workspaceHasGit === true, afterCd })) return undefined;
+    if (/^\s*cd\s/.test(part)) afterCd = true;
   }
   return first;
 }
@@ -449,7 +465,7 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
   }
   // Round 29: a read-only, workspace-confined shell command (bash only — hv-shell.ts).
   if (call.tool === "bash" && typeof call.input?.command === "string" &&
-      isReadOnlyShellCommand(call.input.command, call.workspace, call.caseInsensitivePaths === true)) {
+      isReadOnlyShellCommand(call.input.command, call.workspace, call.caseInsensitivePaths === true, { gitOk: call.workspaceHasGit === true })) {
     return { action: "allow", source: "safe-default" };
   }
   if (SAFE_TOOLS.has(call.tool)) return { action: "allow", source: "safe-default" };
@@ -462,6 +478,8 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
 const NEVER_GRANT = new Set(["bash", "sh", "zsh", "fish", "dash", "eval", "env", "sudo", "xargs", "exec", "command", "nohup", "time", "powershell", "pwsh"]);
 /** Programs whose first word after them is what the user is really approving. */
 const SUBCOMMAND_PROGRAMS = new Set(["npm", "npx", "pnpm", "yarn", "git", "uv"]);
+/** Final review #8: interpreters — a grant names the SCRIPT, never the interpreter alone. */
+const INTERPRETERS = new Set(["node", "python", "python3", "perl", "ruby", "deno", "bun", "php", "awk", "osascript", "rscript", "lua"]);
 
 /**
  * The command rules "Allow for workspace" / "Always allow" save on a shell prompt: one
@@ -472,17 +490,26 @@ const SUBCOMMAND_PROGRAMS = new Set(["npm", "npx", "pnpm", "yarn", "git", "uv"])
  */
 export function commandGrantPatterns(cmd: string, workspace: string, caseInsensitive = false): string[] | null {
   const parts = commandParts(cmd.trim());
-  if (!parts) return null;
+  if (!parts || parts.some(hasSubstitution)) return null;
   const out: string[] = [];
   for (const part of parts) {
     if (isReadOnlyPart(part, workspace, caseInsensitive)) continue;
     const words = shellWords(part);
     if (!words || words.length === 0) return null;
     const [program, first, second] = words;
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(program) || NEVER_GRANT.has(program.toLowerCase())) return null;
-    const prefix = SUBCOMMAND_PROGRAMS.has(program) && first && !first.startsWith("-") ? `${program} ${first}`
-      : /^python3?$/.test(program) && first === "-m" && second ? `${program} -m ${second}`
-      : program;
+    const name = program.toLowerCase();
+    // Final review #8: a pattern must never equal "every command" — a quoted program name,
+    // a subcommand program led by a flag (`npx -y`, `git -C`), or an interpreter's inline code.
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(program) || /\s/.test(program) || NEVER_GRANT.has(name)) return null;
+    let prefix: string;
+    if (SUBCOMMAND_PROGRAMS.has(name)) {
+      if (!first || first.startsWith("-")) return null;
+      prefix = `${program} ${first}`;
+    } else if (INTERPRETERS.has(name)) {
+      if (/^python3?$/.test(name) && first === "-m" && second && !second.startsWith("-")) prefix = `${program} -m ${second}`;
+      else if (first && !first.startsWith("-")) prefix = `${program} ${first}`;
+      else return null;
+    } else prefix = program;
     const pattern = `${escapeGlob(prefix)} *`;
     if (!out.includes(pattern)) out.push(pattern);
   }

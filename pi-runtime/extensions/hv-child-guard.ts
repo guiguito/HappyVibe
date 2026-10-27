@@ -38,7 +38,9 @@ const CI_PATHS = process.platform === "win32";
 export const CONFINED_WRITE_TOOLS = new Set(["write", "edit"]);
 
 /** realpath the nearest EXISTING ancestor, then re-attach the rest. Exported for the bridge (round 29). */
-export function resolveThroughLinks(target: string): string {
+export function resolveThroughLinks(target: string, depth = 0): string {
+  // A link loop (or a chain this long) never proves "inside": fail closed with a path no root contains.
+  if (depth > 40) return "\0hv-symlink-loop";
   let head = target;
   const tail: string[] = [];
   for (;;) {
@@ -51,6 +53,16 @@ export function resolveThroughLinks(target: string): string {
       const real = fs.realpathSync.native ? fs.realpathSync.native(head) : fs.realpathSync(head);
       return path.join(real, ...tail.reverse());
     } catch {
+      // Final review #4: realpath throws on a DANGLING link too, and re-attaching its name would
+      // read `ws/dangling` as inside while the write lands on the link's target. Follow the link.
+      try {
+        if (fs.lstatSync(head).isSymbolicLink()) {
+          const to = path.resolve(path.dirname(head), fs.readlinkSync(head));
+          return resolveThroughLinks(path.join(to, ...tail.reverse()), depth + 1);
+        }
+      } catch {
+        // lstat failed: nothing exists here, so climb as before.
+      }
       const parent = path.dirname(head);
       // Reached the filesystem root without finding anything that exists.
       if (parent === head) return target;
@@ -147,7 +159,7 @@ export function guardDecision(args: {
   const { tool, input, workspace } = args;
   const d = childDecision(
     args.rules,
-    { tool, input, workspace, caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks },
+    { tool, input, workspace, caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(workspace, ".git")) },
     { bypass: args.bypass, rulesReadable: args.rulesReadable },
   );
   // §13 round 26: first, and under bypass too — a switched-off tool is absent, not a permission.

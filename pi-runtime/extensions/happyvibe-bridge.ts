@@ -1278,7 +1278,7 @@ export default function (pi: ExtensionAPI) {
       // the audit log back into a record of decisions rather than a record of
       // one setting being on.
       const shadow = evaluate(rules, {
-        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks,
+        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")),
       });
       audit(ctx.ui, {
         tool: permTool,
@@ -1299,7 +1299,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const v = evaluate(rules, {
-      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks,
+      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")),
     });
 
     if (v.action === "deny") {

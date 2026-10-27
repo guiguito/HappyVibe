@@ -79,3 +79,15 @@ describe("round 29: a symlink inside the workspace", () => {
     expect(d.action).toBe("deny");
   });
 });
+
+import { resolveThroughLinks } from "../pi-runtime/extensions/hv-child-guard";
+
+describe("final review #4: a dangling symlink", () => {
+  it("resolves to its target, so a write through it is refused", () => {
+    const outside = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-out-")), "new.txt");
+    const link = path.join(ws, "dangling");
+    if (!fs.existsSync(link)) fs.symlinkSync(outside, link);
+    expect(resolveThroughLinks(link)).toBe(fs.realpathSync(path.dirname(outside)) + path.sep + "new.txt");
+    expect(guardDecision({ ...base, tool: "write", input: { path: link, content: "x" }, boundary: ["write"] }).action).toBe("deny");
+  });
+});

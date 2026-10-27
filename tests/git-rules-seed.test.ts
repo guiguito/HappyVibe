@@ -131,7 +131,7 @@ describe("what the rules actually do in the engine", () => {
     seedDefaultGitRules(rulesPath, false);
     const rules = read();
     // Round 29: a read-only git query (`git status`) is a safe default; anything that changes the repo asks.
-    expect(evaluate(rules, { tool: "bash", input: { command: "git status" }, workspace: "/ws" }).action).toBe("allow");
+    expect(evaluate(rules, { tool: "bash", input: { command: "git status" }, workspace: "/ws", workspaceHasGit: true }).action).toBe("allow");
     expect(evaluate(rules, { tool: "bash", input: { command: "git commit -m x" }, workspace: "/ws" }).action).toBe("ask");
   });
 });

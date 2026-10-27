@@ -65,7 +65,7 @@ describe("HOWTO_COPY", () => {
     // Round 29: the no-match sentence names every safe default the engine has — each derived here.
     expect(evaluate(none, { tool: "edit", input: { path: "src/a.ts" }, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
     expect(evaluate(none, { tool: "edit", input: { path: ".env" }, workspace: "/ws" }).action).toBe("ask");
-    expect(evaluate(none, { tool: "bash", input: { command: "git status" }, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
+    expect(evaluate(none, { tool: "bash", input: { command: "git status" }, workspace: "/ws", workspaceHasGit: true })).toEqual({ action: "allow", source: "safe-default" });
     expect(b).toContain("When no rule matches, a short list of safe tools runs on its own, and so do edits inside the workspace, read-only shell commands and read-only sub-agents; everything else asks you.");
     expect(b).toContain("“Allow for session” lasts until you close the session or quit HappyVibe, through any restart in between; changing MCP configuration clears it for MCP tools only.");
     expect(b).not.toContain("gone when the session restarts");
