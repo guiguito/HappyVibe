@@ -87,7 +87,8 @@ describe("final review #4: a dangling symlink", () => {
     const outside = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-out-")), "new.txt");
     const link = path.join(ws, "dangling");
     if (!fs.existsSync(link)) fs.symlinkSync(outside, link);
-    expect(resolveThroughLinks(link)).toBe(fs.realpathSync(path.dirname(outside)) + path.sep + "new.txt");
+    // `.native`, like the code: plain realpath keeps Windows 8.3 short names (RUNNER~1).
+    expect(resolveThroughLinks(link)).toBe(fs.realpathSync.native(path.dirname(outside)) + path.sep + "new.txt");
     expect(guardDecision({ ...base, tool: "write", input: { path: link, content: "x" }, boundary: ["write"] }).action).toBe("deny");
   });
 });
