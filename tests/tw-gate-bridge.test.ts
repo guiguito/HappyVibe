@@ -64,16 +64,27 @@ test.skipIf(!KEY)("no rule ⇒ the boundary modal for subagent:<agent>; Deny ⇒
   const { c, uis } = setup([]);
   c.on("ui-request", (u) => { uis.push(u as Ui); if ((u as Ui).method === "select") c.respondUi((u as Ui).id, { value: "Deny" }); });
   await c.start();
-  const prompted = () => permissionPrompts(uis).some((p) => p.t.tool === "subagent:code-explorer");
-  const ok = await askUntil(() => c.send({ type: "prompt", message: "Use the Agent tool now with subagent_type 'code-explorer', description 'List files', prompt 'List the files here.'. Do nothing else." }), prompted);
+  // Round 29: a read-only agent no longer prompts, so the boundary modal is shown for a write-capable one.
+  const prompted = () => permissionPrompts(uis).some((p) => p.t.tool === "subagent:worker");
+  const ok = await askUntil(() => c.send({ type: "prompt", message: "Use the Agent tool now with subagent_type 'worker', description 'List files', prompt 'List the files here.'. Do nothing else." }), prompted);
   expect(ok).toBe(true);
-  const p = permissionPrompts(uis).find((x) => x.t.tool === "subagent:code-explorer")!;
+  const p = permissionPrompts(uis).find((x) => x.t.tool === "subagent:worker")!;
   expect(p.ui.options).toEqual(["Allow", "Allow for session", "Deny"]);
   const b = p.t.boundary as { agent: string; tools: string[]; declared: boolean; writeCapable: string[]; context: string };
-  expect(b).toMatchObject({ agent: "code-explorer", declared: true, writeCapable: [], context: "fresh" });
-  expect(b.tools).toEqual(["find", "grep", "ls", "read"]);
+  expect(b).toMatchObject({ agent: "worker", declared: true, context: "fresh" });
+  expect(b.writeCapable).toContain("write");
   await new Promise((r) => setTimeout(r, 1500));
-  expect(audits(uis).some((a) => a.tool === "subagent:code-explorer" && a.decision === "deny" && a.source === "user")).toBe(true);
+  expect(audits(uis).some((a) => a.tool === "subagent:worker" && a.decision === "deny" && a.source === "user")).toBe(true);
+}, 240_000);
+
+test.skipIf(!KEY)("round 29: a read-only agent starts without a prompt, audited as a safe default", async () => {
+  const { c, uis } = setup([]);
+  c.on("ui-request", (u) => { uis.push(u as Ui); if ((u as Ui).method === "select") c.respondUi((u as Ui).id, { value: "Deny" }); });
+  await c.start();
+  const ran = () => audits(uis).some((a) => a.tool === "subagent:code-explorer" && a.decision === "allow" && a.source === "safe-default");
+  const ok = await askUntil(() => c.send({ type: "prompt", message: "Use the Agent tool now with subagent_type 'code-explorer', description 'List files', prompt 'List the files here.'. Do nothing else." }), ran);
+  expect(ok, JSON.stringify(audits(uis))).toBe(true);
+  expect(permissionPrompts(uis).filter((p) => p.t.tool === "subagent:code-explorer")).toEqual([]);
 }, 240_000);
 
 test.skipIf(!KEY)("an agent switched off on the Agents page is refused before any prompt", async () => {

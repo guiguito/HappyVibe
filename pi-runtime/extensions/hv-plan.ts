@@ -286,7 +286,9 @@ export function resolvePlanVerdict(
     case "needs-boundary": {
       // §23: read-only delegation is allowed while planning; anything wider is
       // not, because the calm banner would otherwise be lying.
-      if (boundary && isReadOnlyBoundary(boundary.tools)) return { kind: "floor-ask" };
+      // Round 29: it passes — a read-only child does nothing the session itself cannot
+      // do without asking, so the bridge runs it as a safe default here too.
+      if (boundary && isReadOnlyBoundary(boundary.tools)) return { kind: "pass" };
       const why = boundary
         ? `'${boundary.agent}' can use ${writeCapableIn(boundary.tools).join(", ") || "tools outside the read-only set"}`
         : "its reach could not be resolved";
@@ -352,9 +354,8 @@ export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>,
   const shell = !have || have.has(agentShell) ? agentShell : undefined;
   const shellClause = shell ? `; ${shell} is limited to a\nread-only allowlist` : "";
   const delegateClause = !have || have.has("Agent")
-    ? ` Delegating to a sub-agent works — the user approves its
-boundary first, and a read-only explorer is the most useful thing a planning
-session can do.`
+    ? ` Delegating to a read-only sub-agent starts without asking, and it is the
+most useful thing a planning session can do; a sub-agent that can change things needs the user's approval first.`
     : "";
   // 2026-10-10: Ask user can be off with Plan on, so the phases ask in the reply when it is.
   // `askUser` lets the settings panel (no tool list) show the variant the agent really gets.

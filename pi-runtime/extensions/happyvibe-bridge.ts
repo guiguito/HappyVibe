@@ -32,7 +32,7 @@ import {
 import { buildReadonlyPrompt, gateReadonlyCall, readonlyFromEnv } from "./hv-readonly";
 import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
-import { boundaryRuleName, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
+import { boundaryRuleName, isReadOnlyBoundary, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
 import {
   ensureSkillsBlock, findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
@@ -1315,6 +1315,14 @@ export default function (pi: ExtensionAPI) {
     // explicit rules are honored by falling through to the prompt.
     if (v.action === "allow" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      grantBoundary();
+      return;
+    }
+
+    // Round 29: a read-only delegation is a safe default — the child can do nothing this
+    // session cannot do without asking. An explicit ask rule on subagent:<agent> still prompts.
+    if (boundary && !planFloorAsk && v.source === "default" && isReadOnlyBoundary(boundary.tools)) {
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "safe-default" });
       grantBoundary();
       return;
     }
