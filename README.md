@@ -130,6 +130,28 @@ npm run gate                         # typechecks, build and the test suite — 
 npm run build:mac                    # or build:win / build:linux — an installer for your own machine
 ```
 
+### Use it from a browser
+
+The app can also serve itself to a browser tab, on the same machine or from a WSL distro to Chrome
+on Windows:
+
+```bash
+HV_SERVE=8787 npm start              # builds, then serves instead of opening a window
+```
+
+It prints a link carrying an access token (in the part after `#`, which never leaves the browser).
+Open it once: the page keeps the token for that address only, and nothing that acts is served
+without it. It listens on `127.0.0.1` only; from another computer, use an SSH tunnel
+(`ssh -L 8787:127.0.0.1:8787 that-machine`) rather than `HV_SERVE_HOST`, which serves plain HTTP.
+`HV_SERVE_TOKEN` keeps the same link across restarts.
+
+Each browser tab is a window of the app. Closing the tab doesn't close the window: it waits, with
+its terminals still running, and the next tab you open picks it back up. What a page can't do: show
+the built-in browser (the agent still uses it), drag a tab out into a new window, or take ⌘W/Ctrl+W,
+⌘T and ⌘N from the browser. File and folder dialogs are the machine's own, so they open on the
+computer running the app — with WSLg, on the Windows desktop. Quit the desktop app first if both
+would use the same profile.
+
 Before a pull request, read **[CONTRIBUTING.md](CONTRIBUTING.md)** (setup behind a proxy, the live
 suite, signing your commits). Working with a coding agent on this repo? It reads
 **[AGENTS.md](AGENTS.md)** by itself — the conventions and the traps; per-subsystem rules are in

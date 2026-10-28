@@ -514,20 +514,23 @@ export function TabStrip({
             {/* §7 round 23. onMouseDown + preventDefault, not onClick: pressing
                 a <button> does not focus it, and this menu's own dismissal has
                 unmounted an item between mousedown and mouseup twice before
-                (tests/tabstrip-menu.test.ts). */}
-            <button
-              type="button"
-              disabled={!canMoveToWindow(menu.tab)}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onMoveToWindow(menu.tab, "new");
-                setMenu(null);
-              }}
-              className={menuItem}
-            >
-              <NewWindowGlyph />
-              To new window
-            </button>
+                (tests/tabstrip-menu.test.ts). Web mode: a page cannot open a
+                window of the app, so only the open ones are offered. */}
+            {!window.hvWeb && (
+              <button
+                type="button"
+                disabled={!canMoveToWindow(menu.tab)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onMoveToWindow(menu.tab, "new");
+                  setMenu(null);
+                }}
+                className={menuItem}
+              >
+                <NewWindowGlyph />
+                To new window
+              </button>
+            )}
             {/* §7 round 23: moving to an ALREADY-OPEN window. The drag is the
                 nicer gesture and it works, but it cannot be the only route —
                 this is the precise, keyboard-reachable way to say where, and it

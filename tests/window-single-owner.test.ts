@@ -13,7 +13,8 @@ const index = readFileSync("src/main/index.ts", "utf8");
 
 describe("main is no longer bound to one window (round 23)", () => {
   it("registerIpc receives the registry, not a BrowserWindow", () => {
-    expect(ipc).toMatch(/export function registerIpc\(\s*windows: WindowRegistry<BrowserWindow>/);
+    // AppWindow: a BrowserWindow, or a browser tab in web mode (src/main/web).
+    expect(ipc).toMatch(/export function registerIpc\(\s*windows: WindowRegistry<AppWindow>/);
     expect(ipc).not.toMatch(/export function registerIpc\(win: BrowserWindow\)/);
   });
 
@@ -24,7 +25,9 @@ describe("main is no longer bound to one window (round 23)", () => {
 
   it("no dialog parents on a captured window — all seven parent on the sender's", () => {
     expect(ipc).not.toMatch(/showOpenDialog\(win,/);
-    expect(ipc.match(/showOpenDialog\(ownerOf\(e\)/g)?.length).toBe(7);
+    // Through openDialog, which parents on the sender's window (a browser tab has none).
+    expect(ipc.match(/await openDialog\(e, /g)?.length).toBe(7);
+    expect(ipc).toMatch(/const owner = ownerOf\(e\);\s*if \(owner\) return dialog\.showOpenDialog\(owner, options\);/);
   });
 
   it("the dock-click window goes through the registry too, so it receives pushes", () => {
@@ -231,8 +234,10 @@ describe("a tab lives in exactly one window (round 23)", () => {
     expect(tabstrip).toMatch(/To new window/);
     // The app's only blur-dismissed menu bug, twice reported: a <button> press
     // does not focus it, so this menu acts on mousedown (tests/tabstrip-menu).
-    const at = tabstrip.indexOf(">\n              To new window");
+    const at = tabstrip.search(/>\n\s*To new window/);
     expect(at).toBeGreaterThan(-1);
+    // Web mode: a page cannot open a window of the app, so the item is not offered there.
+    expect(tabstrip.slice(tabstrip.lastIndexOf("{!window.hvWeb && (", at), at)).toMatch(/^\{!window\.hvWeb && \(\s*<button/);
     const item = tabstrip.slice(tabstrip.lastIndexOf("<button", at), at);
     expect(item).toMatch(/onMouseDown/);
     expect(item).not.toMatch(/onClick/);
@@ -408,7 +413,8 @@ describe("a browser pane belongs to the window that draws it (round 23, stage 3)
   });
 
   it("ipc hands the sender's window to bounds, and every kind may move now", () => {
-    expect(ipc).toMatch(/\}, ownerOf\(e\)\);/);
+    // The owner is ownerOf(e); a browser tab (web mode) has none and places nothing.
+    expect(ipc).toMatch(/const owner = ownerOf\(e\);\s*if \(!owner\) return;\s*browsers\.setBounds\([\s\S]{0,200}?\}, owner\);/);
     const app = readFileSync("src/renderer/src/App.tsx", "utf8");
     expect(app).toMatch(/canMoveToWindow=\{\(\) => true\}/);
   });
