@@ -4,6 +4,23 @@
 @import "tailwindcss";
 @import "./theme.css";
 
+/* Appearance › Density: Compact (src/main/density.ts). Every Tailwind spacing step is
+   calc(var(--spacing) * n), so this one value tightens padding, margins, gaps and
+   step-sized boxes across the app; type sizes are separate tokens and stay put. The
+   conversation's column widens with it. Unlayered on purpose: Tailwind's own values
+   live in @layer theme, which an unlayered rule always beats. */
+:root[data-density="compact"] {
+  --spacing: 0.2rem;
+  --container-chat: 64rem;
+}
+/* Ultra-compact: Compact's spacing on a 14px root, so rem-sized text, icons and every
+   step shrink together (pixel sizes stay). 72rem is 1008px at that root. */
+:root[data-density="ultra-compact"] {
+  font-size: 14px;
+  --spacing: 0.2rem;
+  --container-chat: 72rem;
+}
+
 /* Round 4 #1: in-conversation search highlights (CSS Custom Highlight API). */
 ::highlight(hv-search) {
   background-color: #fde08a; /* honey, dimmed */

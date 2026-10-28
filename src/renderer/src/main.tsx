@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { installElectronRenderer } from 'inlet-sdk/crash/electron-renderer'
 import { createErrorBoundary } from 'inlet-sdk/crash/react'
 import App from './App'
+import { applyDensity } from './appearance'
 import { BrokenOnPurpose, throwFromRendererModule } from './crashProbe'
 
 // §37. The renderer entry, NOT `inlet-sdk/crash/electron`: the main entry
@@ -52,6 +53,11 @@ function Broken(): React.JSX.Element {
     </div>
   )
 }
+
+// Appearance › Density before the first frame, from the boot (main/density.ts),
+// and live when it changes — here or in another window.
+applyDensity(window.hv?.boot?.density)
+window.hv?.onDensityChanged?.(applyDensity)
 
 const root = createRoot(document.getElementById('root')!)
 root.render(
