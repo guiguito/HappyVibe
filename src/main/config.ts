@@ -16,6 +16,7 @@ import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides, tintinwebSettings, withCompaction } from "./subagentSettings";
 import { DEFAULT_DENSITY, isDensity, type Density } from "./density";
+import { DEFAULT_COLOR_SCHEME, isColorScheme, type ColorScheme } from "./colorScheme";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
 import { webDefaultServiceAllowed } from "./remoteConfig/client";
 
@@ -87,6 +88,8 @@ interface ConfigFile {
   autoCompaction?: boolean;
   /** Appearance › Density (density.ts). Absent ⇒ comfortable. */
   density?: string;
+  /** Appearance › Theme (colorScheme.ts). Absent ⇒ light. */
+  colorScheme?: string;
   /** §13 round 27: the user's image model. Absent ⇒ the cheapest priced one (resolveImageModel). */
   imageModel?: string;
   /** §13 round 8: safeStorage-encrypted secrets for catalog-installed MCP
@@ -888,6 +891,18 @@ export function getDensity(): Density {
 export function setDensity(d: Density): void {
   const cfg = load();
   cfg.density = d;
+  save(cfg);
+}
+
+/** Appearance › Theme — anything unrecognised reads as the default, never as half a theme. */
+export function getColorScheme(): ColorScheme {
+  const s = load().colorScheme;
+  return isColorScheme(s) ? s : DEFAULT_COLOR_SCHEME;
+}
+
+export function setColorScheme(s: ColorScheme): void {
+  const cfg = load();
+  cfg.colorScheme = s;
   save(cfg);
 }
 

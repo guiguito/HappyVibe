@@ -77,7 +77,7 @@ export function SystemPromptView({ sessionId }: { sessionId: string | null }): R
             {resolved && fromCache && <span className="text-[10px] text-ink-soft/70">from your last session</span>}
           </div>
           {resolved ? (
-            <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-96">
+            <pre className="font-mono text-xs bg-code text-code-ink rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-96">
               {resolved}
             </pre>
           ) : (

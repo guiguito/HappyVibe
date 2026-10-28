@@ -49,7 +49,7 @@ export function ZoomableImage({ src, alt = "image" }: { src: string; alt?: strin
           role="dialog"
           aria-modal="true"
           onClick={() => setOpen(false)}
-          className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/80 p-8 cursor-zoom-out"
+          className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/80 p-8 cursor-zoom-out"
         >
           <img src={src} alt={`${alt} (zoomed)`} className="hv-dialog-flow max-h-full max-w-full rounded-xl shadow-2xl" />
           <div className="absolute top-4 right-4 flex items-center gap-2 cursor-default" onClick={(e) => e.stopPropagation()}>

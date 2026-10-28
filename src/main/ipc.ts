@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, nativeTheme, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import { SessionGrants } from "./sessionGrants";
 import { lastDecidedByScope } from "./ruleUsage";
 import { parseImageDataUrl } from "./imageData";
@@ -29,7 +29,7 @@ import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, d
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getImageModel, setImageModel, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting, setDensity,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting, setDensity, setColorScheme,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts, getMcpRulesMigrated, setMcpRulesMigrated,
@@ -160,6 +160,7 @@ import { Scheduler, type NotifyExtra, type ScheduleEventType } from "./scheduler
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
 import { isDensity } from "./density";
+import { isColorScheme, WINDOW_BACKGROUND } from "./colorScheme";
 import type { WindowRecord } from "./windowLayout";
 import { promptWindowFor } from "./promptRouting";
 
@@ -4491,6 +4492,16 @@ export function registerIpc(
     if (!isDensity(d)) return;
     setDensity(d);
     send("hv:density-changed", d);
+  });
+  // Appearance › Theme: stored, handed to Electron (menus, dialogs, scrollbars, and the
+  // renderer's prefers-color-scheme follow it), then pushed to every window.
+  ipcMain.handle("hv:set-color-scheme", (_e, s: unknown) => {
+    if (!isColorScheme(s)) return;
+    setColorScheme(s);
+    nativeTheme.themeSource = s;
+    const bg = WINDOW_BACKGROUND[nativeTheme.shouldUseDarkColors ? "dark" : "light"];
+    for (const w of windows.all()) if (!w.isDestroyed()) w.setBackgroundColor(bg);
+    send("hv:color-scheme-changed", s);
   });
   // §9 round 28: one global switch. Written to Pi's settings.json for every later spawn, and sent
   // live (Pi persists the same key itself, so the two can't disagree).

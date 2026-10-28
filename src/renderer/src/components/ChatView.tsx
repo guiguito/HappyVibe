@@ -1259,7 +1259,7 @@ export function ChatView({
       )}
       {/* Round 3 #11 / §9: rewind confirm — the chosen scope decides what rolls back (rewindActions). */}
       {pendingRewind !== null && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setPendingRewind(null)}>
           <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">{forkMode ? FORK_DIALOG.title : "Rewind to this message?"}</div>
             {forkMode ? (
@@ -1416,7 +1416,7 @@ export function ChatView({
       )}
       {/* Round 3 #3: large-paste confirm. */}
       {pendingPaste !== null && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setPendingPaste(null)}>
           <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Paste {pendingPaste.length.toLocaleString()} characters?</div>
             <p className="text-sm text-ink-soft mb-4">That's a large amount of text to add to the composer. Insert it anyway?</p>
@@ -2398,8 +2398,9 @@ function RunRail({
                 aria-expanded={open === a.key}
                 aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}
                 // The hue is INLINE, not a class: Tailwind's scanner never sees
-                // a computed class name and would emit nothing.
-                style={{ backgroundColor: `hsl(${a.hue} 70% 92%)`, color: `hsl(${a.hue} 60% 30%)` }}
+                // a computed class name and would emit nothing. Saturation and
+                // lightness are styles.css's, so Appearance › Theme can darken them.
+                style={{ backgroundColor: `hsl(${a.hue} var(--run-chip-bg))`, color: `hsl(${a.hue} var(--run-chip-ink))` }}
                 // A2: enters with the brand's overshoot, and leaves by
                 // SHRINKING ONLY — no opacity in the exit.
                 //
