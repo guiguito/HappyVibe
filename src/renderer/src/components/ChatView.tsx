@@ -1517,7 +1517,7 @@ export function ChatView({
               // is load-bearing — the rail's expanded overlay is `absolute` and
               // positions against the nearest positioned ancestor, which is this
               // container or nothing.
-              <div className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full">
+              <div className="sticky top-0 z-20 px-6 relative max-w-chat mx-auto w-full">
                 <RunRail
                   runs={delegations}
                   terminalRuns={terminalRuns}
@@ -1616,7 +1616,7 @@ export function ChatView({
             auto-send and §29 left the first commit to the user. The row is
             gone for good after the first send. */}
         {chips && chips.length > 0 && (
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-center gap-2 px-1 pb-2">
+          <div className="max-w-chat mx-auto flex flex-wrap items-center justify-center gap-2 px-1 pb-2">
             {chips.map((c) => (
               <button
                 key={c}
@@ -1631,7 +1631,7 @@ export function ChatView({
         )}
         {/* Queued messages (Pi queue_update). Abort preserves the queue — chips stay after Stop. */}
         {queued > 0 && (
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">
+          <div className="max-w-chat mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">
             <span
               className="text-[10px] font-bold uppercase tracking-widest text-ink-soft"
               title="Queued messages are kept even if you press Stop."
@@ -1668,7 +1668,7 @@ export function ChatView({
         )}
         {/* W2.1: attached-image chips — thumbnail + remove, sent with the next prompt. */}
         {attachments.length > 0 && (
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+          <div className="max-w-chat mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
             {attachments.map((a, i) => (
               <span
                 key={i}
@@ -1693,7 +1693,7 @@ export function ChatView({
             the label carries the CONTEXT COST, because this is the surface where
             the user decides whether to spend it (§9, one step earlier). */}
         {documents.length > 0 && (
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+          <div className="max-w-chat mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
             {documents.map((d, i) => (
               <span
                 key={`${d.path}-${i}`}
@@ -1727,7 +1727,7 @@ export function ChatView({
         {/* §28: picked-element chips. Same shelf as the image attachments and the
             same promise — nothing is sent until the user sends it. */}
         {(pageRefs?.length ?? 0) > 0 && (
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+          <div className="max-w-chat mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
             {pageRefs!.map((ref, i) => (
               <span
                 key={i}
@@ -1754,7 +1754,7 @@ export function ChatView({
         )}
         {/* W2.1: honest fallback — live switch failed, override applies at next spawn. */}
         {restartHint && (
-          <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-ink-soft">
+          <div className="max-w-chat mx-auto px-1 pb-1.5 text-[11px] font-semibold text-ink-soft">
             Model saved — applies when this session restarts.
           </div>
         )}
@@ -1762,7 +1762,7 @@ export function ChatView({
             user's own terms — the chip could only truncate it. Dismissible,
             because it is advice about a file that is no longer attached. */}
         {documentErrors.map((msg, i) => (
-          <div key={i} className="max-w-3xl mx-auto px-1 pb-1.5 flex items-start gap-1.5 text-[11px] font-semibold text-berry">
+          <div key={i} className="max-w-chat mx-auto px-1 pb-1.5 flex items-start gap-1.5 text-[11px] font-semibold text-berry">
             <span className="flex-1">{msg}</span>
             <button
               type="button"
@@ -1775,11 +1775,11 @@ export function ChatView({
           </div>
         ))}
         {noModel && (
-          <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-berry">
+          <div className="max-w-chat mx-auto px-1 pb-1.5 text-[11px] font-semibold text-berry">
             No model configured — set one up on the <GoTo view="models" /> page to start chatting.
           </div>
         )}
-        <div className={`max-w-3xl mx-auto flex gap-1.5 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-2 py-1.5 focus-within:border-tangerine transition-colors`}>
+        <div className={`max-w-chat mx-auto flex gap-1.5 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-2 py-1.5 focus-within:border-tangerine transition-colors`}>
           {/* W2.1: "+" attach menu — always visible; entries gate honestly. */}
           <div className="relative shrink-0">
             <button
