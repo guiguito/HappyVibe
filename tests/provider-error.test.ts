@@ -1,5 +1,5 @@
 import { describe, expect, it, test } from "vitest";
-import { describePromptRefusal, describeProviderError, retryNoticeText } from "../src/main/providerError";
+import { describePromptRefusal, describeProviderError, resumedText, retryBudgetMs, retryNoticeText, RETRY_POLICY } from "../src/main/providerError";
 
 /**
  * Provider errors reach the transcript as raw wire text ("529 status code (no
@@ -166,23 +166,48 @@ describe("transient classes seen in real logs but previously not retriable", () 
   });
 });
 
-describe("retryNoticeText", () => {
-  test("is short and fixed in shape", () => {
-    expect(retryNoticeText({ attempt: 1, maxAttempts: 3, delayMs: 5_000 })).toBe("Retrying 1/3 · 5s");
+describe("retryNoticeText — a pause, not an error", () => {
+  test("says what is wrong and when the next try is", () => {
+    expect(retryNoticeText({ delayMs: 15_000, errorMessage: "fetch failed" })).toBe("Paused · connection lost · next try in 15s");
+    expect(retryNoticeText({ delayMs: 2_000, errorMessage: "429 Too Many Requests" })).toBe("Paused · rate limited · next try in 2s");
+    expect(retryNoticeText({ delayMs: 4_000, errorMessage: "503 Service Unavailable" })).toBe("Paused · provider busy · next try in 4s");
   });
 
-  test("drops the delay when there is none", () => {
-    expect(retryNoticeText({ attempt: 2, maxAttempts: 3, delayMs: 0 })).toBe("Retrying 2/3");
-    expect(retryNoticeText({ attempt: 2, maxAttempts: 3 })).toBe("Retrying 2/3");
+  test("a stream cut mid-request is a lost connection, not an unknown error", () => {
+    for (const m of ["terminated", "other side closed", "Upstream idle timeout exceeded", "Stream ended without finish_reason", "socket hang up"]) {
+      expect(retryNoticeText({ errorMessage: m }), m).toBe("Paused · connection lost");
+    }
   });
 
   test("falls back rather than printing undefined", () => {
-    expect(retryNoticeText({})).toBe("Retrying 1/3");
+    expect(retryNoticeText({})).toBe("Paused · provider error");
   });
 
-  test("never carries the provider's message — that is what exploded the pill", () => {
-    // Round 16: the old text appended ` — ${errorMessage}`, unbounded.
-    expect(retryNoticeText({ attempt: 1, maxAttempts: 3, delayMs: 5_000 }).length).toBeLessThanOrEqual(24);
+  test("never counts attempts at you, and never carries the provider's message — that is what exploded the pill", () => {
+    const t = retryNoticeText({ delayMs: 15_000, errorMessage: "fetch failed: a very long upstream message ".repeat(10) });
+    expect(t).not.toMatch(/\d+\/\d+|upstream/);
+    expect(t.length).toBeLessThanOrEqual(44);
+  });
+});
+
+describe("resumedText", () => {
+  test("says how long the turn was paused", () => {
+    expect(resumedText(40_000)).toBe("Resumed after 40s");
+    expect(resumedText(200)).toBe("Resumed after 1s");
+    expect(resumedText(3 * 60_000)).toBe("Resumed after 3 min");
+  });
+});
+
+describe("RETRY_POLICY", () => {
+  test("keeps trying for about a quarter of an hour, never more than 15 s apart", () => {
+    const minutes = retryBudgetMs() / 60_000;
+    expect(minutes).toBeGreaterThan(12);
+    expect(minutes).toBeLessThan(16);
+    expect(RETRY_POLICY.maxDelayMs).toBe(15_000);
+  });
+
+  test("Pi's own default, for comparison: three tries, about 14 s", () => {
+    expect(retryBudgetMs({ baseDelayMs: 2_000, maxDelayMs: 60_000, maxRetries: 3 })).toBe(14_000);
   });
 });
 

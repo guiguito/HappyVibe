@@ -40,6 +40,9 @@ export interface FileEntry {
   /** custom only. */
   customType?: string;
   data?: unknown;
+  /** context_edit only — the entry it edits, and its new content (null = out of the context). */
+  targetId?: string;
+  replacement?: unknown;
 }
 
 export interface CompactionInfo {
@@ -124,10 +127,25 @@ function marksOn(path: FileEntry[]): Set<MarkKey> {
   return marks;
 }
 
+/**
+ * Messages Pi took out of the conversation itself: a `context_edit` whose
+ * replacement is null. Pi writes one for every attempt it retries (agent-session
+ * `_omitRecoveryAttempt`) — the failed message stays in the file but the model
+ * never reads it again, and a reopened transcript must not show it either: a
+ * stream cut six times mid-answer came back as six half answers above the real
+ * one. (§9 removals are HappyVibe's own marks, below, and are not these.)
+ */
+function omittedOn(path: FileEntry[]): Set<string> {
+  const out = new Set<string>();
+  for (const e of path) if (e.type === "context_edit" && e.replacement === null && typeof e.targetId === "string") out.add(e.targetId);
+  return out;
+}
+
 /** Entries → the transcript items, §9 marks applied. */
 function itemsOf(entries: FileEntry[], path: FileEntry[]): RestoreItem[] {
+  const omitted = omittedOn(path);
   const messages = entries
-    .filter((e) => e.type === "message" && e.message)
+    .filter((e) => e.type === "message" && e.message && !omitted.has(e.id))
     .map((e) => e.message as unknown as AgentMessage);
   return restoreItems(filterMessages(messages, marksOn(path)) as unknown as RawMessage[]);
 }

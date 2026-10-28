@@ -217,17 +217,58 @@ const CONTENT_FREE =
   /^(error|errored|unknown|unknown error|failure|failed|terminated|aborted|cancelled|canceled|null|undefined|\?+|-+|n\/a)[.!]?$/i;
 
 /**
- * Round 16 — the retry notice's text, bounded by construction.
+ * HappyVibe's retry policy for Pi, written to `<agentDir>/settings.json` `retry`
+ * at startup (subagentSettings.ts `withRetryPolicy`).
  *
- * It used to read `Retrying (attempt 1/3, next in 5s) — <the provider's entire
- * error message>`, poured into a `rounded-full` pill sized for a chip. The
- * shape was never the problem; an unbounded string in it was. The provider's
- * own words are not lost: if the retries are exhausted they reach the error
- * card at agent_end, which is built to carry them.
+ * Pi's default gives up after three tries — 2 s, 4 s, 8 s, about 14 s in all —
+ * so a train tunnel or a Wi-Fi drop ended the turn on an error card, and every
+ * message queued behind it failed the same way. Pi's retry is the right
+ * mechanism: it continues the SAME turn and keeps the failed attempts out of
+ * what the model reads, where the card's Retry resends the message as a new
+ * one. It only stopped too early. So the backoff caps at 15 s and the tries go
+ * on for about a quarter of an hour (`retryBudgetMs`): long enough for a
+ * connection that is gone for minutes, where Claude Code's 10 retries and
+ * Codex's 5 stream retries are sized for a server's hiccup. Stop gives up at any
+ * moment, and an error that retrying cannot fix (a key, a quota) is not retried.
  */
-export function retryNoticeText(r: { attempt?: number; maxAttempts?: number; delayMs?: number }): string {
+export const RETRY_POLICY = { baseDelayMs: 2_000, maxDelayMs: 15_000, maxRetries: 60 } as const;
+
+/** How long the policy keeps trying, waits only — Pi's own backoff formula (pi-ai `retryDelayMs`). */
+export function retryBudgetMs(p: { baseDelayMs: number; maxDelayMs: number; maxRetries: number } = RETRY_POLICY): number {
+  let total = 0;
+  for (let attempt = 1; attempt <= p.maxRetries; attempt++) total += Math.min(p.baseDelayMs * 2 ** (attempt - 1), p.maxDelayMs);
+  return total;
+}
+
+/** Why a retried turn is waiting, in three words or fewer. */
+function pauseReason(raw: string): string {
+  const kind = describeProviderError(raw).kind;
+  // "terminated" and "other side closed" are content-free to the card, but to a
+  // retry they mean exactly one thing: the connection went away mid-stream.
+  if (kind === "network" || /terminated|other side closed|connection|socket|ECONNRESET|EPIPE|ended without|stream ended/i.test(raw)) return "connection lost";
+  if (kind === "rate_limit") return "rate limited";
+  if (kind === "overloaded" || kind === "server") return "provider busy";
+  return "provider error";
+}
+
+/**
+ * The retry notice — a PAUSE, not an error: the turn is waiting and will pick up
+ * where it stopped, so it says so instead of counting attempts at you (a
+ * dropped connection used to stack red cards, 2026-10-27).
+ *
+ * Bounded by construction (round 16): it once poured the provider's entire
+ * message into a pill sized for a chip. Those words now ride the notice's hover
+ * title, and reach the error card if the tries run out.
+ */
+export function retryNoticeText(r: { delayMs?: number; errorMessage?: string }): string {
   const secs = Math.round((r.delayMs ?? 0) / 1000);
-  return `Retrying ${r.attempt ?? 1}/${r.maxAttempts ?? 3}${secs ? ` · ${secs}s` : ""}`;
+  return `Paused · ${pauseReason(r.errorMessage ?? "")}${secs ? ` · next try in ${secs}s` : ""}`;
+}
+
+/** The notice once a retry got through: how long the turn was paused. */
+export function resumedText(pausedMs: number): string {
+  const s = Math.max(1, Math.round(pausedMs / 1000));
+  return s < 90 ? `Resumed after ${s}s` : `Resumed after ${Math.round(s / 60)} min`;
 }
 
 /**

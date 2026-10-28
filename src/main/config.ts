@@ -14,7 +14,7 @@ import { PRIVACY_SWITCHES, lockedByEnv, type Env, type SwitchKey } from "./priva
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
-import { disabledAgentOverrides, tintinwebSettings, withCompaction } from "./subagentSettings";
+import { disabledAgentOverrides, tintinwebSettings, withCompaction, withRetryPolicy } from "./subagentSettings";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
 import { webDefaultServiceAllowed } from "./remoteConfig/client";
 
@@ -900,6 +900,21 @@ export function writePiCompactionSetting(): void {
     /* absent or corrupt — start fresh */
   }
   fs.writeFileSync(file, `${JSON.stringify(withCompaction(settings, getAutoCompaction()), null, 2)}\n`);
+}
+
+/**
+ * HappyVibe's retry policy as Pi's `retry` settings (providerError.ts `RETRY_POLICY`), for every
+ * later spawn. Same read-merge-write as the two above.
+ */
+export function writePiRetrySetting(): void {
+  const file = path.join(agentDir(), "settings.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  fs.writeFileSync(file, `${JSON.stringify(withRetryPolicy(settings), null, 2)}\n`);
 }
 
 /**
