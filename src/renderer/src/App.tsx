@@ -18,6 +18,7 @@ import { type ForkOrigin, type TranscriptItem } from "./components/Transcript";
 import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
+import { adoptDraft, carryDraft, dropDraft } from "./composerDrafts";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { forkMarkerIndex, stampPiTs } from "./fork";
 import { reloadNotice } from "./reloadNotice";
@@ -492,7 +493,10 @@ export default function App(): React.JSX.Element {
      * every tab present and invisible.
      */
     const offTabArrive = window.hv.onTabArrive(({ tab, ws, draft }) => {
-      if (draft !== undefined) arrivedDrafts.current[bufferKey(ws, tab)] = draft;
+      // A chat tab's draft is the composer's unsent message (composerDrafts.ts),
+      // adopted before its ChatView mounts here; a file tab's is its buffer.
+      if (draft !== undefined && isChatTab(tab)) adoptDraft(sessionOf(tab), draft);
+      else if (draft !== undefined) arrivedDrafts.current[bufferKey(ws, tab)] = draft;
       /**
        * The SUBJECT's state was pushed before this window held the tab — a
        * terminal or pane created after this window booted is simply not in its
@@ -978,7 +982,8 @@ export default function App(): React.JSX.Element {
         // text on the boot payload — `openWindow` returns before this renderer
         // exists, so an hv:tab-arrive push at that moment reaches nobody.
         const bootDraft = window.hv.boot.draft;
-        if (bootDraft) arrivedDrafts.current[bufferKey(bootDraft.ws, bootDraft.tab)] = bootDraft.draft;
+        if (bootDraft && isChatTab(bootDraft.tab)) adoptDraft(sessionOf(bootDraft.tab), bootDraft.draft);
+        else if (bootDraft) arrivedDrafts.current[bufferKey(bootDraft.ws, bootDraft.tab)] = bootDraft.draft;
         const [sessionList, termList, browserList, wsList, wtMap] = await Promise.all([
           window.hv.listSessions(),
           window.hv.termList(),
@@ -2471,13 +2476,16 @@ export default function App(): React.JSX.Element {
    * closeBrowserTab wrappers: those kill the PTY and destroy the pane. Right
    * for closing a tab, catastrophic for moving one.
    */
-  const detachTab = (ws: string, tab: TabId): void =>
+  const detachTab = (ws: string, tab: TabId): void => {
+    // A moved chat tab took its unsent message along (carryDraft): none stays behind here.
+    if (isChatTab(tab)) dropDraft(sessionOf(tab));
     setTabsByWs((p) => {
       const t = p[ws];
       if (!t) return p;
       const slot = paneOf(t, tab);
       return slot < 0 ? p : { ...p, [ws]: closeTab(t, slot, tab) };
     });
+  };
 
   /** Open any tab kind into a layout, by its id alone. */
   const openInto = (t: WorkspaceTabs, tab: TabId): WorkspaceTabs => {
@@ -2502,10 +2510,9 @@ export default function App(): React.JSX.Element {
     target: "new" | number,
     at?: { x: number; y: number },
   ): Promise<void> => {
-    // Only a file tab has a buffer; the other three kinds live in main.
-    const draft = isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab)
-      ? undefined
-      : draftsRef.current[bufferKey(ws, tab)];
+    // A file tab carries its buffer and a chat tab its unsent message; a terminal
+    // and a browser pane live in main.
+    const draft = draftOf(ws, tab);
     // The destination layout is built HERE, by the renderer that owns the tabs
     // module — main stays unable to tell a tab from a filename.
     const record = target === "new"
@@ -2524,8 +2531,10 @@ export default function App(): React.JSX.Element {
     ui: { "hv:active-ws": ws, "hv:sidebar-collapsed": "1" },
   });
 
-  const draftOf = (ws: string, tab: TabId): string | undefined =>
-    isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab) ? undefined : draftsRef.current[bufferKey(ws, tab)];
+  const draftOf = (ws: string, tab: TabId): string | undefined => {
+    if (isChatTab(tab)) return carryDraft(sessionOf(tab));
+    return isTermTab(tab) || isBrowserTab(tab) ? undefined : draftsRef.current[bufferKey(ws, tab)];
+  };
 
   /**
    * §7 round 23 — a drag ended. Main decides what that MEANT from the release
@@ -3679,6 +3688,7 @@ export default function App(): React.JSX.Element {
           // workspace terminal, so main just releases the claim. Its tab, if
           // the user wants one, is Open-as-tab from the card.
           await window.hv.deleteSession(id, decision ?? undefined); // sessions-changed broadcast refreshes the list
+          dropDraft(id);
           setAgentTerms((p) => {
             if (!(id in p)) return p;
             const { [id]: _gone, ...rest } = p;
