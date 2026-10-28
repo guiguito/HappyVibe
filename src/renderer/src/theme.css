@@ -5,6 +5,10 @@
    Cream paper, warm ink, tangerine + honey accents. Chunky borders
    with hard offset shadows: hand-crafted sticker energy, not chrome. */
 @theme static {
+  /* Appearance › Density (src/main/density.ts): the conversation's reading column,
+     `max-w-chat`. Compact widens it, in styles.css. */
+  --container-chat: 48rem;
+
   --font-sans: "Gabarito Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
 
@@ -41,6 +45,14 @@
   --color-teal-soft: #dcefed;
   --color-rose: #c2478a;
   --color-rose-soft: #fae0ee;
+
+  /* Appearance › Theme (src/main/colorScheme.ts): three jobs `ink` and `paper` used to
+     do that must NOT flip in the dark, so they are named for the job. The veil behind a
+     modal (`bg-scrim/40`) darkens in both themes, and a code block (chat, prompts) stays
+     the dark Workshop slab the terminal also wears. In light they ARE ink and paper. */
+  --color-scrim: #33251a;
+  --color-code: #33251a;
+  --color-code-ink: #faf4e8;
 
   --shadow-sticker: 3px 3px 0 0 var(--color-line);
   --shadow-sticker-lg: 5px 5px 0 0 var(--color-line-strong);

@@ -120,6 +120,11 @@ permission UX and context-window visibility as the differentiators.
 - `src/main/platform.ts` is the OS seam; `process.platform` anywhere else in `src/main` is a review red.
 - Guidance copy that describes a gate is DERIVED from that gate, never re-typed beside it
   (`tests/how-it-works.test.ts`).
+- Colour is tokens only: every colour is a `--color-*` from `theme.css`, and Appearance › Theme's dark
+  rule in `styles.css` redefines each one. A colour that must NOT flip in the dark is named for its job
+  (`scrim` behind a modal, `code` for a code block), never borrowed from `ink`/`paper`.
+  `tests/color-scheme.test.ts` fails on a token without a dark value, a text colour under 4.5:1 on
+  the dark surfaces, a Tailwind default palette class, or hex in the editor theme.
 
 ## Pins
 - Versions live in `pi-runtime/package.json` (and `inlet-sdk` in the root) — read them there, never
@@ -139,7 +144,7 @@ permission UX and context-window visibility as the differentiators.
 
 ## Import hygiene — each of these typechecks, runs in dev, and fails later
 - **Anything the renderer imports must not reach Node.** `schedules.ts`, `hv-paths.ts`,
-  `update/state.ts`, `usage/events.ts`, `remoteConfig/defaults.ts`, `providerError.ts`, `docsBase.ts`, `privacySwitches.ts`, `toolWeights.generated.ts` and `hv-images.ts` import nothing; `hv-shell.ts` imports only `hv-paths.ts`; `terminalSettings.ts` imports the platform seam TYPE-only. A
+  `update/state.ts`, `usage/events.ts`, `remoteConfig/defaults.ts`, `providerError.ts`, `density.ts`, `colorScheme.ts`, `docsBase.ts`, `privacySwitches.ts`, `toolWeights.generated.ts` and `hv-images.ts` import nothing; `hv-shell.ts` imports only `hv-paths.ts`; `terminalSettings.ts` imports the platform seam TYPE-only. A
   runtime import puts `node:*` in the browser bundle and only `npm run build` fails — *"X is not
   exported by __vite-browser-external"*, naming a file one hop from the real cause.
 - **Anything vitest imports must not reach `electron`.** `ipc.ts` never imports `./crash`, `./update`

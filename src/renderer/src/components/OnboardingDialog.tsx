@@ -251,7 +251,7 @@ export function OnboardingDialog({
   return (
     <Dialog.Root open>
       <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-scrim/50 backdrop-blur-[2px]" />
         <Dialog.Content
           ref={contentRef}
           /**

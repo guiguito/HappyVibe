@@ -29,6 +29,8 @@ export type View =
   // §37: the one page that answers "what does this app send" — a usage
   // analytics switch lands here next, which is why it is not named "Crash reports".
   | "privacy"
+  // Appearance › Density (main/density.ts): how the app looks — set once, like shortcuts.
+  | "appearance"
   | "terminal"
   // §27.
   | "voice"
@@ -227,6 +229,15 @@ function GuideIcon(): React.JSX.Element {
   );
 }
 
+function AppearanceIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M9 9v11" />
+    </svg>
+  );
+}
+
 function KeyboardIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -352,6 +363,8 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // an adjective separating GENERATED text from the browser-autofill sense of
   // remembered text, not a second name for "the agent" or "the model".
   { view: "onBehalf", label: "AI autofill", Icon: AutofillIcon, group: "app" },
+  // How the app looks: set once, so it sits with the set-once pages.
+  { view: "appearance", label: "Appearance", Icon: AppearanceIcon, group: "app" },
   // Closes the group: of the four it is the one you set once and never reopen.
   { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
   // §37: last, past the set-once page — what the app sends is a thing you
@@ -1595,7 +1608,7 @@ export function Sidebar({
           * Archive leads: it is the reversible one.
           */}
         {confirmDelete && (
-          <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
+          <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
             <div
               className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
               onMouseDown={(e) => e.stopPropagation()}

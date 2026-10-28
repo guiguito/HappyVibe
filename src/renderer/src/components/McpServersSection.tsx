@@ -86,7 +86,7 @@ export function McpConnectResult({
   }, [connectingTo]);
   return (
     <div
-      className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6"
+      className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6"
       onMouseDown={onClose}
     >
       <div
@@ -622,7 +622,7 @@ function McpServerEditor({
   const labelCls = "text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1 mt-3 block";
 
   return (
-    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6" onMouseDown={onClose}>
       <div
         className="hv-dialog-flow w-full max-w-xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 max-h-[85vh] overflow-y-auto"
         onMouseDown={(e) => e.stopPropagation()}

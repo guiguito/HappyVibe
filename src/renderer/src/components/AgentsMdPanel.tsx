@@ -186,7 +186,7 @@ export function AgentsMdPanel({
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-scrim/50 backdrop-blur-[2px]" />
         <Dialog.Content className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(42rem,calc(100vw-3rem))] rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none flex flex-col max-h-[85vh]">
           <div className="flex items-center gap-3 mb-3">
             <div className="size-10 rounded-xl bg-honey border-2 border-ink/80 flex items-center justify-center -rotate-3 shrink-0">

@@ -78,6 +78,20 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
       <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
     </>
   ),
+  // The sidebar's AppearanceIcon, same picture: a window and its panes.
+  appearance: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M9 9v11" />
+    </>
+  ),
+  // Appearance › Theme: a disc half light, half dark.
+  theme: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+    </>
+  ),
 };
 
 export function Section({

@@ -27,7 +27,7 @@ export function MissedRunsDialog({ missed, onClose }: { missed: Schedule[]; onCl
   const btn = "px-2.5 py-1 rounded-lg border border-line font-bold text-xs cursor-pointer hover:bg-card";
 
   return (
-    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6">
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6">
       <div className="hv-dialog-flow w-full max-w-lg rounded-2xl border-2 border-line-strong bg-paper shadow-sticker-lg p-5">
         <h2 className="font-black text-lg tracking-tight">
           {missed.length === 1 ? "A schedule missed its time" : `${missed.length} schedules missed their time`}
