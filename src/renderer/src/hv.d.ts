@@ -1467,6 +1467,8 @@ interface HvApi {
 
   interface Window {
     hv: HvApi;
+    /** Web mode (HV_SERVE): set by the browser shim (src/renderer/web), never in a window of the app. */
+    hvWeb?: true;
     /** §37: what `inlet-sdk/crash/electron-renderer` sends renderer reports
         through. The channel is fixed in the preload; this signature only
         matches the SDK's. */

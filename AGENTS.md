@@ -174,6 +174,9 @@ permission UX and context-window visibility as the differentiators.
   put anything with inner quotes in a `.bat`/`.mjs` (WSL→cmd mangles nested quotes).
 - **Linux:** `npm ci` compiles node-pty (no linux prebuild) — needs `build-essential` + `python3`.
   Users are unaffected: the N-API binary rides in the artifact.
+- **Web mode:** `HV_SERVE=<port> npm start` serves the app to browser tabs (a WSL distro to Chrome on
+  Windows, say). Each tab is a `WebWindow` in the same registry, and the preload is compiled a second
+  time against a browser `electron` shim — `.claude/rules/web.md`.
 - Copy: no `⌘`, no "your Mac" — `formatBinding`, `MOD` and `platformCopy.ts` carry it
   (`tests/mod-key-copy.test.ts`).
 
@@ -202,4 +205,4 @@ permission UX and context-window visibility as the differentiators.
 workflows) · `permissions-plan` (rules, plan mode, audit) · `mcp` · `plugins` · `skills-prompts` ·
 `memory` · `schedules` · `terminals` · `browser` · `renderer-layers` (overlays, z-index, menus) ·
 `transcript-cards` · `tabs-layout` · `guidance` · `git-worktrees` · `crash-feedback` · `release`
-(signing, updater) · `voice-documents` · `providers` · `typescript` · `windows` · `linux` · `docs` (user guide)
+(signing, updater) · `voice-documents` · `providers` · `typescript` · `windows` · `linux` · `web` (HV_SERVE) · `docs` (user guide)

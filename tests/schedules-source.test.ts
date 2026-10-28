@@ -211,7 +211,8 @@ describe("clicking a notification lands somewhere (§5.4)", () => {
     // state a 3 a.m. run finishes in. Reusing windows.primary() alone would
     // click into nothing.
     expect(handler()).toContain("windows.primary() ?? openWindow()");
-    expect(handler()).toMatch(/w\.show\(\);\s*w\.focus\(\);/);
+    // `?.`: in web mode there is no window to make — openWindow opens the page and returns null.
+    expect(handler()).toMatch(/w\?\.show\(\);\s*w\?\.focus\(\);/);
   });
 
   it("routes by kind: the missed nudge opens the dialog, a finished run opens its session", () => {
