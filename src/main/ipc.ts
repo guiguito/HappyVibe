@@ -28,7 +28,7 @@ import { buildDocumentBlocks, convertDocument, probeDocuments } from "./document
 import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, documentExtension, isDocumentPath } from "../../pi-runtime/extensions/hv-document";
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getImageModel, setImageModel, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
-  customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
+  customKeyStatus, getWorkspaceBypass, getGlobalFileRewind, setGlobalFileRewind, getWorkspaceFileRewind, setWorkspaceFileRewind, resolveFileRewind, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
@@ -244,7 +244,7 @@ export function promptTemplateNotifyMessage(
 
 /** Which config source a live respawn is applying — cosmetic, shown in the renderer notice
     (one line per value in src/renderer/src/reloadNotice.ts, pinned by tests/mcp-reload-copy.test.ts). */
-type ReloadReason = "mcp" | "skills" | "promptTemplates" | "tools";
+type ReloadReason = "mcp" | "skills" | "promptTemplates" | "tools" | "fileRewind";
 
 /** §23: a plan-family notify (hv.plan | hv.plan-status | hv.plan.blocked), else null. */
 function parsePlanNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
@@ -840,6 +840,10 @@ export function registerIpc(
   // §9: a session's "pre" capture in flight. A message sent to the same session
   // while it runs waits for it, so the two reach Pi in the order they were sent.
   const pendingPre = new Map<string, Promise<unknown>>();
+  // §9: whether Rewind keeps a copy of this workspace's files (Settings › Permissions ›
+  // Rewind, or the workspace's override). Read per capture, so a change applies to the
+  // next message; a worktree reads its project's setting, like bypass.
+  const fileRewindOn = (workspaceId: string): boolean => resolveFileRewind(worktrees.projectOf(workspaceId));
   /**
    * §26 part 2: the same idea for the terminals a session started. The RENDERED
    * block is stored rather than the list, because it is sorted and therefore
@@ -1067,6 +1071,8 @@ export function registerIpc(
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass,
+      // §9: Rewind's copy of the files, resolved like bypass. Off ⇒ an edit asks (HV_FILE_REWIND=0).
+      fileRewind: resolveFileRewind(project ?? null),
       // Round 29: "Allow for session" survives the respawn (never a fork — a fork is a new id).
       grants: sessionId ? sessionGrants.list(sessionId) : undefined,
       // §35: a run whose schedule says Read-only spawns clamped. Re-derived here
@@ -1716,7 +1722,7 @@ export function registerIpc(
         try {
           if (e.type === "tool_execution_start" && typeof e.toolCallId === "string") {
             void snapshotHost.stamp(snapshotDir(), sessionId, e.toolCallId).catch(() => {});
-          } else if (e.type === "agent_end") {
+          } else if (e.type === "agent_end" && fileRewindOn(snapWsId)) {
             void snapshotHost.capture(
               { root: snapshotDir(), sessionId, roots: roots(), workspaceId: snapWsId, kind: "post", now: new Date().toISOString() },
               SNAPSHOT_BUDGET_MS.post,
@@ -3850,7 +3856,7 @@ export function registerIpc(
     // this capture too (`pendingPre`), so it cannot reach Pi first.
     let snap: { seq: number } | null = null;
     const ahead = pendingPre.get(sessionId);
-    if (!wasBusy && meta?.workspaceId) {
+    if (!wasBusy && meta?.workspaceId && fileRewindOn(meta.workspaceId)) {
       const capture = snapshotHost.capture(
         { root: snapshotDir(), sessionId, roots: roots(), workspaceId: meta.workspaceId, kind: "pre", now: new Date().toISOString() },
         SNAPSHOT_BUDGET_MS.pre,
@@ -4106,13 +4112,15 @@ export function registerIpc(
       // so the per-session cap never evicts it. Best-effort — a snapshot failure
       // must never block Implement — and on the snapshot worker, with the same
       // budget and the same rule as a message's capture: complete before the turn.
-      const capture = snapshotHost.capture(
-        { root: snapshotDir(), sessionId, roots: roots(), workspaceId: wsId, kind: "pre", now: new Date().toISOString(), label: "implement" },
-        SNAPSHOT_BUDGET_MS.pre,
-      ).catch(() => null); // never block the handoff
-      pendingPre.set(sessionId, capture);
-      await capture;
-      if (pendingPre.get(sessionId) === capture) pendingPre.delete(sessionId);
+      if (fileRewindOn(wsId)) {
+        const capture = snapshotHost.capture(
+          { root: snapshotDir(), sessionId, roots: roots(), workspaceId: wsId, kind: "pre", now: new Date().toISOString(), label: "implement" },
+          SNAPSHOT_BUDGET_MS.pre,
+        ).catch(() => null); // never block the handoff
+        pendingPre.set(sessionId, capture);
+        await capture;
+        if (pendingPre.get(sessionId) === capture) pendingPre.delete(sessionId);
+      }
       const client = manager.get(sessionId) as PiClient | null;
       if (model && typeof model.provider === "string" && typeof model.modelId === "string") {
         index.update(sessionId, { model });
@@ -4423,6 +4431,7 @@ export function registerIpc(
     // the bridge will answer — a preview that disagrees with the gate is worse than none.
     evaluate(readRules(), {
       tool, input, workspace: workspaceId, caseInsensitivePaths: platform.isWindows,
+      fileRewind: resolveFileRewind(worktrees.projectOf(workspaceId)),
     }));
 
   // ── §28 Embedded browser: the renderer's half ──────────────────────────────
@@ -4519,6 +4528,31 @@ export function registerIpc(
       // §29: a worktree session's workspaceId is the worktree root; its bypass is its project's.
       if (worktrees.projectOf(index.get(id)?.workspaceId ?? "") === workspace) applyBypassLive(id);
     }
+  });
+
+  // §9: Rewind's copy of the files. Captures read it per message; the bridge reads it at
+  // spawn (an edit is a safe default only while it can be undone), so affected sessions
+  // respawn when idle — the same reload pass as the tool switches.
+  // Only the sessions whose resolved value can have changed: a global change skips
+  // workspaces with their own override; a worktree session follows its project (§29).
+  const reloadForFileRewind = (affects: (project: string) => boolean): void => {
+    const seen = new Set<string>();
+    for (const id of manager.activeIds()) {
+      const ws = index.get(id)?.workspaceId;
+      if (!ws || seen.has(ws) || !affects(worktrees.projectOf(ws))) continue;
+      seen.add(ws);
+      scheduleRuntimeReload("fileRewind", "workspace", ws);
+    }
+  };
+  ipcMain.handle("hv:get-global-file-rewind", () => getGlobalFileRewind());
+  ipcMain.handle("hv:set-global-file-rewind", (_e, on: boolean) => {
+    setGlobalFileRewind(!!on);
+    reloadForFileRewind((project) => getWorkspaceFileRewind(project) === null);
+  });
+  ipcMain.handle("hv:get-workspace-file-rewind", (_e, workspace: string) => getWorkspaceFileRewind(workspace));
+  ipcMain.handle("hv:set-workspace-file-rewind", (_e, workspace: string, on: boolean | null) => {
+    setWorkspaceFileRewind(workspace, on === null ? null : !!on);
+    reloadForFileRewind((project) => project === workspace);
   });
 
   // §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).

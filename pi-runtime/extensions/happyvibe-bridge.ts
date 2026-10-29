@@ -350,6 +350,10 @@ let rulesError: string | null = null;
 // permissions" setting is delivered via HV_BYPASS at spawn and re-applied on
 // every respawn, so unlike the manual toggle it survives a respawn.
 let dangerous = process.env.HV_BYPASS === "1";
+// §9: Rewind keeps no copy of this workspace's files (Settings › Permissions › Rewind, or the
+// workspace's override), resolved at spawn. An in-workspace edit then asks: it could not be undone.
+// A change respawns the session (main's reload pass), so this never goes stale mid-session.
+const FILE_REWIND = process.env.HV_FILE_REWIND !== "0";
 /**
  * §35: a scheduled read-only run. `const`, and that is the feature — there is
  * no command, no tool and no toggle that can flip it, so nothing inside the
@@ -1278,7 +1282,7 @@ export default function (pi: ExtensionAPI) {
       // the audit log back into a record of decisions rather than a record of
       // one setting being on.
       const shadow = evaluate(rules, {
-        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")),
+        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")), fileRewind: FILE_REWIND,
       });
       audit(ctx.ui, {
         tool: permTool,
@@ -1299,7 +1303,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const v = evaluate(rules, {
-      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")),
+      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")), fileRewind: FILE_REWIND,
     });
 
     if (v.action === "deny") {

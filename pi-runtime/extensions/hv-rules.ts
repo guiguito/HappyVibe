@@ -52,6 +52,12 @@ export interface ToolCall {
    * `git` command is never a read-only default — free edits could have planted a repo config.
    */
   workspaceHasGit?: boolean;
+  /**
+   * §9: false when Rewind keeps no copy of this workspace's files (the user turned it off,
+   * HV_FILE_REWIND=0). The edit safe default exists BECAUSE Rewind can undo an edit; without
+   * the copy it cannot, so the edit asks like any other call. Absent means on.
+   */
+  fileRewind?: boolean;
 }
 
 export interface Verdict {
@@ -458,8 +464,9 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
       escapesWorkspace(p, call.workspace, call.caseInsensitivePaths === true));
     if (outside) return { action: "ask", source: "outside-workspace", outsidePath: outside };
   }
-  // Round 29: an edit Rewind can undo, inside the workspace, runs without asking.
-  if (WORKSPACE_EDIT_TOOLS.has(call.tool)) {
+  // Round 29: an edit Rewind can undo, inside the workspace, runs without asking —
+  // and only while Rewind keeps a copy of the files here (§9's switch).
+  if (WORKSPACE_EDIT_TOOLS.has(call.tool) && call.fileRewind !== false) {
     const paths = pathArgs(call.input ?? {});
     if (paths.length > 0 && paths.every((p) => editRunsFreely(p, call))) return { action: "allow", source: "safe-default" };
   }
