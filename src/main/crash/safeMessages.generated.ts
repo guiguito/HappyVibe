@@ -59,6 +59,8 @@ export const SAFE_MESSAGES: ReadonlySet<string> = new Set([
   "That picture can't be saved.",
   "That repeat is not one HappyVibe can run.",
   "That schedule no longer exists.",
+  "The snapshot worker stopped.",
+  "The snapshot worker was stuck and was replaced.",
   "This session has no workspace to save into.",
   "This session has nothing to copy yet.",
   "URL is required",

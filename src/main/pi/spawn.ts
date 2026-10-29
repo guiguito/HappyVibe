@@ -77,6 +77,9 @@ export interface PiSpawnOptions {
   /** Round 3 #14: persistent "bypass all permissions" resolved for this session
       (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
   bypass?: boolean;
+  /** §9: false when Rewind keeps no copy of this workspace's files → HV_FILE_REWIND=0, and the
+      bridge stops treating an in-workspace edit as a safe default (it could not be undone). */
+  fileRewind?: boolean;
   /** Round 29: this session's "Allow for session" grants, handed back on a respawn → HV_GRANTS. */
   grants?: string[];
   /**
@@ -293,6 +296,7 @@ export function resolvePiSpawn(
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
+      ...(opts.fileRewind === false ? { HV_FILE_REWIND: "0" } : {}),
       ...(opts.grants && opts.grants.length > 0 ? { HV_GRANTS: JSON.stringify(opts.grants) } : {}),
       ...(opts.readonly ? { HV_READONLY: "1" } : {}),
       // §13: tells the bridge Pi's MCP is loaded, so it may register workspace servers.

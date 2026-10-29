@@ -119,11 +119,15 @@ Don't like where that went? Take the session back to one of your own messages, a
 
 The two file choices appear only when the app has something to restore for that message. Before you confirm, it tells you how many files will be restored and removed, and names any file changed since, which it leaves alone.
 
+Before the agent starts on a message, the app keeps a copy of your files on your computer, so a rewind can put them back. Your message waits for that copy, up to 5 seconds. You can keep using the app meanwhile. If it takes longer, say in a very large folder, the agent starts without it, and a rewind to that message can't put your files back to how they were before it.
+
+Don't want that copy, say for a very large folder? Turn it off on the [Permissions](/docs/permissions/#rewind) page, or for one workspace in its [workspace settings](#workspace-settings). A rewind to a message you send while it's off then restores the conversation only, and the agent asks before each edit.
+
 To undo one change instead of a whole message, see [Files and changes](/docs/files-and-changes/#undo-one-change).
 
 ## Workspace settings
 
-Each workspace has its own settings: the model its sessions start with, its permission rules, its skills, prompts, memory and MCP servers. To open them, hover over the workspace's name in the sidebar and click the gear icon. Its tooltip reads "Workspace settings".
+Each workspace has its own settings: the model its sessions start with, its permission rules, whether Rewind keeps a copy of its files, its skills, prompts, memory and MCP servers. To open them, hover over the workspace's name in the sidebar and click the gear icon. Its tooltip reads "Workspace settings".
 
 ## Next
 
