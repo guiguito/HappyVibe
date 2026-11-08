@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+Runtime: Pi 1.5.0 · sub-agents 0.22.0
+
 ## [0.2.0] — 2026-10-25
 
 ### Heads up

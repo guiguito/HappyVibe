@@ -29,7 +29,7 @@ paths:
   line, in every bundle chunk that inlines the page — FOUND by scanning for `var LOGO_SVG=`, because
   one chunk name is hashed. It also sets the name consent screens show to "HappyVibe": ChatGPT's
   `AGENT_NAME_HINT` (the robot icon there is OpenAI's, not settable) and Pi's MCP `client_name`
-  default (`.claude/rules/mcp.md`). A bump that rewords any anchor fails the install: re-derive it. A new `build/icon.svg` needs `cd pi-runtime && npm ci`. `tests/pi-oauth-page-patch.test.ts`.
+  default, and keeps MCP's `auto` registration off pi.dev's client document (`.claude/rules/mcp.md`). A bump that rewords any anchor fails the install: re-derive it. A new `build/icon.svg` needs `cd pi-runtime && npm ci`. `tests/pi-oauth-page-patch.test.ts`.
 - The env-var map is a local const in a non-exported function — never re-parse it. A RECORDING ctx
   passed to `auth.apiKey.resolve()` reads the candidate list off the real implementation.
 - Providers sharing an env var (`moonshotai`/`moonshotai-cn`, `opencode`/`opencode-go`,

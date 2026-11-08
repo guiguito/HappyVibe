@@ -63,6 +63,9 @@ PRD §13 Decision (2026-10-05); evidence `docs/validation/mcp2.md`.
   "HappyVibe" here via the owned OAuth-page patch (`.claude/rules/providers.md`), which also brands
   the landing page. An entry's own `oauth.clientName` still wins; never set another product's name
   (decision 15). A server signed in before the patch keeps its old registration until signed out.
+  Pi's default `oauth.clientRegistration: "auto"` would sign in as pi.dev's Client ID Metadata
+  Document ("pi" on the consent screen, past the name above); the same patch turns that off, as
+  upstream does for any rebranded build, so `auto` registers. An explicit `"cimd"` still gets it.
 - `hv:mcp-authenticate` checks status FIRST and signs in only on `needs-auth`: the page
   auto-authenticates every new HTTP server, and `pi mcp login` refuses a key-header server.
 - Tokens live in `<agentDir>/mcp-auth.json` (0600), keyed `mcp__<ns>|<url>` — no keychain. A running
