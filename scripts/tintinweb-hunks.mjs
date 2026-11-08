@@ -1,5 +1,5 @@
 /**
- * The hunks of HappyVibe's owned patch to @tintinweb/pi-subagents 0.22.0 (PRD §3 2026-09-26;
+ * The hunks of HappyVibe's owned patch to @tintinweb/pi-subagents 0.23.1 (PRD §3 2026-09-26;
  * spec: Notion "tintinweb/pi-subagents — evaluation & migration plan" §3.4). Anchors are copied
  * verbatim from the pinned version; a pin bump that moves one fails `npm ci` loudly.
  *
@@ -8,7 +8,7 @@
  *  P3  the host's child policy decides what loads, who is being built, and what is refused
  *  P4  a project's own subagents.json is never read under HappyVibe
  *  P5  workflow gate commands never run; saved workflows only from the agent dir
- *  P6  host control verbs on the bus: steer a running agent, stop a workflow
+ *  P6  a workflow-stop verb plus workflow progress/settled events on the bus (steer is upstream's since 0.22.1)
  */
 export const HUNKS = [
   {
@@ -150,37 +150,27 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
   {
     id: "P6-types",
     file: "src/cross-extension-rpc.ts",
-    find: `  consumeResult(id: string): boolean;
+    find: `  steer(id: string, message: string): boolean;
 }`,
-    replace: `  consumeResult(id: string): boolean;
-  /** hv-patch:P6-types — host control verbs. */
-  steer?(id: string, message: string): boolean;
+    replace: `  steer(id: string, message: string): boolean;
+  /** hv-patch:P6-types — stop a workflow run whole. */
   stopWorkflow?(runId: string): boolean;
 }`,
   },
   {
     id: "P6-handle",
     file: "src/cross-extension-rpc.ts",
-    find: `  unsubConsume: () => void;
+    find: `  unsubSteer: () => void;
 }`,
-    replace: `  unsubConsume: () => void;
-  unsubSteer: () => void; // hv-patch:P6-handle
-  unsubWorkflowStop: () => void;
+    replace: `  unsubSteer: () => void;
+  unsubWorkflowStop: () => void; // hv-patch:P6-handle
 }`,
   },
   {
     id: "P6-control",
     file: "src/cross-extension-rpc.ts",
-    find: `  return { unsubPing, unsubSpawn, unsubStop, unsubConsume };`,
-    replace: `  // hv-patch:P6-control — steer a running top-level agent; stop a workflow run (the TUI menu was the only way).
-  const unsubSteer = handleRpc<{ requestId: string; agentId: string; message: string }>(
-    events, "subagents:rpc:steer", ({ agentId, message }) => {
-      const record = manager.getRecord(agentId);
-      if (!record) throw new Error("Agent not found");
-      if (!isTopLevelAgent(record)) throw new Error("Agent is owned by another agent or workflow");
-      if (!manager.steer?.(agentId, message)) throw new Error("Agent is not running");
-    },
-  );
+    find: `  return { unsubPing, unsubSpawn, unsubStop, unsubConsume, unsubSteer };`,
+    replace: `  // hv-patch:P6-control — stop a workflow run (the TUI menu was the only way).
   const unsubWorkflowStop = handleRpc<{ requestId: string; runId: string }>(
     events, "subagents:rpc:workflow-stop", ({ runId }) => {
       if (!manager.stopWorkflow?.(runId)) throw new Error("Workflow is not running");
@@ -194,14 +184,7 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
     find: `          abort: (id) => manager.abort(id),
 `,
     replace: `          abort: (id) => manager.abort(id),
-          // hv-patch:P6-facade — same semantics as the @handle steer path (un-consume so the reply is relayed).
-          steer: (id: string, message: string) => {
-            const rec = manager.getRecord(id) as any;
-            if (rec) rec.resultConsumed = false;
-            const ok = manager.steer(id, message);
-            if (ok) pi.events.emit("subagents:steered", { id, message });
-            return ok;
-          },
+          // hv-patch:P6-facade — stop a workflow run whole.
           stopWorkflow: (runId: string) => {
             const t = workflowTasks.get(runId);
             if (!t || t.abortController.signal.aborted) return false;
@@ -229,11 +212,10 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
   {
     id: "P6-teardown",
     file: "src/index.ts",
-    find: `    rpcHandle?.unsubConsume();
+    find: `    rpcHandle?.unsubSteer();
 `,
-    replace: `    rpcHandle?.unsubConsume();
-    rpcHandle?.unsubSteer(); // hv-patch:P6-teardown
-    rpcHandle?.unsubWorkflowStop();
+    replace: `    rpcHandle?.unsubSteer();
+    rpcHandle?.unsubWorkflowStop(); // hv-patch:P6-teardown
 `,
   },
 ];

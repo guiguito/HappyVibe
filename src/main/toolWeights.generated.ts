@@ -3,7 +3,7 @@
 export const TOOL_WEIGHTS = {
   "pi": "1.5.0",
   "compactionReserve": 16384,
-  "total": 13077,
+  "total": 13084,
   "families": {
     "plan": 402,
     "terminal": 600,
@@ -12,12 +12,12 @@ export const TOOL_WEIGHTS = {
     "document": 244,
     "memory": 953,
     "schedules": 1293,
-    "subagents": 4488,
+    "subagents": 4495,
     "skills": 1148,
     "intent": 1008,
     "mcp": 0,
     "askUser": 365,
-    "workflows": 6469,
+    "workflows": 6464,
     "images": 153
   },
   "core": {
@@ -34,7 +34,7 @@ export const TOOL_WEIGHTS = {
     "bash": 512,
     "edit": 1148,
     "write": 399,
-    "Agent": 12719,
+    "Agent": 12747,
     "get_subagent_result": 690,
     "steer_subagent": 689,
     "ask_user": 1458,
