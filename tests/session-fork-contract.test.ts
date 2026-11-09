@@ -43,6 +43,21 @@ beforeAll(async () => {
   src = ((await c.send({ type: "get_state" })).data as { sessionFile: string }).sessionFile;
   c.stop();
 }, 90_000);
+// ponytail: trace for the Windows-only "Pi took too long to copy the session" hang (back on Pi 1.5.0
+// after 0 hits in 36 runs). Each step's time + Pi's own PI_TIMING boot stages land in the CI log, so a
+// timeout names where it stalled: no "spawned" = spawn, no Startup Timings = Pi boot, no "← get_state"
+// = the RPC answer. Drop it once the cause is known.
+const traced = (tag: string) => (s: ConstructorParameters<typeof PiClient>[0]) => {
+  const c = new PiClient({ ...s, env: { ...s.env, PI_TIMING: "1" } });
+  const t0 = Date.now();
+  const log = (m: string) => console.log(`[fk-trace ${tag}] +${Date.now() - t0}ms ${m}`);
+  c.on("exit", (e: { code: number | null }) => log(`pi exited code=${e.code}`));
+  return {
+    start: async () => { log("spawn"); await c.start(); log("spawned"); },
+    send: async (cmd: { type: string; [k: string]: unknown }) => { log(`→ ${cmd.type}`); const r = await c.send(cmd); log(`← ${cmd.type}`); return r; },
+    stop: () => { log("stop"); c.stop(); },
+  };
+};
 // stop() only signals: a fork's Pi can still be writing its last files while this runs (ENOTEMPTY).
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
@@ -59,7 +74,7 @@ test("fork before the 2nd message: new file, history up to it, original byte-ide
   const filesBefore = new Set(fs.readdirSync(dir));
   const hit = userEntryAt(fs.readFileSync(src, "utf8"), userTs[1])!;
   const t0 = Date.now();
-  const forked = await forkSessionFile(resolveForkSpawn(tmp, dir, runtime, src, agent), dir, hit.entryId);
+  const forked = await forkSessionFile(resolveForkSpawn(tmp, dir, runtime, src, agent), dir, hit.entryId, traced("fork"));
   console.log(`[fk1] fork one-shot: ${Date.now() - t0} ms`);
   expect(sha(src)).toBe(before);
   expect(forked).not.toBe(src);
@@ -73,7 +88,7 @@ test("fork before the 2nd message: new file, history up to it, original byte-ide
 test("duplicate: every entry copied, original byte-identical", async () => {
   const before = sha(src);
   const t0 = Date.now();
-  const copy = await forkSessionFile(resolveForkSpawn(tmp, dir, runtime, src, agent), dir);
+  const copy = await forkSessionFile(resolveForkSpawn(tmp, dir, runtime, src, agent), dir, undefined, traced("dup"));
   console.log(`[fk1] duplicate one-shot: ${Date.now() - t0} ms`);
   expect(sha(src)).toBe(before);
   // The header is the new session's own id; every conversational entry keeps its id.
