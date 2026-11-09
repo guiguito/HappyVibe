@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { readFileSync } from 'fs'
 import { defineConfig } from 'electron-vite'
+import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -23,6 +24,32 @@ const runtimePins =
   // §31: the document converter decides what the model reads of a PDF, which
   // makes it an engine — §3's promise is that which engine you got is user-facing.
   ` · anydoc ${pins['@firecrawl/anydoc']}`
+
+/**
+ * Web mode (HV_SERVE, src/main/web/server.ts): the preload is compiled a SECOND
+ * time, into the renderer build behind web.html, so a browser tab gets the very
+ * same `window.hv` a window does. Two substitutions, both confined to that one
+ * file: its `electron` import becomes the browser shim, and `process.platform`
+ * (a preload has `process`; a page does not) becomes the server's platform,
+ * which the shim learns at hello. The desktop renderer never imports either.
+ */
+function webPreload(): Plugin {
+  const posix = (p: string): string => p.replace(/\\/g, '/')
+  const preload = posix(resolve(__dirname, 'src/preload/index.ts'))
+  const shim = resolve(__dirname, 'src/renderer/web/electron.ts')
+  return {
+    name: 'hv-web-preload',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      return source === 'electron' && importer && posix(importer) === preload ? shim : null
+    },
+    transform(code, id) {
+      // Same-line edits only, so the preload's mappings still hold (`map: null`).
+      if (posix(id) !== preload) return null
+      return { code: code.replace(/\bprocess\.platform\b/g, 'globalThis.__hvPlatform'), map: null }
+    }
+  }
+}
 
 export default defineConfig({
   main: {
@@ -60,6 +87,13 @@ export default defineConfig({
       }
     },
     build: {
+      rollupOptions: {
+        // Web mode: web.html is index.html with the preload in front (webPreload above).
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          web: resolve(__dirname, 'src/renderer/web.html')
+        }
+      },
       // §37: source maps are emitted but NOT referenced from the bundle, and
       // electron-builder excludes them from the artifact — so a shipped crash
       // report carries minified frames that we symbolicate locally against the
@@ -97,6 +131,6 @@ export default defineConfig({
           ? false
           : undefined
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [webPreload(), react(), tailwindcss()]
   }
 })

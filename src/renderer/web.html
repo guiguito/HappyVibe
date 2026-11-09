@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>HappyVibe</title>
+    <!-- A browser shows a tab icon (a window takes its icon from the app); the generated set, never hand-made. -->
+    <link rel="icon" type="image/png" href="../../build/icons/128x128.png" />
+    <!-- Web mode (HV_SERVE): index.html's page, served to a browser tab. Same CSP. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://happyvibe.dev"
+    />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <!-- The preload first, built against the browser `electron` shim (src/renderer/web), so
+         `window.hv` exists before the app's first line runs — as it does in a window. The app
+         itself starts from web/start.ts, only once the preload has succeeded. -->
+    <script type="module" src="../preload/index.ts"></script>
+    <script type="module" src="./web/start.ts"></script>
+  </body>
+</html>

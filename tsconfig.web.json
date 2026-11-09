@@ -4,6 +4,8 @@
     "src/renderer/src/env.d.ts",
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.tsx",
+    "src/renderer/web/**/*",
+    "src/main/web/codec.ts",
     "src/preload/*.d.ts",
     "pi-runtime/extensions/hv-mcp.ts", "pi-runtime/extensions/hv-subagent-boundary.ts",
     "pi-runtime/extensions/hv-shell.ts", "pi-runtime/extensions/hv-paths.ts",

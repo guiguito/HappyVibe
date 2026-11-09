@@ -96,4 +96,26 @@ describe("WindowRegistry", () => {
     expect(reg.records()).toEqual([]);
     expect(reg.record(a.id)).toBeUndefined();
   });
+
+  it("a dormant window (web mode: its tab went away) keeps its record and its own requests, and is out of everything else", () => {
+    const reg = new WindowRegistry();
+    const a = reg.add(fakeWin(1), { n: 1 });
+    const dormant = Object.assign(fakeWin(2), { sleeping: true });
+    (dormant as unknown as { isDormant(): boolean }).isDormant = () => dormant.sleeping;
+    reg.add(dormant, { n: 2 });
+    reg.setHolds(2, { sessions: ["s"], terminals: [], browsers: [] });
+    // Out of the live set: no push, not a move target, not where a prompt goes.
+    reg.broadcast("hv:x", 1);
+    expect(dormant.sent).toEqual([]);
+    expect(reg.all()).toEqual([a]);
+    expect(reg.byId(2)).toBeNull();
+    expect(reg.holderOf("s")).toBeNull();
+    // Still answers its own boot request, and its layout is still saved.
+    expect(reg.bySender({ id: 20 })).toBe(dormant);
+    expect(reg.records()).toEqual([{ n: 1 }, { n: 2 }]);
+    // Picked back up: live again.
+    dormant.sleeping = false;
+    expect(reg.byId(2)).toBe(dormant);
+    expect(reg.holderOf("s")).toBe(2);
+  });
 });

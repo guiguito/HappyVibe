@@ -7,6 +7,17 @@ import { BACK_PATH } from "./BackButton";
 const DIVIDER_INSET = 6;
 /** How far inside our own rect the coverage samples sit. */
 
+/**
+ * Web mode (HV_SERVE): a page cannot host the composited view, so the pane says
+ * so where the page would be. The agent's browser tools keep working — they
+ * never needed the view on screen.
+ */
+export const WEB_ONLY_NOTE = {
+  title: "This page shows in the desktop app",
+  body: "A browser tab can't hold HappyVibe's built-in browser. The agent can still open, read and click this page; to look at it yourself, open it in a tab of your own.",
+  action: "Open in a new tab",
+} as const;
+
 /** What the injected picker resolves with (mirrors PickedElement in main). */
 interface PickedElement {
   selector: string;
@@ -125,7 +136,8 @@ export function BrowserTab({
   // own callback, and re-run on scroll because a pane can move without resizing.
   useEffect(() => {
     const el = host.current;
-    if (!el) return;
+    // Web mode: no view to place — the pane shows WEB_ONLY_NOTE instead.
+    if (!el || window.hvWeb) return;
     const push = (): void => {
       // §28 round 1: keep the page off the pane dividers (the drag strip is 10px
       // centred on the boundary, so half lies inside this pane and a composited
@@ -437,6 +449,18 @@ export function BrowserTab({
             />
           );
         })()}
+        {window.hvWeb && (state === "ready" || state === "loading") && (
+          <StateCard
+            tone="berry"
+            title={WEB_ONLY_NOTE.title}
+            body={WEB_ONLY_NOTE.body}
+            action={
+              /^https?:\/\//i.test(info?.url ?? "")
+                ? { label: WEB_ONLY_NOTE.action, onClick: () => void window.hv.openExternal(info!.url) }
+                : undefined
+            }
+          />
+        )}
         {state === "crashed" && (
           <StateCard
             tone="berry"
@@ -602,7 +626,8 @@ function StateCard({
   body: string;
   /** The raw diagnostic, kept visible but demoted below the plain sentence. */
   detail?: string;
-  action: { label: string; onClick: () => void };
+  /** Absent only for the web-mode note on a pane with no page yet: there is nothing to open. */
+  action?: { label: string; onClick: () => void };
 }): React.JSX.Element {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-paper p-6">
@@ -610,13 +635,15 @@ function StateCard({
         <div className="mb-1 font-bold">{title}</div>
         <div className="mb-3 text-sm text-ink-soft break-words">{body}</div>
         {detail && <div className="mb-3 font-mono text-[11px] text-ink-soft/80 break-all">{detail}</div>}
-        <button
-          type="button"
-          onClick={action.onClick}
-          className="rounded-xl border-2 border-ink/80 bg-honey px-3 py-1.5 text-sm font-bold cursor-pointer hover:brightness-105"
-        >
-          {action.label}
-        </button>
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="rounded-xl border-2 border-ink/80 bg-honey px-3 py-1.5 text-sm font-bold cursor-pointer hover:brightness-105"
+          >
+            {action.label}
+          </button>
+        )}
       </div>
     </div>
   );

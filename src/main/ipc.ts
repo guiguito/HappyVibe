@@ -159,6 +159,7 @@ import { parseScheduleEnvelope, permissionSummary, renderScheduleList } from "./
 import { Scheduler, type NotifyExtra, type ScheduleEventType } from "./scheduler";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
+import { WebWindow, type AppWindow } from "./web/webWindow";
 import type { WindowRecord } from "./windowLayout";
 import { promptWindowFor } from "./promptRouting";
 
@@ -558,7 +559,7 @@ export interface UpdateDeps {
 }
 
 export function registerIpc(
-  windows: WindowRegistry<BrowserWindow>,
+  windows: WindowRegistry<AppWindow>,
   /** index.ts owns the layout file (it owns the registry); passed in rather than
       imported so ipc.ts and index.ts do not form a cycle. */
   persistLayout: () => void,
@@ -566,9 +567,10 @@ export function registerIpc(
    * §35: open a window. Passed in for the same no-cycle reason as persistLayout.
    * A scheduled run's notification can be clicked while the app is running with
    * every window closed (macOS keeps it alive), and there is then nothing to
-   * focus — so the click has to be able to make one.
+   * focus — so the click has to be able to make one. In web mode there is no
+   * window to make: it opens the page in the browser and returns null.
    */
-  openWindow: () => BrowserWindow,
+  openWindow: () => AppWindow | null,
 ): UpdateDeps {
   /**
    * §7 round 23 — ONE push helper, and it fans out to every window.
@@ -584,15 +586,36 @@ export function registerIpc(
    * The window an ipc call came from. A modal dialog must parent on it — before
    * round 23 all seven parented on the one captured window, which in a second
    * window would put the sheet on somebody else's title bar.
+   *
+   * Web mode: a browser tab is no window a sheet can hang from, so for one this
+   * is null and the dialog opens on its own (see `openDialog`).
    */
-  const ownerOf = (e: { sender: { id: number } }): BrowserWindow => {
+  const ownerOf = (e: { sender: { id: number } }): BrowserWindow | null => {
     const w = windows.bySender(e.sender) ?? windows.primary();
     // Unreachable: the event itself proves a live renderer, whose window is
-    // either still registered or outlived by another. Non-null so a dialog can
-    // parent unconditionally; a throw here rejects the invoke, which every
-    // caller already handles, rather than parenting a sheet on nothing.
+    // either still registered or outlived by another. A throw here rejects the
+    // invoke, which every caller already handles, rather than parenting a sheet
+    // on nothing.
     if (!w) throw new Error("no window to parent a dialog on");
-    return w;
+    return w instanceof WebWindow ? null : w;
+  };
+  /**
+   * A native folder/file dialog for the caller. From a browser tab it opens
+   * unparented on the machine running the app — the one the tab is on, when it
+   * is local (with WSLg, on the Windows desktop) — and is brought to the front,
+   * because an app serving in the background is behind the browser.
+   */
+  const openDialog = (e: { sender: { id: number } }, options: Electron.OpenDialogOptions) => {
+    const owner = ownerOf(e);
+    if (owner) return dialog.showOpenDialog(owner, options);
+    app.focus({ steal: true });
+    return dialog.showOpenDialog(options);
+  };
+  const saveDialog = (e: { sender: { id: number } }, options: Electron.SaveDialogOptions) => {
+    const owner = ownerOf(e);
+    if (owner) return dialog.showSaveDialog(owner, options);
+    app.focus({ steal: true });
+    return dialog.showSaveDialog(options);
   };
   // §27: whole-state voice snapshots, same broadcast shape as
   // hv:mcp-status-changed. The facade already throttles to ~4 Hz — a 652 MB
@@ -1248,8 +1271,8 @@ export function registerIpc(
     const n = new Notification({ title: "HappyVibe", body, silent });
     n.on("click", () => {
       const w = windows.primary() ?? openWindow();
-      w.show();
-      w.focus();
+      w?.show();
+      w?.focus();
       onClick();
     });
     n.show();
@@ -2977,7 +3000,7 @@ export function registerIpc(
     return dir;
   });
   ipcMain.handle("hv:add-workspace", async (e) => {
-    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"] });
+    const r = await openDialog(e, { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
     workspaces.add(r.filePaths[0]);
     const count = workspaces.list().length;
@@ -3329,7 +3352,7 @@ export function registerIpc(
     // A session title is free text and routinely holds a slash or a colon,
     // which macOS and Windows both refuse in a filename.
     const safe = (meta.title || "session").replace(/[/\\?%*:|"<>]/g, "-").slice(0, 80).trim() || "session";
-    const r = await dialog.showSaveDialog(ownerOf(e), {
+    const r = await saveDialog(e, {
       title: "Export session as HTML",
       defaultPath: `${safe}.html`,
       filters: [{ name: "HTML page", extensions: ["html"] }],
@@ -3351,7 +3374,7 @@ export function registerIpc(
     const img = parseImageDataUrl(dataUrl);
     if (!img) throw new Error("That picture can't be saved.");
     const base = (typeof name === "string" ? name : "image").replace(/[/\\?%*:|"<>]/g, "-").replace(/\.[a-z0-9]+$/i, "").slice(0, 80).trim() || "image";
-    const r = await dialog.showSaveDialog(ownerOf(e), {
+    const r = await saveDialog(e, {
       title: "Save picture",
       defaultPath: `${base}.${img.ext}`,
       filters: [{ name: "Image", extensions: [img.ext] }],
@@ -4435,10 +4458,15 @@ export function registerIpc(
     // §7 round 23: the SENDER's window owns the pane from here on — a moved tab
     // re-parents on its new window's first bounds report, so there is no
     // separate move message that could disagree about where the page belongs.
+    //
+    // Web mode: a page cannot host a native view (BrowserTab shows a note there
+    // instead), so a browser tab's report places nothing.
+    const owner = ownerOf(e);
+    if (!owner) return;
     browsers.setBounds(id, {
       x: Math.round(b.x), y: Math.round(b.y),
       width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)),
-    }, ownerOf(e));
+    }, owner);
   });
   ipcMain.handle("hv:browser-visible", (_e, id: string, visible: boolean) => browsers.setVisible(id, visible));
   // origin "user": typing a URL IS consent (§28) — no prompt, still logged.
@@ -5003,7 +5031,8 @@ export function registerIpc(
     if (!inlet || !feedbackCfg) return { ok: false, reason: "unavailable" };
     const win = windows.bySender(e.sender);
     let thumbnail: string | null = null;
-    if (win) {
+    // Web mode: a browser tab cannot be photographed from here — no capture offered.
+    if (win && !(win instanceof WebWindow)) {
       try {
         // BEFORE the dialog paints — the renderer mounts it on this reply, so the
         // picture is the app as the user left it, with no scrim and no dialog.
@@ -5402,7 +5431,7 @@ export function registerIpc(
     ".gif": "image/gif", ".webp": "image/webp",
   };
   ipcMain.handle("hv:pick-image", async (e) => {
-    const r = await dialog.showOpenDialog(ownerOf(e), {
+    const r = await openDialog(e, {
       properties: ["openFile"],
       filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
     });
@@ -5423,7 +5452,7 @@ export function registerIpc(
   // It also means picking and dropping take the SAME second step, rather than
   // one path that converts in the dialog handler and one that does not.
   ipcMain.handle("hv:pick-document", async (e) => {
-    const r = await dialog.showOpenDialog(ownerOf(e), {
+    const r = await openDialog(e, {
       properties: ["openFile", "multiSelections"],
       filters: [{ name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] }],
     });
@@ -6505,7 +6534,7 @@ export function registerIpc(
     scheduleSkillReload("global", null);
   });
   ipcMain.handle("hv:skills-add-linked", async (e) => {
-    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Link a skills directory" });
+    const r = await openDialog(e, { properties: ["openDirectory"], title: "Link a skills directory" });
     if (r.canceled || !r.filePaths[0]) return getLinkedSkillDirs();
     setLinkedSkillDirs([...getLinkedSkillDirs(), r.filePaths[0]]);
     skillsChanged();
@@ -6535,7 +6564,7 @@ export function registerIpc(
   app.on("will-quit", () => { for (const s of importSessions.values()) s.cleanup?.(); });
 
   ipcMain.handle("hv:skills-import-local", async (e) => {
-    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
+    const r = await openDialog(e, { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
     if (r.canceled || !r.filePaths[0]) return null;
     const picked = r.filePaths[0];
     const found = scanSkillsDir(picked, "managed");
@@ -6896,7 +6925,7 @@ export function registerIpc(
     // opens the picker. Linked dirs are referenced in place, never copied.
     let picked = typeof dir === "string" && dir.trim() ? dir : null;
     if (!picked) {
-      const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Link a prompts directory" });
+      const r = await openDialog(e, { properties: ["openDirectory"], title: "Link a prompts directory" });
       if (r.canceled || !r.filePaths[0]) return getLinkedPromptTemplateDirs();
       picked = r.filePaths[0];
     }
@@ -6943,7 +6972,7 @@ export function registerIpc(
   app.on("will-quit", () => { for (const s of promptTemplateImports.values()) s.cleanup?.(); });
 
   ipcMain.handle("hv:prompt-templates-import-local", async (e) => {
-    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Import prompts from a folder" });
+    const r = await openDialog(e, { properties: ["openDirectory"], title: "Import prompts from a folder" });
     if (r.canceled || !r.filePaths[0]) return null;
     const found = scanImportRoot(r.filePaths[0]);
     if (found.length === 0) return { token: null, templates: [], error: "No .md prompts found in that folder." };

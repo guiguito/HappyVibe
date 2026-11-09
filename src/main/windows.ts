@@ -23,6 +23,13 @@ export interface WinLike {
   isDestroyed(): boolean;
   webContents: { id: number; isDestroyed(): boolean; send(channel: string, payload?: unknown): void };
   on(event: "closed", cb: () => void): unknown;
+  /**
+   * Web mode (src/main/web/webWindow.ts): a window whose browser tab went away.
+   * It keeps its record and still answers its own requests, but is out of the
+   * live set — no pushes, not a move target, not where a prompt is routed —
+   * until a tab picks it back up. A BrowserWindow has no such state.
+   */
+  isDormant?(): boolean;
 }
 
 /** What a window currently shows — declared by its renderer on every layout change. */
@@ -70,7 +77,7 @@ export class WindowRegistry<W extends WinLike = WinLike> {
    * delivered yet is still in the array, and sending to it throws.
    */
   all(): W[] {
-    return this.wins.filter((w) => !w.isDestroyed());
+    return this.wins.filter((w) => !w.isDestroyed() && !w.isDormant?.());
   }
 
   /** The oldest live window. Moves on when it closes — nothing is "the" window. */
@@ -84,7 +91,8 @@ export class WindowRegistry<W extends WinLike = WinLike> {
 
   /** `BrowserWindow.fromWebContents` without importing electron. */
   bySender(wc: { id: number }): W | null {
-    return this.all().find((w) => w.webContents.id === wc.id) ?? null;
+    // Dormant included: a web window's boot request arrives before its socket does.
+    return this.wins.find((w) => !w.isDestroyed() && w.webContents.id === wc.id) ?? null;
   }
 
   /**
@@ -123,7 +131,8 @@ export class WindowRegistry<W extends WinLike = WinLike> {
 
   /** Live windows' records, creation order — what gets persisted, primary first. */
   records(): unknown[] {
-    return this.all().map((w) => this.recs.get(w.id));
+    // Dormant included: a web window's layout survives a restart like any other.
+    return this.wins.filter((w) => !w.isDestroyed()).map((w) => this.recs.get(w.id));
   }
 
   holds(id: number): Holdings {
