@@ -183,7 +183,7 @@ function PlanModeRow({
 
       {confirming && (
         <div
-          className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8"
+          className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8"
           onClick={() => setConfirming(false)}
         >
           <div

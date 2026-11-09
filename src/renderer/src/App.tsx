@@ -28,6 +28,7 @@ import { drawOffset, pulseDecision, PULSE_TIMING } from "./sessionPulse";
 import { STAR_DELAY_MS, STAR_SNOOZE_DAYS, STAR_URL, starDue } from "./starNudge";
 import { StarNudge } from "./components/StarNudge";
 import { ShortcutsView } from "./components/ShortcutsView";
+import { AppearanceView } from "./components/AppearanceView";
 import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
   dropSession,
@@ -3835,6 +3836,7 @@ export default function App(): React.JSX.Element {
           )}
           {activeView === "plugins" && <PluginsView />}
           {activeView === "mcp" && <McpView />}
+          {activeView === "appearance" && <AppearanceView />}
           {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
           {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
           {/* §27: settings are global, so the page needs no props. */}
@@ -4440,7 +4442,7 @@ export default function App(): React.JSX.Element {
           chat closed), never silently leak. */}
       {termConfirm && (
         <div
-          className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8"
+          className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8"
           onClick={() => { termConfirm.resolve(null); setTermConfirm(null); }}
         >
           <div

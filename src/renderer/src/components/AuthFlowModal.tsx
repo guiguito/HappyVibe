@@ -72,7 +72,7 @@ export function AuthFlowModal({
   return (
     <Dialog.Root open>
       <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-scrim/50 backdrop-blur-[2px]" />
         <Dialog.Content
           className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(28rem,calc(100vw-3rem))] rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
           onEscapeKeyDown={(e) => e.preventDefault()}

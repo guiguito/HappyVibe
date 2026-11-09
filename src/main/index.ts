@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, shell, BrowserWindow, nativeImage, Menu, ipcMain, screen, webFrameMain } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, nativeTheme, Menu, ipcMain, screen, webFrameMain } from 'electron'
 import { join } from 'path'
 import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -7,7 +7,7 @@ import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
 import { startUpdater } from './update'
 import { loginShellPath, mergePath } from './shellPath'
-import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
+import { getColorScheme, getDensity, getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
 import { guideLinkScript, navAction } from './navGuard'
 import { firstWindowSize, parseLayoutFile, type WindowRecord } from './windowLayout'
@@ -18,6 +18,7 @@ import { installRemoteConfig } from './remoteConfig'
 import { installUsage } from './usage'
 import { platform } from './platform'
 import { DOCS_BASE } from './docsBase'
+import { WINDOW_BACKGROUND } from './colorScheme'
 import { piMasterEnv } from './pi/spawn'
 import { wipeIfMarked } from './reset'
 
@@ -119,7 +120,9 @@ ipcMain.on('hv:window-boot', (e) => {
   const record = (w && (windows.record(w.id) as WindowRecord | undefined)) ?? { tabsByWs: {}, ui: {} }
   const draft = w ? pendingDrafts.get(w.id) : undefined
   if (w) pendingDrafts.delete(w.id)
-  e.returnValue = { windowId: w?.id ?? -1, record, ...(draft ? { draft } : {}) }
+  // Appearance › Density and Theme ride the boot too: read here, synchronously, a
+  // compact or dark app paints so from its first frame instead of jumping after an invoke.
+  e.returnValue = { windowId: w?.id ?? -1, record, density: getDensity(), colorScheme: getColorScheme(), ...(draft ? { draft } : {}) }
 })
 
 /**
@@ -267,6 +270,8 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     // a first launch and for ⌘⇧N.
     ...(at ? { x: at.x, y: at.y } : record.bounds ? { x: record.bounds.x, y: record.bounds.y } : {}),
     show: false,
+    // Appearance › Theme: what shows behind the page while it loads or resizes.
+    backgroundColor: WINDOW_BACKGROUND[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
     autoHideMenuBar: true,
     // macOS IGNORES the window icon — there the Dock is the surface, set below
     // via app.dock.setIcon. Windows and Linux both read this option, and in DEV
@@ -373,6 +378,15 @@ app.whenReady().then(() => {
   void installUsage()
   // Set app user model id for windows
   electronApp.setAppUserModelId('dev.happyvibe.app')
+
+  // Appearance › Theme (colorScheme.ts), before the first window: menus, dialogs
+  // and scrollbars follow it, and so does the renderer's prefers-color-scheme.
+  nativeTheme.themeSource = getColorScheme()
+  // On "Match system", the computer can switch while the app runs.
+  nativeTheme.on('updated', () => {
+    const bg = WINDOW_BACKGROUND[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']
+    for (const w of windows.all()) if (!w.isDestroyed()) w.setBackgroundColor(bg)
+  })
 
   // Dev dock icon: packaged builds use build/icon.icns (electron-builder), but
   // in dev the dock would show the default Electron icon — set ours explicitly.

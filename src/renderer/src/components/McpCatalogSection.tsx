@@ -237,7 +237,7 @@ function McpCatalogConfirm({
 
   return (
     <div
-      className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6"
+      className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6"
       onMouseDown={onClose}
     >
       <div

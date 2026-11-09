@@ -4,6 +4,84 @@
 @import "tailwindcss";
 @import "./theme.css";
 
+/* Appearance › Density: Compact (src/main/density.ts). Every Tailwind spacing step is
+   calc(var(--spacing) * n), so this one value tightens padding, margins, gaps and
+   step-sized boxes across the app; type sizes are separate tokens and stay put. The
+   conversation's column widens with it. Unlayered on purpose: Tailwind's own values
+   live in @layer theme, which an unlayered rule always beats. */
+:root[data-density="compact"] {
+  --spacing: 0.2rem;
+  --container-chat: 64rem;
+}
+/* Ultra-compact: Compact's spacing on a 14px root, so rem-sized text, icons and every
+   step shrink together (pixel sizes stay). 72rem is 1008px at that root. */
+:root[data-density="ultra-compact"] {
+  font-size: 14px;
+  --spacing: 0.2rem;
+  --container-chat: 72rem;
+}
+
+/* Colours that are not app tokens, but still follow Appearance › Theme: the run rail's
+   per-agent chips (a computed hue, ChatView.tsx) and the code editor's syntax (EditorPane.tsx). */
+:root {
+  --run-chip-bg: 70% 92%;
+  --run-chip-ink: 60% 30%;
+  --syntax-number: #b3671f;
+  --syntax-property: #a2681c;
+  --syntax-type: #8a5fb0;
+  --syntax-punctuation: #6b5a45;
+}
+
+/* Appearance › Theme: Dark (src/main/colorScheme.ts). Every colour in the app is a token
+   from theme.css, so redefining them here turns the whole app at once; a token added there
+   without a value here fails tests/color-scheme.test.ts. Unlayered, like the density rule.
+   The same warm hues, re-measured on the dark paper (the test holds every text colour to
+   4.5:1): the accents used as text are lighter, the soft fills are dark tints of their hue,
+   and the "deep" tangerine is the brighter one, because on dark it is the one read as text. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper: #1d1813;
+  --color-paper-deep: #16120e;
+  --color-card: #29211a;
+  --color-ink: #f3eadb;
+  --color-ink-soft: #ab9a83;
+  --color-line: #3d3229;
+  --color-line-strong: #5a4c3e;
+  --color-tangerine: #ee5a24;
+  --color-tangerine-deep: #ff8a5b;
+  --color-honey: #f5a623;
+  --color-honey-soft: #3d2e15;
+  --color-leaf: #6cbb6e;
+  --color-leaf-soft: #1f3220;
+  --color-berry: #f0705e;
+  --color-berry-soft: #42201b;
+  --color-sky: #7aa8e0;
+  --color-sky-soft: #1d2a3a;
+  --color-plum: #b58ad3;
+  --color-plum-soft: #33253d;
+  --color-teal: #4cb5ae;
+  --color-teal-soft: #173230;
+  --color-rose: #e57bb2;
+  --color-rose-soft: #3f1f30;
+  --color-scrim: #000000;
+  --color-code: #120e0b;
+  --color-code-ink: #f3eadb;
+
+  --run-chip-bg: 35% 24%;
+  --run-chip-ink: 70% 80%;
+  --syntax-number: #e8a35c;
+  --syntax-property: #d9a35e;
+  --syntax-type: #c39ae0;
+  --syntax-punctuation: #b8a58c;
+}
+/* Honey is the one fill that stays bright in the dark, so what sits on it is the dark
+   paper, not the (now light) ink it inherits: a honey button keeps dark text. The same
+   goes for selected text, which is honey too. */
+:root[data-theme="dark"] .bg-honey,
+:root[data-theme="dark"] ::selection {
+  color: var(--color-paper);
+}
+
 /* Round 4 #1: in-conversation search highlights (CSS Custom Highlight API). */
 ::highlight(hv-search) {
   background-color: #fde08a; /* honey, dimmed */
@@ -105,8 +183,8 @@
     padding: 0.1em 0.35em;
   }
   .md pre {
-    background: var(--color-ink);
-    color: var(--color-paper);
+    background: var(--color-code);
+    color: var(--color-code-ink);
     border-radius: 10px;
     padding: 0.85em 1em;
     overflow-x: auto;

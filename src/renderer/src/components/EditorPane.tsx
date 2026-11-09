@@ -40,87 +40,89 @@ const STATIC_LANGS: Record<string, () => LanguageSupport> = {
 
 const ext = (path: string): string => path.split(".").pop()?.toLowerCase() ?? "";
 
-// ── warm-workshop theme (tokens mirror styles.css @theme) ────────────
+// ── warm-workshop theme: the app's tokens, as CSS variables, so the editor
+// follows Appearance › Theme like everything else (no second dark theme here).
+// Syntax colours that aren't app tokens are `--syntax-*`, in styles.css. ─────
 const hvTheme = EditorView.theme({
   "&": {
     height: "100%",
     fontSize: "13px",
-    backgroundColor: "#fffcf5", // card
-    color: "#33251a", // ink
+    backgroundColor: "var(--color-card)",
+    color: "var(--color-ink)",
   },
   ".cm-content": {
     fontFamily: '"JetBrains Mono Variable", ui-monospace, "SF Mono", monospace',
-    caretColor: "#ee5a24", // tangerine
+    caretColor: "var(--color-tangerine)",
     padding: "10px 0",
   },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#ee5a24", borderLeftWidth: "2px" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--color-tangerine)", borderLeftWidth: "2px" },
   "&.cm-focused": { outline: "none" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-    backgroundColor: "#f5a62355", // honey
+    backgroundColor: "color-mix(in srgb, var(--color-honey) 33%, transparent)",
   },
-  ".cm-activeLine": { backgroundColor: "#f2e7d266" }, // paper-deep
+  ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--color-paper-deep) 40%, transparent)" },
   ".cm-gutters": {
-    backgroundColor: "#faf4e8", // paper
-    color: "#8d7a63", // ink-soft
+    backgroundColor: "var(--color-paper)",
+    color: "var(--color-ink-soft)",
     border: "none",
-    borderRight: "2px solid #e3d3b8", // line
+    borderRight: "2px solid var(--color-line)",
     fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
   },
-  ".cm-activeLineGutter": { backgroundColor: "#f2e7d2", color: "#33251a" },
-  ".cm-matchingBracket": { backgroundColor: "#f5a62344", outline: "1px solid #cbb693" },
+  ".cm-activeLineGutter": { backgroundColor: "var(--color-paper-deep)", color: "var(--color-ink)" },
+  ".cm-matchingBracket": { backgroundColor: "color-mix(in srgb, var(--color-honey) 27%, transparent)", outline: "1px solid var(--color-line-strong)" },
   ".cm-scroller": { overflow: "auto" },
   // v5.1: style the built-in search panel to the warm-workshop look.
-  ".cm-panels": { backgroundColor: "#faf4e8", color: "#33251a" }, // paper / ink
-  ".cm-panels.cm-panels-top": { borderBottom: "2px solid #e3d3b8" }, // line
+  ".cm-panels": { backgroundColor: "var(--color-paper)", color: "var(--color-ink)" },
+  ".cm-panels.cm-panels-top": { borderBottom: "2px solid var(--color-line)" },
   ".cm-panel.cm-search": { padding: "8px 10px", fontFamily: '"Gabarito Variable", ui-sans-serif, system-ui, sans-serif' },
-  ".cm-panel.cm-search label": { fontSize: "12px", color: "#8d7a63", display: "inline-flex", alignItems: "center", gap: "3px" },
-  ".cm-panel.cm-search input[type=checkbox]": { accentColor: "#ee5a24" },
+  ".cm-panel.cm-search label": { fontSize: "12px", color: "var(--color-ink-soft)", display: "inline-flex", alignItems: "center", gap: "3px" },
+  ".cm-panel.cm-search input[type=checkbox]": { accentColor: "var(--color-tangerine)" },
   ".cm-textfield": {
-    backgroundColor: "#fffcf5", // card
-    border: "2px solid #e3d3b8", // line
+    backgroundColor: "var(--color-card)",
+    border: "2px solid var(--color-line)",
     borderRadius: "8px",
     padding: "3px 8px",
-    color: "#33251a",
+    color: "var(--color-ink)",
     fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
     fontSize: "12px",
   },
-  ".cm-textfield:focus": { outline: "none", borderColor: "#ee5a24" }, // tangerine
+  ".cm-textfield:focus": { outline: "none", borderColor: "var(--color-tangerine)" },
   ".cm-button": {
-    backgroundColor: "#fffcf5",
+    backgroundColor: "var(--color-card)",
     backgroundImage: "none",
-    border: "2px solid #e3d3b8",
+    border: "2px solid var(--color-line)",
     borderRadius: "8px",
     padding: "2px 10px",
-    color: "#33251a",
+    color: "var(--color-ink)",
     fontWeight: "700",
     fontSize: "12px",
     cursor: "pointer",
   },
-  ".cm-button:hover": { backgroundColor: "#f2e7d2" }, // paper-deep
-  ".cm-button:active": { backgroundColor: "#e3d3b8" },
-  ".cm-panel.cm-search [name=close]": { color: "#8d7a63", fontSize: "18px", cursor: "pointer" },
-  ".cm-panel.cm-search [name=close]:hover": { color: "#ee5a24" },
-  ".cm-searchMatch": { backgroundColor: "#f5a62355" }, // honey
-  ".cm-searchMatch-selected": { backgroundColor: "#ee5a2455" }, // tangerine
+  ".cm-button:hover": { backgroundColor: "var(--color-paper-deep)" },
+  ".cm-button:active": { backgroundColor: "var(--color-line)" },
+  ".cm-panel.cm-search [name=close]": { color: "var(--color-ink-soft)", fontSize: "18px", cursor: "pointer" },
+  ".cm-panel.cm-search [name=close]:hover": { color: "var(--color-tangerine)" },
+  ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-honey) 33%, transparent)" },
+  ".cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, var(--color-tangerine) 33%, transparent)" },
 });
 
 const hvHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#cf4413", fontWeight: "600" }, // tangerine-deep
-  { tag: [tags.controlKeyword, tags.moduleKeyword], color: "#cf4413", fontWeight: "600" },
-  { tag: [tags.string, tags.special(tags.string)], color: "#4c9a4f" }, // leaf
-  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "#b3671f" },
-  { tag: [tags.comment, tags.blockComment, tags.lineComment], color: "#8d7a63", fontStyle: "italic" }, // ink-soft
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#4f83c2" }, // sky
-  { tag: [tags.typeName, tags.className, tags.namespace], color: "#8a5fb0" },
-  { tag: [tags.propertyName, tags.attributeName], color: "#a2681c" },
-  { tag: [tags.tagName], color: "#cf4413" },
-  { tag: [tags.operator, tags.punctuation], color: "#6b5a45" },
-  { tag: tags.heading, color: "#cf4413", fontWeight: "700" },
-  { tag: tags.link, color: "#4f83c2", textDecoration: "underline" },
+  { tag: tags.keyword, color: "var(--color-tangerine-deep)", fontWeight: "600" },
+  { tag: [tags.controlKeyword, tags.moduleKeyword], color: "var(--color-tangerine-deep)", fontWeight: "600" },
+  { tag: [tags.string, tags.special(tags.string)], color: "var(--color-leaf)" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--syntax-number)" },
+  { tag: [tags.comment, tags.blockComment, tags.lineComment], color: "var(--color-ink-soft)", fontStyle: "italic" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--color-sky)" },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--syntax-type)" },
+  { tag: [tags.propertyName, tags.attributeName], color: "var(--syntax-property)" },
+  { tag: [tags.tagName], color: "var(--color-tangerine-deep)" },
+  { tag: [tags.operator, tags.punctuation], color: "var(--syntax-punctuation)" },
+  { tag: tags.heading, color: "var(--color-tangerine-deep)", fontWeight: "700" },
+  { tag: tags.link, color: "var(--color-sky)", textDecoration: "underline" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strong, fontWeight: "700" },
-  { tag: [tags.definition(tags.variableName)], color: "#33251a", fontWeight: "600" },
-  { tag: tags.invalid, color: "#cf3f2e" }, // berry
+  { tag: [tags.definition(tags.variableName)], color: "var(--color-ink)", fontWeight: "600" },
+  { tag: tags.invalid, color: "var(--color-berry)" },
 ]);
 
 export default function CodeEditor({

@@ -224,7 +224,7 @@ function AgentInspector({
   onEdit: () => void;
 }): React.JSX.Element {
   return (
-    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6" onMouseDown={onClose}>
       <div
         className="hv-dialog-flow w-full max-w-2xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 flex flex-col max-h-[85vh]"
         onMouseDown={(e) => e.stopPropagation()}
@@ -353,7 +353,7 @@ function AgentEditor({
   };
 
   return (
-    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6" onMouseDown={onClose}>
       <div
         className="hv-dialog-flow w-full max-w-2xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 flex flex-col max-h-[85vh]"
         onMouseDown={(e) => e.stopPropagation()}

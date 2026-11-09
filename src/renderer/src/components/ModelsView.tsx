@@ -780,7 +780,7 @@ export function ModelsView({
               </button>
             </div>
             {confirmCompactOff && (
-              <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmCompactOff(false)}>
+              <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setConfirmCompactOff(false)}>
                 <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
                   <div className="font-bold mb-1">{COMPACTION_OFF_CONFIRM.title}</div>
                   <p className="text-sm text-ink-soft mb-4">{COMPACTION_OFF_CONFIRM.body}</p>

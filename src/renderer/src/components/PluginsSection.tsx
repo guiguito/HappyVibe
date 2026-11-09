@@ -87,7 +87,7 @@ function Handover({
   onEnable: () => void;
   onConnect: (name: string) => void;
 }): React.JSX.Element {
-  const btn = "rounded-lg border border-green-700/40 bg-white px-2.5 py-1 font-semibold hover:bg-green-100 disabled:opacity-50";
+  const btn = "rounded-lg border border-leaf/40 bg-card px-2.5 py-1 font-semibold hover:bg-leaf-soft disabled:opacity-50";
   return (
     <div className="flex flex-wrap items-center gap-2">
       {(done.skills.length > 0 || done.commands.length > 0) && (
@@ -325,13 +325,13 @@ export function PluginsSection(): React.JSX.Element {
         </p>
       )}
       {error && (
-        <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+        <p className="rounded-lg border border-berry/40 bg-berry-soft px-3 py-2 text-sm text-berry">{error}</p>
       )}
       {done && (
         // The handover. Nothing installed here is live yet, and each kind is
         // finished on a different page — so name only the parts that actually
         // apply rather than reciting all three at someone who installed one skill.
-        <div className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900">
+        <div className="rounded-lg border border-leaf/40 bg-leaf-soft px-3 py-2 text-sm text-ink">
           <p>
             Installed{" "}
             {[
@@ -382,7 +382,7 @@ export function PluginsSection(): React.JSX.Element {
               <BrandMark name={c.name} brand={c.brand} />
               <span className="font-semibold text-sm truncate">{c.name}</span>
               {installedNames.has(c.name) && (
-                <span className="text-[10px] font-bold uppercase tracking-wide text-green-700">installed</span>
+                <span className="text-[10px] font-bold uppercase tracking-wide text-leaf">installed</span>
               )}
               {scanning === c.name && <span className="ml-auto text-xs text-ink-soft">opening…</span>}
             </div>
@@ -410,7 +410,7 @@ export function PluginsSection(): React.JSX.Element {
 
       {/* ── confirm dialog ──────────────────────────────────────────────── */}
       {scan && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 p-4" role="dialog" aria-modal>
           <div className="hv-dialog-flow max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-paper p-5 shadow-xl">
             <h3 className="font-black text-lg tracking-tight">{scan.name}</h3>
             <p className="mt-1 text-sm text-ink-soft">{scan.description}</p>
@@ -418,7 +418,7 @@ export function PluginsSection(): React.JSX.Element {
             {/* Computed, and shown only when non-empty. A verified plugin can
                 still be dropping namespaced commands Pi cannot read. */}
             {Object.keys(scan.dropped).length > 0 && (
-              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="mt-4 rounded-lg border border-honey/60 bg-honey-soft px-3 py-2 text-xs text-ink">
                 <strong>This plugin ships more than HappyVibe installs.</strong> Skills, top-level
                 prompts and MCP servers come in — so{" "}
                 {Object.entries(scan.dropped).map(([k, n], i, arr) => (
@@ -484,13 +484,13 @@ export function PluginsSection(): React.JSX.Element {
             </p>
 
             {error && (
-              <p className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+              <p className="mt-3 rounded-lg border border-berry/40 bg-berry-soft px-3 py-2 text-sm text-berry">{error}</p>
             )}
 
             {/* Installed: this dialog BECOMES the handover rather than closing and
                 leaving a banner the user has to find. Same controls, same calls. */}
             {done?.plugin === scan.name ? (
-              <div className="mt-5 rounded-lg border border-green-300 bg-green-50 px-3 py-2.5 text-sm text-green-900">
+              <div className="mt-5 rounded-lg border border-leaf/40 bg-leaf-soft px-3 py-2.5 text-sm text-ink">
                 <p>
                   Installed{" "}
                   {[
@@ -519,7 +519,7 @@ export function PluginsSection(): React.JSX.Element {
                 <div className="mt-3 flex justify-end">
                   <button
                     onClick={() => { setScan(null); setError(null); }}
-                    className="rounded-lg border border-green-700/40 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-green-100"
+                    className="rounded-lg border border-leaf/40 bg-card px-3 py-1.5 text-sm font-semibold hover:bg-leaf-soft"
                   >
                     Done
                   </button>
@@ -588,7 +588,7 @@ function PickList({
                 <span className="font-semibold">{r.label}</span>
                 {r.badge && <span className="ml-1.5 text-[10px] text-ink-soft">{r.badge}</span>}
                 {r.sub && <span className="block text-ink-soft line-clamp-2">{r.sub}</span>}
-                {r.warn && <span className="block mt-0.5 text-amber-700">⚠ {r.warn}</span>}
+                {r.warn && <span className="block mt-0.5 text-tangerine-deep">⚠ {r.warn}</span>}
               </span>
             </label>
           </li>
