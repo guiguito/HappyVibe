@@ -101,7 +101,8 @@ And around them:
 - A long session starts at its latest messages. **Show earlier messages (…)** draws the rest.
 - After a compaction ([Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) says more), a note says "Earlier messages were compacted into a summary" and why. **Load earlier messages** brings them back into view, marked "earlier — not in the agent's context": you can read them, but the agent can't see them.
 - Scrolled up while the agent writes? The conversation stops following it. **Jump to latest** takes you back down.
-- If a request fails, the error says what happened, and often offers **Retry** or **Restart & resend**.
+- If the connection drops or the provider is busy, the session usually pauses and keeps trying. One line says why and when the next try is, for example "Paused · connection lost · next try in 15s". **Stop** still works. Once a try gets through, the agent picks up where it stopped (a reply cut off halfway starts again) and the line reads "Resumed after 2 min". If it still can't get through after about a quarter of an hour, it stops and shows the error, as below.
+- If a request fails for good, the error says what happened, and often offers **Retry** or **Restart & resend**.
 - If the agent can't take a message at all, nothing is lost: your bubble goes away, a note says why, and your words go back into the message box so you can send them again. The note is one of these:
   - "The agent is compacting its context. Send your message again when it finishes."
   - "Your sign-in for … has expired or can't be reached. Sign in again on Models, then send your message again."

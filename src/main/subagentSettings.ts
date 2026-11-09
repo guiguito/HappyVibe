@@ -12,6 +12,7 @@
  * Split out of config.ts because config.ts imports electron's `app` for
  * `agentDir()`, so vitest cannot import it.
  */
+import { RETRY_POLICY } from "./providerError";
 
 /**
  * §9 round 28 — Pi reads `compaction.enabled` (default true) from <agentDir>/settings.json, and its
@@ -20,6 +21,24 @@
 export function withCompaction(settings: Record<string, unknown>, on: boolean): Record<string, unknown> {
   const prev = (settings.compaction ?? {}) as Record<string, unknown>;
   return { ...settings, compaction: { ...prev, enabled: on } };
+}
+
+/**
+ * HappyVibe's retry policy (providerError.ts `RETRY_POLICY`) as Pi's `retry`
+ * settings, read by every later spawn. Pi's own `set_auto_retry` writes
+ * `retry.enabled`, so that one key is left as it is.
+ */
+export function withRetryPolicy(settings: Record<string, unknown>): Record<string, unknown> {
+  const prev = (settings.retry ?? {}) as Record<string, unknown>;
+  return {
+    ...settings,
+    retry: {
+      ...prev,
+      maxRetries: RETRY_POLICY.maxRetries,
+      baseDelayMs: RETRY_POLICY.baseDelayMs,
+      maxAgentDelayMs: RETRY_POLICY.maxDelayMs,
+    },
+  };
 }
 
 /** The key the bridge reads user-disabled agents from (kept from the pre-tintinweb file). */

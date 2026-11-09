@@ -29,7 +29,7 @@ import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, d
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getImageModel, setImageModel, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings, getAutoCompaction, setAutoCompaction, writePiCompactionSetting, writePiRetrySetting,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts, getMcpRulesMigrated, setMcpRulesMigrated,
@@ -891,6 +891,12 @@ export function registerIpc(
     writePiCompactionSetting();
   } catch (e) {
     console.warn("[hv] compaction setting write failed:", e);
+  }
+  // A dropped connection pauses the turn for minutes instead of ending it (providerError.ts RETRY_POLICY).
+  try {
+    writePiRetrySetting();
+  } catch (e) {
+    console.warn("[hv] retry setting write failed:", e);
   }
 
   // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before

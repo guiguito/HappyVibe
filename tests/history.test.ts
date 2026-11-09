@@ -156,6 +156,25 @@ describe("contextItems", () => {
     expect([...earlierItems(raw), ...contextItems(raw)]).toHaveLength(4);
   });
 
+  it("hides the attempts Pi retried — it took them out of the context with a null context_edit", () => {
+    // Measured shape (Pi 1.3.0): each failed attempt stays in the file, followed by an edit
+    // that removes it from what the model reads. A reopen showed every one as a half answer.
+    const failed = (id: string, ts: number): Record<string, unknown> => ({
+      type: "message", id, timestamp: new Date(ts).toISOString(),
+      message: { role: "assistant", content: [{ type: "text", text: "Half a" }], stopReason: "error", errorMessage: "terminated", timestamp: ts },
+    });
+    const raw = jsonl([
+      userMsg("a", "hello", 1),
+      failed("f1", 2), { type: "context_edit", id: "e1", targetId: "f1", replacement: null },
+      failed("f2", 3), { type: "context_edit", id: "e2", targetId: "f2", replacement: null },
+      asstMsg("b", "the whole answer", 4),
+      // A replacement is an edit, not a removal: the message stays.
+      asstMsg("c", "kept", 5), { type: "context_edit", id: "e3", targetId: "c", replacement: { content: "other" } },
+    ]);
+    const texts = contextItems(raw).map((it) => (it as { text?: string }).text);
+    expect(texts).toEqual(["hello", "the whole answer", "kept"]);
+  });
+
   it("applies §9 removal marks — get_messages does NOT (the bridge filters at the context event)", () => {
     const raw = jsonl([
       userMsg("a", "one", 1), asstMsg("b", "two", 2),
