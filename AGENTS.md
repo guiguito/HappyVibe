@@ -115,6 +115,10 @@ permission UX and context-window visibility as the differentiators.
 - Every fs writer is path-confined (`resolveInWorkspace` pattern, `files.ts`). Workspace identity is
   `normPath` (store.ts, via `WorkspaceRegistry`) — never compare raw path strings. Separators and
   case: `hv-paths.ts` (import-free, shared by bridge, child guard, main and renderer).
+- §9 rewind snapshots run on a worker thread (`snapshotHost.ts` → `out/main/snapshot-worker.js`), one
+  operation at a time, each within a budget (`SNAPSHOT_BUDGET_MS`): main never walks or reads workspace
+  files for them — on the main thread a large or iCloud-backed folder froze the whole app. A message
+  waits for its "pre" capture at most `SNAPSHOT_BUDGET_MS.pre`, then goes without one.
 - Renderer perf: streaming text stays OUT of the transcripts array (streamRef + rAF batching in
   `App.tsx`); tool cards update via the `toolIndex` map, never a full `.map()`.
 - `src/main/platform.ts` is the OS seam; `process.platform` anywhere else in `src/main` is a review red.

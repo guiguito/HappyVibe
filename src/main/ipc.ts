@@ -133,10 +133,7 @@ import {
 import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest } from "./gitMessage";
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
-import {
-  captureSnapshot, deleteSessionSnapshots, discardSnapshot, findRestoreTarget, listSnapshots,
-  previewRestore, restoreSnapshot, stampSnapshot,
-} from "./snapshots";
+import { SNAPSHOT_BUDGET_MS, snapshotHost } from "./snapshotHost";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
 import { buildMemoryPrompt } from "../../pi-runtime/extensions/hv-memory";
@@ -840,6 +837,9 @@ export function registerIpc(
    * session ends (an id is never reused).
    */
   const lastOpenFiles = new Map<string, string[]>();
+  // §9: a session's "pre" capture in flight. A message sent to the same session
+  // while it runs waits for it, so the two reach Pi in the order they were sent.
+  const pendingPre = new Map<string, Promise<unknown>>();
   /**
    * §26 part 2: the same idea for the terminals a session started. The RENDERED
    * block is stored rather than the list, because it is sorted and therefore
@@ -1709,17 +1709,18 @@ export function registerIpc(
       // §9 rewind: stamp the pending "pre" snapshot with the turn's FIRST
       // toolCallId (the only id durable across a reload), and record what the
       // agent left behind at agent_end — that record is the stale-check's
-      // reference. Best-effort: snapshotting must never disturb the stream.
+      // reference. Best-effort and queued on the snapshot worker, which keeps
+      // them in this order: snapshotting must never disturb the stream.
       const snapWsId = index.get(sessionId)?.workspaceId;
       if (snapWsId) {
         try {
           if (e.type === "tool_execution_start" && typeof e.toolCallId === "string") {
-            stampSnapshot(snapshotDir(), sessionId, e.toolCallId);
+            void snapshotHost.stamp(snapshotDir(), sessionId, e.toolCallId).catch(() => {});
           } else if (e.type === "agent_end") {
-            captureSnapshot(
-              snapshotDir(), sessionId, roots(), snapWsId,
-              "post", new Date().toISOString(),
-            );
+            void snapshotHost.capture(
+              { root: snapshotDir(), sessionId, roots: roots(), workspaceId: snapWsId, kind: "post", now: new Date().toISOString() },
+              SNAPSHOT_BUDGET_MS.post,
+            ).catch(() => {});
           }
         } catch {
           /* never disturb the event stream */
@@ -3017,7 +3018,7 @@ export function registerIpc(
         // artifacts are filed under exist only inside it.
         deleteSessionChildren(sessionDir(), s.piSessionFile);
         deleteSessionFile(sessionDir(), s.piSessionFile);
-        deleteSessionSnapshots(snapshotDir(), s.id);
+        void snapshotHost.deleteSession(snapshotDir(), s.id).catch(() => {});
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
         forgetSessionFeatures(s.id);
       }
@@ -3273,7 +3274,7 @@ export function registerIpc(
     // a special case. Still before deleteSessionFile, for the same reason.
     deleteSessionChildren(sessionDir(), meta.piSessionFile);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
-    deleteSessionSnapshots(snapshotDir(), sessionId);
+    void snapshotHost.deleteSession(snapshotDir(), sessionId).catch(() => {});
     lastOpenFiles.delete(sessionId);
     lastOpenTerminals.delete(sessionId);
     lastOpenBrowser.delete(sessionId);
@@ -3402,7 +3403,7 @@ export function registerIpc(
     // deleteSessionFile — the artifact ids are only readable while it exists.
     deleteSessionChildren(sessionDir(), meta.piSessionFile);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
-    deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
+    void snapshotHost.deleteSession(snapshotDir(), sessionId).catch(() => {}); // §9: snapshots die with the session
     lastOpenFiles.delete(sessionId); // round 11: no stale set for a dead session
     lastOpenTerminals.delete(sessionId); // §26: same, for the terminals block
     lastOpenBrowser.delete(sessionId); // §28: …and for the browser block
@@ -3841,19 +3842,30 @@ export function registerIpc(
     // (restores LESS than asked) or on nothing at all. The confirm dialog
     // reports the "nothing" case and disables Rewind when that is the whole
     // outcome (ChatView rewind confirm).
+    //
+    // The capture runs on the snapshot worker and this message WAITS for it
+    // (up to SNAPSHOT_BUDGET_MS.pre): it is the state before the turn, so it
+    // must be complete before Pi can write a file. Past the budget the message
+    // goes without one. A message sent meanwhile to the same session waits for
+    // this capture too (`pendingPre`), so it cannot reach Pi first.
     let snap: { seq: number } | null = null;
+    const ahead = pendingPre.get(sessionId);
     if (!wasBusy && meta?.workspaceId) {
-      try {
-        snap = captureSnapshot(
-          snapshotDir(), sessionId, roots(), meta.workspaceId,
-          "pre", new Date().toISOString(),
-        );
-      } catch (e) {
+      const capture = snapshotHost.capture(
+        { root: snapshotDir(), sessionId, roots: roots(), workspaceId: meta.workspaceId, kind: "pre", now: new Date().toISOString() },
+        SNAPSHOT_BUDGET_MS.pre,
+      ).catch((e: unknown) => {
         void log.append({
           type: "rewind.capture_failed", sessionId, workspaceId: meta.workspaceId,
           data: { error: e instanceof Error ? e.message : String(e) },
         });
-      }
+        return null;
+      });
+      pendingPre.set(sessionId, capture);
+      snap = await capture;
+      if (pendingPre.get(sessionId) === capture) pendingPre.delete(sessionId);
+    } else if (ahead) {
+      await ahead;
     }
     // §35: when the turn started, for the run's duration. Set for every prompt
     // so a user-prompted run is measured the same way.
@@ -3883,7 +3895,7 @@ export function registerIpc(
     // §39: a prompt that started no turn of its own must not leave one open.
     const undo = (): void => {
       if (startedHere) turns.discard(sessionId);
-      if (snap) discardSnapshot(snapshotDir(), sessionId, snap.seq);
+      if (snap) void snapshotHost.discard(snapshotDir(), sessionId, snap.seq).catch(() => {});
     };
     let out;
     try {
@@ -3983,35 +3995,28 @@ export function registerIpc(
   // §9 rewind file rollback. HUMAN-ONLY by construction: these are IPC handlers
   // with no tool, no bridge command and no model-reachable path — the same
   // invariant as the plan-mode power transitions.
-  const rewindTarget = (sessionId: string, toolCallIds: string[]) => {
+  // Both run on the snapshot worker (snapshotHost.ts): each walks the workspace.
+  ipcMain.handle("hv:rewind-preview", async (_e, sessionId: string, toolCallIds: string[]) => {
     const meta = index.get(sessionId);
     if (!meta?.workspaceId) return null;
-    const target = findRestoreTarget(snapshotDir(), sessionId, toolCallIds);
-    return target ? { workspaceId: meta.workspaceId, target } : null;
-  };
-
-  ipcMain.handle("hv:rewind-preview", (_e, sessionId: string, toolCallIds: string[]) => {
-    const hit = rewindTarget(sessionId, toolCallIds);
-    if (!hit) return null;
-    return previewRestore(
-      snapshotDir(), sessionId, roots(), hit.workspaceId, hit.target,
-    );
+    return snapshotHost.preview(snapshotDir(), sessionId, roots(), meta.workspaceId, toolCallIds);
   });
 
-  ipcMain.handle("hv:rewind-restore", (_e, sessionId: string, toolCallIds: string[]) => {
-    const hit = rewindTarget(sessionId, toolCallIds);
-    if (!hit) return null;
-    const result = restoreSnapshot(
-      snapshotDir(), sessionId, roots(), hit.workspaceId,
-      hit.target, new Date().toISOString(),
+  ipcMain.handle("hv:rewind-restore", async (_e, sessionId: string, toolCallIds: string[]) => {
+    const meta = index.get(sessionId);
+    if (!meta?.workspaceId) return null;
+    const hit = await snapshotHost.restore(
+      snapshotDir(), sessionId, roots(), meta.workspaceId, toolCallIds, new Date().toISOString(),
     );
+    if (!hit) return null;
+    const { result } = hit;
     void log.append({
       type: "rewind.restore",
       sessionId,
-      workspaceId: hit.workspaceId,
+      workspaceId: meta.workspaceId,
       data: {
         who: "human",
-        seq: hit.target.seq,
+        seq: hit.seq,
         restored: result.restored.length,
         deleted: result.deleted.length,
         stale: result.stale,
@@ -4099,13 +4104,15 @@ export function registerIpc(
       const wsId = meta.workspaceId;
       // §23 round 7: the baseline "Revert implementation" restores to. Labelled,
       // so the per-session cap never evicts it. Best-effort — a snapshot failure
-      // must never block Implement.
-      try {
-        captureSnapshot(
-          snapshotDir(), sessionId, roots(), wsId,
-          "pre", new Date().toISOString(), "implement",
-        );
-      } catch { /* never block the handoff */ }
+      // must never block Implement — and on the snapshot worker, with the same
+      // budget and the same rule as a message's capture: complete before the turn.
+      const capture = snapshotHost.capture(
+        { root: snapshotDir(), sessionId, roots: roots(), workspaceId: wsId, kind: "pre", now: new Date().toISOString(), label: "implement" },
+        SNAPSHOT_BUDGET_MS.pre,
+      ).catch(() => null); // never block the handoff
+      pendingPre.set(sessionId, capture);
+      await capture;
+      if (pendingPre.get(sessionId) === capture) pendingPre.delete(sessionId);
       const client = manager.get(sessionId) as PiClient | null;
       if (model && typeof model.provider === "string" && typeof model.modelId === "string") {
         index.update(sessionId, { model });
@@ -4161,17 +4168,13 @@ export function registerIpc(
   // §23 round 7: roll the workspace back to the Implement baseline. Human-only,
   // like every other power transition in this block. Files changed since the
   // agent touched them are left alone by the same stale-check rewind uses.
-  ipcMain.handle("hv:plan-revert", (_e, sessionId: string) => {
+  ipcMain.handle("hv:plan-revert", async (_e, sessionId: string) => {
     const meta = index.get(sessionId);
     if (!meta?.workspaceId) return null;
-    const target = listSnapshots(snapshotDir(), sessionId)
-      .filter((r) => r.label === "implement")
-      .pop();
-    if (!target) return null;
-    const result = restoreSnapshot(
-      snapshotDir(), sessionId, roots(), meta.workspaceId,
-      target, new Date().toISOString(),
+    const result = await snapshotHost.revertImplement(
+      snapshotDir(), sessionId, roots(), meta.workspaceId, new Date().toISOString(),
     );
+    if (!result) return null;
     void log.append({
       type: "plan.revert", sessionId, workspaceId: meta.workspaceId,
       data: {
