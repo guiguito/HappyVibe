@@ -93,15 +93,24 @@ describe("placement — the parts that sit behind a worker or the bus", () => {
     expect(mark).toBeLessThan(s.indexOf("randomUUID()", spawn));
   });
 
-  it("P6: steer and workflow-stop are on the bus, wired to the manager, and torn down", () => {
+  // Upstream took steer over at 0.22.1 with our guard and refusals, so P6's steer half retired.
+  // Pinned so a removal upstream is noticed: /hv-subagent-steer rides this verb.
+  it("steer is upstream's: on the bus, owner-guarded, wired to the manager once, torn down", () => {
     const rpc = src("cross-extension-rpc.ts");
-    expect(rpc).toMatch(/"subagents:rpc:steer"/);
-    expect(rpc).toMatch(/"subagents:rpc:workflow-stop"/);
-    expect(rpc).toMatch(/if \(!isTopLevelAgent\(record\)\) throw new Error\("Agent is owned by another agent or workflow"\);\n\s+if \(!manager\.steer/);
+    expect(rpc).toMatch(/if \(!isTopLevelAgent\(record\)\) throw new Error\("Agent is owned by another agent or workflow"\);/);
+    expect(rpc).toMatch(/"subagents:rpc:steer", \(\{ agentId, message \}\) => \{[\s\S]{0,200}assertOwned\(agentId\);\s+if \(!manager\.steer\(agentId, message\)\) throw new Error\("Agent is not running"\);/);
     const idx = src("index.ts");
-    expect(idx).toMatch(/steer: \(id: string, message: string\) =>/);
-    expect(idx).toMatch(/stopWorkflow: \(runId: string\) =>[\s\S]{0,200}workflowTasks\.get\(runId\)/);
+    const facade = idx.slice(idx.indexOf("registerRpcHandlers({"), idx.indexOf("registerRpcHandlers({") + 2500);
+    // One `steer:` — a second key in the same literal would silently override the first.
+    expect(facade.match(/^\s+steer: /gm)).toEqual([expect.stringMatching(/steer: /)]);
+    expect(facade).toMatch(/steer: \(id, message\) => manager\.steer\(id, message\),/);
     expect(idx).toMatch(/rpcHandle\?\.unsubSteer\(\);/);
+  });
+
+  it("P6: workflow-stop is on the bus, wired to the manager, and torn down", () => {
+    expect(src("cross-extension-rpc.ts")).toMatch(/"subagents:rpc:workflow-stop"/);
+    const idx = src("index.ts");
+    expect(idx).toMatch(/stopWorkflow: \(runId: string\) =>[\s\S]{0,200}workflowTasks\.get\(runId\)/);
     expect(idx).toMatch(/rpcHandle\?\.unsubWorkflowStop\(\);/);
   });
 

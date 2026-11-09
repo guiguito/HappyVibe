@@ -58,6 +58,24 @@ describe("Pi's sign-in page is HappyVibe's", () => {
     }
   });
 
+  // Pi 1.5 signs in to a server that supports Client ID Metadata Documents as pi.dev's client
+  // (consent screen: "pi", pi.dev's logo), never reaching the client_name above. Upstream skips
+  // that for any rebranded APP_NAME; the patch does the same, so `auto` registers as HappyVibe.
+  it("an MCP sign-in never borrows pi.dev's client identity unless the entry asks for it", () => {
+    const hits = chunks.map(([f, s]) => [f, /function offersClientMetadataDocument\(settings\)\{[^}]*\}/.exec(s)?.[0]] as const)
+      .filter(([, fn]) => fn);
+    expect(hits.map(([f]) => f), "Pi moved or renamed offersClientMetadataDocument — re-derive oauth-mcp-cimd").not.toEqual([]);
+    for (const [f, fn] of hits) {
+      expect(fn, `${f}: ${STALE}`).toContain("hv-patch:oauth-mcp-cimd");
+      // Through the gate itself, with Pi's own name and a callback that qualifies.
+      const offers = new Function("APP_NAME", "isClientMetadataDocumentCallback", `${fn}; return offersClientMetadataDocument;`)("pi", () => true);
+      expect(offers({}), f).toBe(false);
+      expect(offers({ clientRegistration: "auto" }), f).toBe(false);
+      expect(offers({ clientRegistration: "cimd" }), f).toBe(true);
+      expect(offers({ clientRegistration: "dcr" }), f).toBe(false);
+    }
+  });
+
   it("every patched chunk carries today's icon and the way back to the app", () => {
     for (const [f, s] of chunks.filter(([, s]) => s.includes("var LOGO_SVG="))) {
       expect(s, `${f}: ${STALE}`).toContain(JSON.stringify(logoSvg(ICON)));
