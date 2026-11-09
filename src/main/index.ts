@@ -7,7 +7,7 @@ import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
 import { startUpdater } from './update'
 import { loginShellPath, mergePath } from './shellPath'
-import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
+import { getDensity, getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
 import { guideLinkScript, navAction } from './navGuard'
 import { firstWindowSize, parseLayoutFile, type WindowRecord } from './windowLayout'
@@ -119,7 +119,9 @@ ipcMain.on('hv:window-boot', (e) => {
   const record = (w && (windows.record(w.id) as WindowRecord | undefined)) ?? { tabsByWs: {}, ui: {} }
   const draft = w ? pendingDrafts.get(w.id) : undefined
   if (w) pendingDrafts.delete(w.id)
-  e.returnValue = { windowId: w?.id ?? -1, record, ...(draft ? { draft } : {}) }
+  // Appearance › Density rides the boot too: read here, synchronously, a compact
+  // app paints compact from its first frame instead of jumping after an invoke.
+  e.returnValue = { windowId: w?.id ?? -1, record, density: getDensity(), ...(draft ? { draft } : {}) }
 })
 
 /**

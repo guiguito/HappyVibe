@@ -21,6 +21,7 @@ export const DOC_SLUG: Partial<Record<View, string>> = {
   terminal: "terminal",
   voice: "voice",
   onBehalf: "ai-autofill",
+  appearance: "appearance",
   shortcuts: "keyboard-shortcuts",
   privacy: "privacy",
   stats: "stats",

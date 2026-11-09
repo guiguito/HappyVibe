@@ -15,6 +15,7 @@ import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides, tintinwebSettings, withCompaction } from "./subagentSettings";
+import { DEFAULT_DENSITY, isDensity, type Density } from "./density";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
 import { webDefaultServiceAllowed } from "./remoteConfig/client";
 
@@ -84,6 +85,8 @@ interface ConfigFile {
   longCache?: boolean;
   /** §9 round 28: global auto-compaction switch; absent = ON (Pi's own default). */
   autoCompaction?: boolean;
+  /** Appearance › Density (density.ts). Absent ⇒ comfortable. */
+  density?: string;
   /** §13 round 27: the user's image model. Absent ⇒ the cheapest priced one (resolveImageModel). */
   imageModel?: string;
   /** §13 round 8: safeStorage-encrypted secrets for catalog-installed MCP
@@ -874,6 +877,18 @@ export function writeSubagentSettings(): void {
     /* absent or corrupt — start fresh */
   }
   fs.writeFileSync(file, `${JSON.stringify(disabledAgentOverrides(settings, load().agentsEnabled ?? {}), null, 2)}\n`);
+}
+
+/** Appearance › Density — anything unrecognised reads as the default, never as a broken layout. */
+export function getDensity(): Density {
+  const d = load().density;
+  return isDensity(d) ? d : DEFAULT_DENSITY;
+}
+
+export function setDensity(d: Density): void {
+  const cfg = load();
+  cfg.density = d;
+  save(cfg);
 }
 
 export function getAutoCompaction(): boolean {

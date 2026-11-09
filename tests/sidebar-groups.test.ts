@@ -16,9 +16,9 @@ const SRC = fs.readFileSync(path.join(R, "components", "Sidebar.tsx"), "utf8");
 const APP = fs.readFileSync(path.join(R, "App.tsx"), "utf8");
 
 describe("nothing was lost", () => {
-  it("all 18 destinations survive, each in exactly one group", () => {
-    expect(NAV).toHaveLength(19);
-    expect(new Set(NAV.map((n) => n.view)).size).toBe(19);
+  it("all 20 destinations survive, each in exactly one group", () => {
+    expect(NAV).toHaveLength(20);
+    expect(new Set(NAV.map((n) => n.view)).size).toBe(20);
     for (const n of NAV) {
       if (n.group === null) continue; // pinned above the groups
       expect(GROUPS.map((g) => g.id), `${n.view}`).toContain(n.group);
@@ -79,7 +79,7 @@ describe("the order lives in ONE place", () => {
       // record), so it is an app feature, not a record of one.
       // §37: Privacy closes the group — past even the set-once page, because
       // what the app sends is decided once and then forgotten.
-      "terminal", "voice", "onBehalf", "shortcuts", "privacy",
+      "terminal", "voice", "onBehalf", "appearance", "shortcuts", "privacy",
       "stats", "audit", "changelog",
     ]);
   });
@@ -97,7 +97,7 @@ describe("every row is reachable and legible", () => {
   });
 
   it("no two rows share a label", () => {
-    expect(new Set(NAV.map((n) => n.label)).size).toBe(19);
+    expect(new Set(NAV.map((n) => n.label)).size).toBe(20);
   });
 });
 

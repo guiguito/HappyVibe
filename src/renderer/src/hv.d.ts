@@ -1048,6 +1048,9 @@ interface HvApi {
   /** Round 29: `commands` (a shell prompt's patterns) writes command rules instead of a tool rule. */
   addPermissionRule(workspace: string | null, tool: string, commands?: string[]): Promise<HvRulesFile>;
   getAutoCompaction(): Promise<boolean>;
+  /** Appearance › Density: stored in config.json and pushed to every window. */
+  setDensity(d: "comfortable" | "compact" | "ultra-compact"): Promise<void>;
+  onDensityChanged(h: (d: "comfortable" | "compact" | "ultra-compact") => void): () => void;
   setAutoCompaction(on: boolean): Promise<void>;
   /** Round 3 #14: persistent "bypass all permissions". */
   getGlobalBypass(): Promise<boolean>;
@@ -1231,6 +1234,8 @@ interface HvApi {
   boot: {
     windowId: number;
     record: { tabsByWs: unknown; ui: Record<string, string> };
+    /** Appearance › Density, at boot so the first frame already has it (main/density.ts). */
+    density?: "comfortable" | "compact" | "ultra-compact";
     draft?: { tab: string; ws: string; draft: string };
   };
   moveTab(req: {

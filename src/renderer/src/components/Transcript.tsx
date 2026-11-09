@@ -226,7 +226,7 @@ function thinkingKey(it: TranscriptItem, i: number, nonce?: number): string | nu
 function ThinkingBlock({ text, live, ms }: { text: string; live?: boolean; ms?: number }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   return (
-    <div className="self-start max-w-3xl w-full">
+    <div className="self-start max-w-chat w-full">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -878,7 +878,7 @@ export function Transcript({
     <div className="flex-1 min-h-0 relative flex flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
         {header}
-        <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
+        <div className="max-w-chat mx-auto w-full px-6 py-6 flex flex-col gap-4">
           {/* Round 15: the held-back head of a long conversation. Same disclosure
               shape as §9's compaction boundary, and deliberately a different
               sentence: that one means "the agent cannot see this", this one only
