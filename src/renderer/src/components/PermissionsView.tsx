@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { Section } from "./Section";
+import { Toggle } from "./Toggle";
 
 /**
  * Round 8: the Permissions section of the old Settings scroll, promoted to its
@@ -67,6 +68,34 @@ function GlobalBypassToggle(): React.JSX.Element {
   );
 }
 
+/**
+ * §9: whether Rewind keeps a copy of the files. It is a permissions setting because
+ * round 29 lets an edit inside the workspace run without asking only BECAUSE Rewind
+ * can undo it: off, there is no copy, so every edit asks (the bridge, HV_FILE_REWIND).
+ */
+function FileRewindToggle(): React.JSX.Element {
+  const [on, setOn] = useState(true);
+  useEffect(() => { void window.hv.getGlobalFileRewind().then(setOn); }, []);
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <div className="font-bold text-sm mb-1">Keep a copy of your files</div>
+        <p className="text-xs text-ink-soft">
+          Before each message, so a rewind can put your files back, and so the agent can edit files in the
+          workspace without asking. Turn it off for a folder too large to copy, or one kept in the cloud: a rewind
+          then restores the conversation only, and the agent asks before every edit. Individual workspaces can
+          override this.
+        </p>
+      </div>
+      <Toggle
+        on={on}
+        label="Keep a copy of your files for Rewind"
+        onChange={(v) => { setOn(v); void window.hv.setGlobalFileRewind(v); }}
+      />
+    </div>
+  );
+}
+
 export function PermissionsView(): React.JSX.Element {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -80,6 +109,10 @@ export function PermissionsView(): React.JSX.Element {
         <Section icon="permissions" title="Rules" subtitle="Evaluated by the same engine that enforces them.">
           <PermissionRulesSection />
           <GlobalBypassToggle />
+        </Section>
+
+        <Section icon="rewind" title="Rewind" subtitle="Whether a rewind can put your files back.">
+          <FileRewindToggle />
         </Section>
       </div>
     </div>

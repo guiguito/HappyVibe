@@ -16,6 +16,40 @@ import path from "node:path";
 import { MAX_FILE_BYTES, isVisibleEntry, resolveInWorkspace } from "./files";
 
 /**
+ * These functions are synchronous and run OFF the main thread, in the snapshot
+ * worker (snapshotHost.ts): a walk of a large or cloud-backed folder used to
+ * freeze the whole app (a home folder is ~420k files, and every iCloud-only file
+ * read is a download). The host asks a capture to stop through `shouldStop`,
+ * which the walk checks between entries; a stopped capture throws
+ * SnapshotAborted and writes no record.
+ */
+export class SnapshotAborted extends Error {
+  constructor() {
+    super("Snapshot stopped before it finished.");
+    this.name = "SnapshotAborted";
+  }
+}
+
+/** Never stops — what a caller with no budget (and every test) passes. */
+const never = (): boolean => false;
+
+/**
+ * Write via a temporary sibling and rename, so a capture stopped or killed
+ * mid-write never leaves a truncated file under a final name: a blob is trusted
+ * on sight by its hash name, and the records file is rewritten whole.
+ */
+function writeAtomically(dest: string, write: (tmp: string) => void): void {
+  const tmp = `${dest}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  try {
+    write(tmp);
+    fs.renameSync(tmp, dest);
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+    throw e;
+  }
+}
+
+/**
  * Build outputs, on top of the ignore list the file tree and watcher share
  * (files.ts IGNORED_DIRS + dotfile rules, via isVisibleEntry). Deliberately a
  * SEPARATE set: widening the shared one would change what the tree shows.
@@ -45,7 +79,11 @@ function hashFile(abs: string, st: fs.Stats): string {
   return hash;
 }
 
-export function buildManifest(registeredWorkspaces: string[], workspaceId: string): Manifest {
+export function buildManifest(
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  shouldStop: () => boolean = never,
+): Manifest {
   const root = resolveInWorkspace(registeredWorkspaces, workspaceId, "");
   const files: Record<string, string> = {};
   const tooLarge: string[] = [];
@@ -58,6 +96,7 @@ export function buildManifest(registeredWorkspaces: string[], workspaceId: strin
       return;
     }
     for (const e of entries) {
+      if (shouldStop()) throw new SnapshotAborted();
       if (!isVisibleEntry(e.name)) continue;
       if (e.isDirectory() && SNAPSHOT_EXCLUDE.has(e.name)) continue;
       const childAbs = path.join(abs, e.name);
@@ -152,9 +191,8 @@ export function listSnapshots(root: string, sessionId: string): SnapshotRecord[]
 
 function writeRecords(root: string, sessionId: string, records: SnapshotRecord[]): void {
   fs.mkdirSync(sessionDirFor(root, sessionId), { recursive: true });
-  fs.writeFileSync(
-    recordsFile(root, sessionId),
-    records.map((r) => JSON.stringify(r)).join("\n") + "\n",
+  writeAtomically(recordsFile(root, sessionId), (tmp) =>
+    fs.writeFileSync(tmp, records.map((r) => JSON.stringify(r)).join("\n") + "\n"),
   );
 }
 
@@ -166,9 +204,10 @@ export function captureSnapshot(
   kind: SnapshotKind,
   now: string,
   label?: string,
+  shouldStop: () => boolean = never,
 ): SnapshotRecord | null {
   assertSessionId(sessionId);
-  const manifest = buildManifest(registeredWorkspaces, workspaceId);
+  const manifest = buildManifest(registeredWorkspaces, workspaceId, shouldStop);
   const records = listSnapshots(root, sessionId);
   const newest = records[records.length - 1];
 
@@ -186,14 +225,17 @@ export function captureSnapshot(
   const wsRoot = resolveInWorkspace(registeredWorkspaces, workspaceId, "");
   fs.mkdirSync(path.join(sessionDirFor(root, sessionId), "blobs"), { recursive: true });
   for (const [rel, hash] of Object.entries(manifest.files)) {
+    if (shouldStop()) throw new SnapshotAborted();
     const dest = blobPath(root, sessionId, hash);
     if (fs.existsSync(dest)) continue; // content-addressed: identical content, one blob
     try {
-      fs.copyFileSync(path.join(wsRoot, rel), dest);
+      writeAtomically(dest, (tmp) => fs.copyFileSync(path.join(wsRoot, rel), tmp));
     } catch {
       delete manifest.files[rel]; // vanished mid-capture — never record what we cannot restore
     }
   }
+  // Last chance: past this line the record exists and a turn may stamp it.
+  if (shouldStop()) throw new SnapshotAborted();
 
   const rec: SnapshotRecord = {
     seq: (newest?.seq ?? 0) + 1,
@@ -275,8 +317,9 @@ function plan(
   registeredWorkspaces: string[],
   workspaceId: string,
   target: SnapshotRecord,
+  shouldStop: () => boolean = never,
 ): { restore: string[]; remove: string[]; stale: string[] } {
-  const current = buildManifest(registeredWorkspaces, workspaceId);
+  const current = buildManifest(registeredWorkspaces, workspaceId, shouldStop);
   const expected = freshnessManifest(root, sessionId);
   const restore: string[] = [];
   const remove: string[] = [];
@@ -308,8 +351,9 @@ export function previewRestore(
   registeredWorkspaces: string[],
   workspaceId: string,
   target: SnapshotRecord,
+  shouldStop: () => boolean = never,
 ): RestorePreview {
-  const p = plan(root, sessionId, registeredWorkspaces, workspaceId, target);
+  const p = plan(root, sessionId, registeredWorkspaces, workspaceId, target, shouldStop);
   return { willRestore: p.restore, willDelete: p.remove, stale: p.stale };
 }
 
@@ -320,11 +364,14 @@ export function restoreSnapshot(
   workspaceId: string,
   target: SnapshotRecord,
   now: string,
+  shouldStop: () => boolean = never,
 ): RestoreResult {
   // Internal guard: a botched restore must itself be recoverable. Planned
   // BEFORE this capture, so the safety record can't become its own reference.
-  const { restore, remove, stale } = plan(root, sessionId, registeredWorkspaces, workspaceId, target);
-  captureSnapshot(root, sessionId, registeredWorkspaces, workspaceId, "post", now, "safety");
+  // A stop is honoured while planning and capturing, never once files are being
+  // written back: half a restore is worse than a slow one.
+  const { restore, remove, stale } = plan(root, sessionId, registeredWorkspaces, workspaceId, target, shouldStop);
+  captureSnapshot(root, sessionId, registeredWorkspaces, workspaceId, "post", now, "safety", shouldStop);
 
   const restored: string[] = [];
   const deleted: string[] = [];

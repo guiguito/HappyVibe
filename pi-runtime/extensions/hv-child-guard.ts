@@ -159,7 +159,7 @@ export function guardDecision(args: {
   const { tool, input, workspace } = args;
   const d = childDecision(
     args.rules,
-    { tool, input, workspace, caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(workspace, ".git")) },
+    { tool, input, workspace, caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(workspace, ".git")), fileRewind: process.env.HV_FILE_REWIND !== "0" },
     { bypass: args.bypass, rulesReadable: args.rulesReadable },
   );
   // §13 round 26: first, and under bypass too — a switched-off tool is absent, not a permission.

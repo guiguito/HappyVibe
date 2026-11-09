@@ -20,7 +20,7 @@ import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { forkMarkerIndex, stampPiTs } from "./fork";
-import { reloadNotice } from "./reloadNotice";
+import { reloadNotice, reloadNoticeTitle } from "./reloadNotice";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
 import { FeedbackDialog } from "./components/FeedbackDialog";
@@ -1942,7 +1942,7 @@ export default function App(): React.JSX.Element {
     // session (resumed) to apply it, and says which. The intentional exit clears
     // the crash banner (onPiExit); note why it blinked.
     const offReloading = window.hv.onSessionReloading(({ sessionId, reason }) => {
-      appendItem(sessionId, { kind: "notice", text: reloadNotice(reason) });
+      appendItem(sessionId, { kind: "notice", text: reloadNotice(reason), title: reloadNoticeTitle(reason) });
     });
 
     // An extension asked for a prompt HappyVibe has no UI for. Main already
