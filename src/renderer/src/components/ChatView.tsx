@@ -25,6 +25,7 @@ import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalRunCard, TerminalTail, type TerminalRun } from "./TerminalRunCard";
 import { type IconKind } from "../toolLabel";
 import { insertAtComposer } from "../composerText";
+import { appliedInsert, noteInsertApplied, readDraft, saveDraft } from "../composerDrafts";
 import { mcpChipLabel, mcpChipTitle, serversForWorkspace } from "../mcpChip";
 import { folderHasCode } from "../onboarding";
 import { MicButton } from "./MicButton";
@@ -314,7 +315,9 @@ export function ChatView({
   /** §23 round 9: the session's active plan — the pill's data, null when none. */
   activePlan?: PlanCardData | null;
 }): React.JSX.Element {
-  const [input, setInput] = useState("");
+  // The unsent message comes back with the session (composerDrafts.ts): a workspace
+  // switch unmounts this composer, and the text used to go with it.
+  const [input, setInput] = useState(() => readDraft(sessionId).text);
   // Composer row aligns centered on one line; when the textarea wraps to multiple
   // lines the controls pin to the top instead (all on the same horizontal line).
   const [multiline, setMultiline] = useState(false);
@@ -393,11 +396,15 @@ export function ChatView({
 
   // §27: the append rule now lives in composerText.ts, shared with dictation so
   // the two paths cannot land text in different places.
-  const lastInsert = useRef(0);
+  // Seeded from the session's record, not 0: App never clears its one insert, so a
+  // composer mounting again (a workspace switch) would apply it a second time on
+  // top of the restored draft. One that arrived while it was away still lands.
+  const lastInsert = useRef(appliedInsert(sessionId));
   useEffect(() => {
     const n = composerInsert?.nonce ?? 0;
     if (!n || n === lastInsert.current) return;
     lastInsert.current = n;
+    noteInsertApplied(sessionId, n);
     insertText(composerInsert!.text);
     // §17 round 28: a fork's documents, re-attached by path exactly as Rewind does.
     if (composerInsert!.docs?.length) void attachDocumentPaths(composerInsert!.docs);
@@ -623,9 +630,9 @@ export function ChatView({
    * authentication, and adding or removing a server all push through it.
    */
   const [mcpServers, setMcpServers] = useState<McpServerStatusLike[] | null>(null);
-  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>(() => readDraft(sessionId).images);
   // §31: documents are converted AT PICK TIME, so a chip already knows its cost.
-  const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
+  const [documents, setDocuments] = useState<DocumentAttachment[]>(() => readDraft(sessionId).documents);
   /**
    * §31: a document that would not convert is a MESSAGE, not a chip.
    *
@@ -661,15 +668,33 @@ export function ChatView({
     refetch();
     return window.hv.onProvidersChanged(refetch);
   }, [workspace]);
-  // Session switch: attachments and the restart hint belong to the old session.
+  /**
+   * Mount (App keys each ChatView by its session, so `sessionId` never changes
+   * under one): the text, pictures and documents of the session's draft came in
+   * through the lazy initialisers above and are NOT set again here — a
+   * `composerInsert` that landed on this same mount (a send handed back while the
+   * composer was away) must survive. What is restored here is what those cannot
+   * carry: the @mention map, after the workspace effect above emptied it, and a
+   * document that was still converting when the composer went away (its answer
+   * reached an unmounted component).
+   */
   useEffect(() => {
-    setAttachments([]);
-    setDocuments([]);
+    const d = readDraft(sessionId);
+    mentionMap.current = new Map(d.mentions);
+    const converting = d.documents.filter((x) => x.pending).map((x) => x.path);
+    if (converting.length) void attachDocumentPaths(converting);
     setDocumentErrors([]);
     setRestartHint(false);
     setModelMenuOpen(false);
     setAttachMenuOpen(false);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- once per mount; attachDocumentPaths is recreated every render
   }, [sessionId]);
+  // Every edit is kept, so whatever unmounts this composer next finds it saved.
+  // The mention map has no effect of its own: picking a mention always edits the
+  // text too, which is what saves it.
+  useEffect(() => {
+    saveDraft(sessionId, { text: input, images: attachments, documents, mentions: [...mentionMap.current] });
+  }, [sessionId, input, attachments, documents]);
   // §16 (2026-07-30): a tier pinned to a provider that no longer exists (deleted
   // custom endpoint) must not win resolution — drop it so the chip shows the
   // tier actually in effect. The list comes from MAIN (hv:get-providers) because

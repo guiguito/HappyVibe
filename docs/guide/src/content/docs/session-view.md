@@ -136,6 +136,8 @@ Type here, press **Enter** to send, **Shift+Enter** for a new line. It reads "As
 
 You can also paste or drop an image straight into the box, and, while **Documents** is on, drop a document on it. Each attachment waits above the box as a chip, with **×** to remove it, until you send. A document can go on its own, with nothing typed. A document's chip shows its size as Markdown and roughly how many tokens it will take, so you know what it costs before you send it.
 
+A message you haven't sent stays with its session. Switch to another workspace, close the tab or move the tab to another window, and it's still in the box when you come back, attachments included. It lasts as long as its window stays open: closing that window, reloading it or restarting the app empties the box. A session you never sent anything to is the exception: closing its tab deletes it, message and all.
+
 Click any picture in the conversation, such as an image you attached, a screenshot the agent took or an image it made, to see it full size. There, **Copy** puts it on your clipboard, ready to paste anywhere, and **Save…** saves it where you choose. Click outside the picture or press **Esc** to close it.
 
 Pasting more than 100,000 characters asks first: "That's a large amount of text to add to the composer. Insert it anyway?" (the composer is the message box).
