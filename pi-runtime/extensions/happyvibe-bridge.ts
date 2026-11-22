@@ -1598,8 +1598,8 @@ export default function (pi: ExtensionAPI) {
   /**
    * §12 (2026-09-26): message a running tintinweb run mid-run — the run card's box and the
    * composer's picked run both land here. The message is base64 so a sentence with spaces,
-   * quotes or newlines survives the one-line slash command intact. Drives the patched
-   * `subagents:rpc:steer` verb (P6), which refuses anything but a running top-level agent.
+   * quotes or newlines survives the one-line slash command intact. Drives upstream's
+   * `subagents:rpc:steer` verb (0.22.1+), which refuses anything but a running top-level agent.
    */
   pi.registerCommand("hv-subagent-steer", {
     description: "HappyVibe: send a message to a running sub-agent. Usage: /hv-subagent-steer <runId> <base64 message>",
