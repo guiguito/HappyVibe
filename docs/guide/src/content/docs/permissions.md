@@ -78,6 +78,17 @@ The switch reads **Off** while it's off. Clicking it asks you first: "⚠ Auto-a
 
 While it's on, every session it applies to shows a red banner, "Dangerous mode is ON for this session — every tool call runs without asking.": the ones already open, and every one you start or restart. The banner's **Turn off** button makes that session ask again until it restarts. To stop bypass for good, turn this switch off.
 
+### Rewind
+
+"Whether a rewind can put your files back." One switch, **Keep a copy of your files**, on to start with: "Before each message, so a rewind can put your files back, and so the agent can edit files in the workspace without asking."
+
+Turn it off for a folder too large to copy, or one kept in the cloud, where each message waits for that copy, up to 5 seconds. Nothing is copied then, so two things change:
+
+- A [rewind](/docs/first-session/#changed-your-mind-rewind) to a message you send while it's off offers only **Conversation only**: there's no copy to put your files back from. Copies made before you turned it off stay, so a rewind to an earlier message can still put your files back.
+- The agent asks before it edits or writes a file in the workspace, because Rewind couldn't undo it.
+
+"Individual workspaces can override this" in their [workspace settings](/docs/first-session/#workspace-settings): pick **Off — no copy, every edit asks** for one big folder, and it stays on everywhere else. **Inherit global** follows this switch again. Your conversation stays: open sessions restart once they're idle to pick up the change ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
+
 ## Add a rule
 
 1. Click **+ Add rule**. A new row appears as a **tool** rule that asks.
@@ -112,7 +123,7 @@ When a call needs your answer, the approval dialog opens over the session. It ne
 With no rule matching, these run without the approval dialog:
 
 - Tools that only read or look things up: reading, searching and listing files inside your workspace, reading the page open in the app's browser, searching the web, and recalling a memory.
-- Editing or writing a file inside your workspace. Rewind can undo it. A file or folder whose name starts with a dot (`.env`, `.git`, `.github`) and `AGENTS.md` or `CLAUDE.md` still ask, because Rewind can't undo them or every future session reads them.
+- Editing or writing a file inside your workspace. Rewind can undo it while **Keep a copy of your files** is on ([Rewind](#rewind), above). With it off, edits ask. A file or folder whose name starts with a dot (`.env`, `.git`, `.github`) and `AGENTS.md` or `CLAUDE.md` still ask, because Rewind can't undo them or every future session reads them.
 - A read-only shell command, such as `git status` or `grep -rn todo src`, when every path it names stays inside your workspace. A command that runs your project's code, such as `npm test`, asks. On Windows without Git Bash, where the agent uses PowerShell, every command asks.
 - Handing a task to a subagent that can only read, such as `code-explorer`. A subagent that can change files asks, and shows what it can reach.
 - Opening a page on your own computer (localhost) in the app's browser, the usual way to preview what you're building.

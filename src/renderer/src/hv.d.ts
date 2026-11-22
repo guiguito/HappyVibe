@@ -1057,6 +1057,12 @@ interface HvApi {
   setAutoCompaction(on: boolean): Promise<void>;
   /** Round 3 #14: persistent "bypass all permissions". */
   getGlobalBypass(): Promise<boolean>;
+  /** §9: Rewind keeps a copy of the workspace's files — global default (on), and a
+      per-workspace override (null = inherit). Off: no copies, and an edit asks. */
+  getGlobalFileRewind(): Promise<boolean>;
+  setGlobalFileRewind(on: boolean): Promise<void>;
+  getWorkspaceFileRewind(workspace: string): Promise<boolean | null>;
+  setWorkspaceFileRewind(workspace: string, on: boolean | null): Promise<void>;
   setGlobalBypass(on: boolean): Promise<void>;
   /** null = unset (inherit global). */
   getWorkspaceBypass(workspace: string): Promise<boolean | null>;

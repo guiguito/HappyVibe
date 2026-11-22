@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { mcpChipTitle } from "../src/renderer/src/mcpChip";
-import { RELOAD_NOTICE, reloadNotice } from "../src/renderer/src/reloadNotice";
+import { RELOAD_NOTICE, reloadNotice, reloadNoticeTitle } from "../src/renderer/src/reloadNotice";
 
 /**
  * docs round #14 — three MCP-adjacent strings described the wrong thing:
@@ -61,12 +61,27 @@ describe("the reload notice names the change that caused it", () => {
     expect(Object.keys(RELOAD_NOTICE).sort()).toEqual([...reasons].sort());
   });
 
-  test("every line keeps the reset warning; only the MCP one names MCP", () => {
+  test("every line fits the notice (max-w-md truncates) and only the MCP one names MCP", () => {
     for (const r of reasons) {
-      expect(reloadNotice(r), r).toMatch(/permission grants and dangerous mode reset to safe defaults\.$/);
+      expect(reloadNotice(r), r).toMatch(/^Reloading to apply /);
+      // ~60 characters fit the notice at text-xs; these stay well under it.
+      expect(reloadNotice(r).length, r).toBeLessThanOrEqual(45);
       expect(/MCP/.test(reloadNotice(r)), r).toBe(r === "mcp");
     }
-    expect(reloadNotice("something-new")).toMatch(/^Reloading to apply your changes — /);
+    expect(reloadNotice("something-new")).toBe("Reloading to apply your changes");
+  });
+
+  test("the tooltip says what the restart keeps — round 29 (7) hands grants back, so no 'reset' claim", () => {
+    for (const r of reasons) {
+      expect(reloadNoticeTitle(r), r).toContain("Your conversation carries on");
+      expect(reloadNoticeTitle(r), r).toContain("“Allow for session” answers still hold");
+      expect(reloadNoticeTitle(r), r).not.toMatch(/reset/);
+    }
+    expect(reloadNoticeTitle("mcp")).toMatch(/except those for MCP tools\.$/);
+    // The behaviour the tooltip describes: grants handed back on respawn, MCP ones dropped on an MCP change.
+    const ipc = read("src/main/ipc.ts");
+    expect(ipc).toContain("grants: sessionId ? sessionGrants.list(sessionId) : undefined");
+    expect(ipc).toContain('if (reason === "mcp") sessionGrants.dropMcp(id);');
   });
 
   test("a built-in tool toggle reloads as 'tools', not 'skills'", () => {
@@ -77,7 +92,7 @@ describe("the reload notice names the change that caused it", () => {
 
   test("App renders the notice from the reason main sends", () => {
     const app = read("src/renderer/src/App.tsx");
-    expect(app).toContain("text: reloadNotice(reason)");
+    expect(app).toContain("text: reloadNotice(reason), title: reloadNoticeTitle(reason)");
     expect(app).not.toContain("Reloading to apply MCP server changes");
   });
 });

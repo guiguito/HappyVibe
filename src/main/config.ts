@@ -61,6 +61,10 @@ interface ConfigFile {
   /** §38: set only when the user turns OFF automatic update downloads (default on). */
   autoUpdate?: false;
   workspaceBypass?: Record<string, boolean>;
+  /** §9: Rewind keeps a copy of the workspace's files — global default + per-workspace
+      override (the bypass shape). Set only when OFF (absent = on). */
+  fileRewindOff?: true;
+  workspaceFileRewind?: Record<string, boolean>;
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
   linkedSkillDirs?: string[];
@@ -406,6 +410,38 @@ export function setWorkspaceBypass(workspace: string, on: boolean | null): void 
   else cfg.workspaceBypass[workspace] = on;
   if (Object.keys(cfg.workspaceBypass).length === 0) delete cfg.workspaceBypass;
   save(cfg);
+}
+
+/** §9: Rewind's copy of the files, global default (on unless turned off). */
+export function getGlobalFileRewind(): boolean {
+  return !load().fileRewindOff;
+}
+
+export function setGlobalFileRewind(on: boolean): void {
+  const cfg = load();
+  if (on) delete cfg.fileRewindOff;
+  else cfg.fileRewindOff = true;
+  save(cfg);
+}
+
+/** Per-workspace override, tri-state: null = unset (inherit global). */
+export function getWorkspaceFileRewind(workspace: string): boolean | null {
+  return load().workspaceFileRewind?.[workspace] ?? null;
+}
+
+export function setWorkspaceFileRewind(workspace: string, on: boolean | null): void {
+  const cfg = load();
+  cfg.workspaceFileRewind ??= {};
+  if (on === null) delete cfg.workspaceFileRewind[workspace];
+  else cfg.workspaceFileRewind[workspace] = on;
+  if (Object.keys(cfg.workspaceFileRewind).length === 0) delete cfg.workspaceFileRewind;
+  save(cfg);
+}
+
+/** Resolved for a workspace (a project — a worktree reads its project's): override ?? global. */
+export function resolveFileRewind(workspace: string | null | undefined): boolean {
+  const cfg = load();
+  return (workspace ? cfg.workspaceFileRewind?.[workspace] : undefined) ?? !cfg.fileRewindOff;
 }
 
 /** Resolved bypass for a session: workspace override ?? global ?? off. */

@@ -19,7 +19,9 @@ paths:
   id; an MCP-config reload drops only `mcp:` grants; a fork/duplicate (new id) and an app quit start empty.
 - The engine's safe defaults beyond `SAFE_TOOLS` (round 29): `write`/`edit` inside the workspace
   unless a path part starts with `.` or it is `AGENTS.md`/`CLAUDE.md` (`isProtectedPath`), resolved
-  through symlinks via `realPath`; `bash` when `isReadOnlyShellCommand` (`hv-shell.ts` — plan mode's
+  through symlinks via `realPath`, and only while Rewind keeps a copy of the files (`call.fileRewind`,
+  `HV_FILE_REWIND=0` when the user turned it off — globally or for the workspace; a change respawns the
+  workspace's sessions when idle); `bash` when `isReadOnlyShellCommand` (`hv-shell.ts` — plan mode's
   ported classifier, wrapped, never edited; refuses anything that runs project code); and, in the
   bridge, a delegation whose boundary `isReadOnlyBoundary`.
 - Command rules: deny/ask match ANY part (`commandPositions`, permissive); allow needs EVERY part

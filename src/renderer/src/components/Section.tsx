@@ -92,6 +92,13 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
       <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
     </>
   ),
+  // §9: the rewind button's own glyph (ToolCard's ToolIcon "rewind").
+  rewind: (
+    <>
+      <polyline points="1 4 1 10 7 10" />
+      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+    </>
+  ),
 };
 
 export function Section({
