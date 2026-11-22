@@ -385,7 +385,7 @@ export function FileTab({
           narrated. Nothing is written into the composer: that box may hold a
           thought in progress, and the agent re-reads before editing anyway. */}
       {undoing && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setUndoing(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setUndoing(null)}>
           <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold mb-2">Undo this change?</div>
             <div className="text-sm mb-4">

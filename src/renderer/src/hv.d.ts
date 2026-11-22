@@ -1051,6 +1051,9 @@ interface HvApi {
   /** Appearance › Density: stored in config.json and pushed to every window. */
   setDensity(d: "comfortable" | "compact" | "ultra-compact"): Promise<void>;
   onDensityChanged(h: (d: "comfortable" | "compact" | "ultra-compact") => void): () => void;
+  /** Appearance › Theme: stored in config.json, handed to Electron's nativeTheme, pushed to every window. */
+  setColorScheme(s: "light" | "dark" | "system"): Promise<void>;
+  onColorSchemeChanged(h: (s: "light" | "dark" | "system") => void): () => void;
   setAutoCompaction(on: boolean): Promise<void>;
   /** Round 3 #14: persistent "bypass all permissions". */
   getGlobalBypass(): Promise<boolean>;
@@ -1236,6 +1239,8 @@ interface HvApi {
     record: { tabsByWs: unknown; ui: Record<string, string> };
     /** Appearance › Density, at boot so the first frame already has it (main/density.ts). */
     density?: "comfortable" | "compact" | "ultra-compact";
+    /** Appearance › Theme, at boot for the same reason (main/colorScheme.ts). */
+    colorScheme?: "light" | "dark" | "system";
     draft?: { tab: string; ws: string; draft: string };
   };
   moveTab(req: {

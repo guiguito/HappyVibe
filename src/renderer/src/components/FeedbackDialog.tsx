@@ -255,7 +255,7 @@ export function FeedbackDialog({
   return (
     <Dialog.Root open onOpenChange={(o) => !o && requestClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-scrim/50 backdrop-blur-[2px]" />
         <Dialog.Content
           onPaste={onPaste}
           onEscapeKeyDown={(e) => {

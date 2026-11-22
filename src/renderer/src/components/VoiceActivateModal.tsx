@@ -26,7 +26,7 @@ export function VoiceActivateModal({
   if (!open) return null;
   return (
     <div
-      className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/20 p-6"
+      className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/20 p-6"
       onClick={onClose}
       role="presentation"
     >

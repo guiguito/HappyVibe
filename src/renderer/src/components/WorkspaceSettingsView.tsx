@@ -125,7 +125,7 @@ export function WorkspaceSettingsView({
           </div>
 
           {confirmBypass && (
-            <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmBypass(false)}>
+            <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setConfirmBypass(false)}>
               <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
                 <div className="font-bold text-berry mb-1">⚠ Auto-approve every action in this workspace?</div>
                 <p className="text-sm text-ink-soft mb-4">
@@ -253,7 +253,7 @@ function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onR
 
       {/* Same warm dialog pattern as the session-delete confirm and CompactDialog. */}
       {confirm && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirm(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6" onMouseDown={() => setConfirm(null)}>
           <div
             className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
             onMouseDown={(e) => e.stopPropagation()}

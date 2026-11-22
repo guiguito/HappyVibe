@@ -374,7 +374,7 @@ export function FileTree({
 
       {/* Delete confirm — moves to the OS Trash (recoverable), never a hard delete. */}
       {confirmDel && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmDel(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setConfirmDel(null)}>
           <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Move {confirmDel.kind === "dir" ? "folder" : "file"} to Trash?</div>
             <p className="text-sm text-ink-soft mb-4">
@@ -406,7 +406,7 @@ export function FileTree({
 
       {/* Details popup. */}
       {details && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setDetails(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/60 p-8" onClick={() => setDetails(null)}>
           <div className="hv-dialog-flow w-full max-w-sm rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-3">{basename(details.rel)}</div>
             <dl className="text-sm grid grid-cols-[5rem_1fr] gap-y-1.5">

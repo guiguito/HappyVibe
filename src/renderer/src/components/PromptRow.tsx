@@ -189,7 +189,7 @@ export function PromptRow({
             ) : prompt === null ? (
               <p className="text-sm text-ink-soft">Loading…</p>
             ) : (
-              <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 select-text">
+              <pre className="font-mono text-xs bg-code text-code-ink rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 select-text">
                 {prompt}
               </pre>
             )}

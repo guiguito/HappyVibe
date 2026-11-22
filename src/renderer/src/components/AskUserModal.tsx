@@ -123,7 +123,7 @@ function QuestionSection({
           </div>
         </div>
         {hasPreview && (
-          <pre className="flex-1 min-w-0 self-stretch font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72">
+          <pre className="flex-1 min-w-0 self-stretch font-mono text-xs bg-code text-code-ink rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72">
             {previewOpt?.preview ?? "Hover an option to preview it."}
           </pre>
         )}

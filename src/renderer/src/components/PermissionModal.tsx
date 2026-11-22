@@ -260,7 +260,7 @@ export function PermissionModal({
             <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wide text-ink-soft">
               details
             </summary>
-            <pre className="mt-2 font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-x-auto whitespace-pre-wrap break-all max-h-48">
+            <pre className="mt-2 font-mono text-xs bg-code text-code-ink rounded-xl px-4 py-3 overflow-x-auto whitespace-pre-wrap break-all max-h-48">
               <span className="font-bold">{info.tool || "unknown"}</span>
               {"\n"}
               {info.summary}

@@ -329,7 +329,7 @@ export function SchedulesView({
       </div>
 
       {confirmDelete && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
           <div className="hv-dialog-flow w-full max-w-sm rounded-2xl border-2 border-line-strong bg-paper shadow-sticker-lg p-5" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="font-black text-lg tracking-tight">Delete this schedule?</h2>
             <p className="text-sm text-ink-soft mt-2">&ldquo;{confirmDelete.title}&rdquo;</p>

@@ -254,7 +254,7 @@ function ResetDialog({ blockers: initial, onClose }: { blockers: Array<{ path: s
     setBusy(false);
   };
   return (
-    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6">
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-scrim/40 px-6">
       <div className="hv-dialog-flow w-full max-w-lg rounded-2xl border-2 border-line-strong bg-paper shadow-sticker-lg p-5">
         {blockers.length > 0 ? (
           <>

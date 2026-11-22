@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld("hv", {
     record: { tabsByWs: unknown; ui: Record<string, string> };
     /** Appearance › Density, at boot so the first frame already has it (main/density.ts). */
     density: "comfortable" | "compact" | "ultra-compact";
+    /** Appearance › Theme, at boot for the same reason (main/colorScheme.ts). */
+    colorScheme: "light" | "dark" | "system";
     /** §7 round 23: unsaved text of a tab moved into this brand-new window. */
     draft?: { tab: string; ws: string; draft: string };
   },
@@ -347,6 +349,12 @@ contextBridge.exposeInMainWorld("hv", {
     const l = (_e: unknown, d: "comfortable" | "compact" | "ultra-compact"): void => h(d);
     ipcRenderer.on("hv:density-changed", l);
     return () => ipcRenderer.off("hv:density-changed", l);
+  },
+  setColorScheme: (s: "light" | "dark" | "system") => ipcRenderer.invoke("hv:set-color-scheme", s),
+  onColorSchemeChanged: (h: (s: "light" | "dark" | "system") => void) => {
+    const l = (_e: unknown, s: "light" | "dark" | "system"): void => h(s);
+    ipcRenderer.on("hv:color-scheme-changed", l);
+    return () => ipcRenderer.off("hv:color-scheme-changed", l);
   },
   setAutoCompaction: (on: boolean) => ipcRenderer.invoke("hv:set-auto-compaction", on),
   getGlobalBypass: () => ipcRenderer.invoke("hv:get-global-bypass"),

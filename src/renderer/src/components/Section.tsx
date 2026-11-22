@@ -85,6 +85,13 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
       <path d="M3 9h18M9 9v11" />
     </>
   ),
+  // Appearance › Theme: a disc half light, half dark.
+  theme: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+    </>
+  ),
 };
 
 export function Section({
