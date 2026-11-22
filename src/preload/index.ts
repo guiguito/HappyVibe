@@ -358,6 +358,11 @@ contextBridge.exposeInMainWorld("hv", {
   },
   setAutoCompaction: (on: boolean) => ipcRenderer.invoke("hv:set-auto-compaction", on),
   getGlobalBypass: () => ipcRenderer.invoke("hv:get-global-bypass"),
+  getGlobalFileRewind: () => ipcRenderer.invoke("hv:get-global-file-rewind"),
+  setGlobalFileRewind: (on: boolean) => ipcRenderer.invoke("hv:set-global-file-rewind", on),
+  getWorkspaceFileRewind: (workspace: string) => ipcRenderer.invoke("hv:get-workspace-file-rewind", workspace),
+  setWorkspaceFileRewind: (workspace: string, on: boolean | null) =>
+    ipcRenderer.invoke("hv:set-workspace-file-rewind", workspace, on),
   setGlobalBypass: (on: boolean) => ipcRenderer.invoke("hv:set-global-bypass", on),
   getWorkspaceBypass: (workspace: string) => ipcRenderer.invoke("hv:get-workspace-bypass", workspace),
   setWorkspaceBypass: (workspace: string, on: boolean | null) =>
