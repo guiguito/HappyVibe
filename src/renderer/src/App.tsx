@@ -17,7 +17,7 @@ import { PrivacyView } from "./components/PrivacyView";
 import { type ForkOrigin, type TranscriptItem } from "./components/Transcript";
 import { PLAN_DISMISS_KEY, type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
-import { describeProviderError, retryNoticeText } from "../../main/providerError";
+import { describeProviderError, resumedText, retryNoticeText } from "../../main/providerError";
 import { adoptDraft, carryDraft, dropDraft } from "./composerDrafts";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { forkMarkerIndex, stampPiTs } from "./fork";
@@ -708,8 +708,19 @@ export default function App(): React.JSX.Element {
     window.addEventListener("hv:auto-compaction", onChange);
     return () => window.removeEventListener("hv:auto-compaction", onChange);
   }, []);
-  const pendingError = useRef<Record<string, { raw: string; provider?: string; model?: string }>>({});
+  const pendingError = useRef<Record<string, { raw: string; provider?: string; model?: string; partial?: string }>>({});
+  /**
+   * Sessions whose turn just ended on an error, waiting for Pi's verdict. Pi emits
+   * agent_end FIRST and only then auto_retry_start, so agent_end cannot know
+   * whether the failure is final: the card used to land there and the retry came
+   * after it — one red card per attempt. The NEXT event decides: auto_retry_start
+   * drops the error, anything else (agent_settled, a compaction, a queued turn)
+   * shows it, exactly where it showed before.
+   */
+  const errorVerdict = useRef<Set<string>>(new Set());
   const retryNotice = useRef<Record<string, number>>({});
+  /** When each session's current pause began — the first retry of the run — for "Resumed after …". */
+  const retryStarted = useRef<Record<string, number>>({});
 
   const sendSeq = useRef(0);
   /** Round 27: per-session Take back state — see takeBackQueue. */
@@ -771,8 +782,13 @@ export default function App(): React.JSX.Element {
   const upsertRetryNotice = (sid: string, text: string, title?: string): void => {
     const existing = retryNotice.current[sid];
     if (existing === undefined) {
-      retryNotice.current[sid] = idCounter.current; // id appendItem assigns next
-      appendItem(sid, { kind: "notice", text, pending: true, title });
+      // The id is reserved HERE, not predicted: appendItem takes its id inside a
+      // state updater, so with another append still queued (the card of the
+      // attempt that just failed, before errorVerdict) a predicted id named that
+      // card — and every later update of the notice found nothing to change.
+      const id = idCounter.current++;
+      retryNotice.current[sid] = id;
+      setTranscripts((p) => ({ ...p, [sid]: [...(p[sid] ?? []), { kind: "notice", text, pending: true, title, id, live: true }] }));
       return;
     }
     setTranscripts((p) => {
@@ -934,6 +950,47 @@ export default function App(): React.JSX.Element {
       return next;
     });
     appendItem(sid, { kind: "assistant", text });
+  };
+
+  /**
+   * The live bubble taken off the screen without landing in the transcript: the
+   * partial answer of an attempt that failed mid-stream. If Pi retries, the retry
+   * writes the whole answer again (and the model never sees the partial), so it
+   * would only show twice; if not, it lands just before the error card.
+   */
+  const discardStream = (sid: string): string | undefined => {
+    const text = streamRef.current[sid];
+    streaming.current[sid] = false;
+    delete streamRef.current[sid];
+    setStreamText((p) => {
+      if (!(sid in p)) return p;
+      const next = { ...p };
+      delete next[sid];
+      return next;
+    });
+    return text || undefined;
+  };
+
+  /** The held error of a turn that is over for good: its partial answer, then its card. */
+  const flushPendingError = (sid: string): void => {
+    const err = pendingError.current[sid];
+    if (!err) return;
+    delete pendingError.current[sid];
+    if (err.partial) appendItem(sid, { kind: "assistant", text: err.partial });
+    // Raw provider text ("529 status code (no body)") tells the user nothing
+    // about whether to wait, fix a key, or fix a setting. Map it, and offer a
+    // plain resend for the transient classes — once Pi's own retries are spent,
+    // this button is the way out.
+    const info = describeProviderError(err.raw, { provider: err.provider, model: err.model, autoCompaction: autoCompaction.current });
+    appendItem(sid, {
+      kind: "error",
+      text: info.headline,
+      hint: info.hint,
+      retriable: info.retriable,
+      retryLabel: info.retriable ? "Retry" : undefined,
+      doc: info.doc,
+      action: info.action,
+    });
   };
 
   /**
@@ -1554,6 +1611,12 @@ export default function App(): React.JSX.Element {
     const offPiEvent = window.hv.onPiEvent((e) => {
       const sid = e.sessionId as string | undefined;
       if (!sid) return;
+      // The verdict on a turn that ended on an error (see errorVerdict): anything
+      // but a retry means the failure was final, and its card lands now.
+      if (errorVerdict.current.has(sid) && e.type !== "auto_retry_start") {
+        errorVerdict.current.delete(sid);
+        flushPendingError(sid);
+      }
       // §7 round 25: any event resets the "Waiting for the model · Ns" counter.
       activityRef.current[sid] = { eventAt: Date.now(), streamAt: activityRef.current[sid]?.streamAt ?? 0 };
       scheduleFlush();
@@ -1810,26 +1873,9 @@ export default function App(): React.JSX.Element {
           }
         }
         delete aborted.current[sid]; // the abort window closes with the turn
-        // Flush a deferred provider error that was NOT retried (or exhausted its
-        // retries) as the single hard error card for the turn.
-        const err = pendingError.current[sid];
-        if (err) {
-          delete pendingError.current[sid];
-          // Raw provider text ("529 status code (no body)") tells the user
-          // nothing about whether to wait, fix a key, or fix a setting. Map it,
-          // and offer a plain resend for the transient classes — Pi's own retry
-          // list omits 529, so this button is the only way out of one.
-          const info = describeProviderError(err.raw, { provider: err.provider, model: err.model, autoCompaction: autoCompaction.current });
-          appendItem(sid, {
-            kind: "error",
-            text: info.headline,
-            hint: info.hint,
-            retriable: info.retriable,
-            retryLabel: info.retriable ? "Retry" : undefined,
-            doc: info.doc,
-            action: info.action,
-          });
-        }
+        // A provider error waits for Pi's verdict: the next event says whether
+        // this attempt is retried (no card) or was the last one (the card).
+        if (pendingError.current[sid]) errorVerdict.current.add(sid);
         setBusy((p) => ({ ...p, [sid]: false }));
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
@@ -1839,16 +1885,25 @@ export default function App(): React.JSX.Element {
       if (e.type === "auto_retry_start") {
         const r = e as unknown as { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string };
         delete pendingError.current[sid]; // this failure is being retried, not final
+        errorVerdict.current.delete(sid);
         commitStream(sid);
-        // Round 16: the pill carries a bounded chip; the provider's own words
-        // ride the hover title. If the retries exhaust, they land in the error
-        // card at agent_end, which is built to carry them.
-        upsertRetryNotice(sid, retryNoticeText(r), r.errorMessage);
+        retryStarted.current[sid] ??= Date.now();
+        // The turn is paused, not over: agent_end cleared `busy` a moment ago, and
+        // without it Stop disappears and a new message would start a fresh turn
+        // instead of joining this one.
+        setBusy((p) => (p[sid] ? p : { ...p, [sid]: true }));
+        // A pause, in one notice that updates in place: what is wrong and when
+        // the next try is. The provider's own words and the try count ride the
+        // hover title; if the tries run out, the error card at agent_end carries them.
+        const title = `${r.errorMessage ?? "Unknown error"} (try ${r.attempt ?? 1} of ${r.maxAttempts ?? "?"})`;
+        upsertRetryNotice(sid, retryNoticeText(r), title);
       }
       if (e.type === "auto_retry_end") {
-        const r = e as unknown as { success?: boolean; attempt?: number };
-        if (r.success) resolveRetryNotice(sid, `Recovered after ${r.attempt ?? 1} ${((r.attempt ?? 1) === 1) ? "retry" : "retries"}`);
-        else resolveRetryNotice(sid, null); // exhausted — the error card (agent_end) tells the story
+        const r = e as unknown as { success?: boolean };
+        const started = retryStarted.current[sid];
+        delete retryStarted.current[sid];
+        if (r.success) resolveRetryNotice(sid, resumedText(Date.now() - (started ?? Date.now())));
+        else resolveRetryNotice(sid, null); // exhausted or stopped — the error card (agent_end) tells the story
       }
       // B5: compaction is slow (Pi's model summarization, not our bug), so show
       // an ONGOING notice that resolves in place — never a scary error box.
@@ -1856,8 +1911,11 @@ export default function App(): React.JSX.Element {
       // until the next LLM response) and the open panel re-fetches its snapshot.
       if (e.type === "compaction_start") {
         commitStream(sid); // flush any live bubble before the notice
-        compactionNotice.current[sid] = idCounter.current; // id appendItem will assign next
-        appendItem(sid, { kind: "notice", text: "Compacting context…", pending: true });
+        // Reserved, not predicted (see upsertRetryNotice): an overflow's error card
+        // can be queued in this same event, by the errorVerdict flush above.
+        const id = idCounter.current++;
+        compactionNotice.current[sid] = id;
+        setTranscripts((p) => ({ ...p, [sid]: [...(p[sid] ?? []), { kind: "notice", text: "Compacting context…", pending: true, id, live: true }] }));
       }
       if (e.type === "compaction_end") {
         const noticeId = compactionNotice.current[sid];
@@ -1928,7 +1986,9 @@ export default function App(): React.JSX.Element {
           });
         }
         if (m?.role === "assistant" && m.stopReason === "error") {
-          commitStream(sid); // flush any partial bubble before the (deferred) error
+          // The partial answer is held with the error (discardStream): shown with
+          // the card if this failure is final, dropped if Pi retries the attempt.
+          const partial = discardStream(sid);
           // Keep the provider and model alongside the text: some providers answer
           // a failure with a word ("ERROR", "terminated") and nothing else, and
           // then the only way to say anything useful is to name what failed.
@@ -1936,6 +1996,7 @@ export default function App(): React.JSX.Element {
             raw: m.errorMessage || "The model call failed.",
             ...(m.provider ? { provider: m.provider } : {}),
             ...(m.model ? { model: m.model } : {}),
+            ...(partial ? { partial } : {}),
           };
         }
       }
