@@ -38,7 +38,11 @@ export default defineConfig({
         // main bundle as out/main/voice-worker.js — the path host.ts forks.
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'voice-worker': resolve(__dirname, 'src/main/voice/worker.ts')
+          'voice-worker': resolve(__dirname, 'src/main/voice/worker.ts'),
+          // §9: the rewind snapshot worker thread, out/main/snapshot-worker.js —
+          // the path snapshotHost.ts starts. Walking a workspace on the main
+          // thread froze the whole app.
+          'snapshot-worker': resolve(__dirname, 'src/main/snapshotWorker.ts')
         },
         // sherpa-onnx-node is a NATIVE module: it must resolve from
         // node_modules at runtime, never be inlined into the bundle.
