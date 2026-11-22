@@ -119,6 +119,8 @@ Don't like where that went? Take the session back to one of your own messages, a
 
 The two file choices appear only when the app has something to restore for that message. Before you confirm, it tells you how many files will be restored and removed, and names any file changed since, which it leaves alone.
 
+Before the agent starts on a message, the app keeps a copy of your files on your computer, so a rewind can put them back. Your message waits for that copy, up to 5 seconds. You can keep using the app meanwhile. If it takes longer, say in a very large folder, the agent starts without it, and a rewind to that message can't put your files back to how they were before it.
+
 To undo one change instead of a whole message, see [Files and changes](/docs/files-and-changes/#undo-one-change).
 
 ## Workspace settings

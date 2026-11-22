@@ -101,7 +101,8 @@ And around them:
 - A long session starts at its latest messages. **Show earlier messages (…)** draws the rest.
 - After a compaction ([Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) says more), a note says "Earlier messages were compacted into a summary" and why. **Load earlier messages** brings them back into view, marked "earlier — not in the agent's context": you can read them, but the agent can't see them.
 - Scrolled up while the agent writes? The conversation stops following it. **Jump to latest** takes you back down.
-- If a request fails, the error says what happened, and often offers **Retry** or **Restart & resend**.
+- If the connection drops or the provider is busy, the session usually pauses and keeps trying. One line says why and when the next try is, for example "Paused · connection lost · next try in 15s". **Stop** still works. Once a try gets through, the agent picks up where it stopped (a reply cut off halfway starts again) and the line reads "Resumed after 2 min". If it still can't get through after about a quarter of an hour, it stops and shows the error, as below.
+- If a request fails for good, the error says what happened, and often offers **Retry** or **Restart & resend**.
 - If the agent can't take a message at all, nothing is lost: your bubble goes away, a note says why, and your words go back into the message box so you can send them again. The note is one of these:
   - "The agent is compacting its context. Send your message again when it finishes."
   - "Your sign-in for … has expired or can't be reached. Sign in again on Models, then send your message again."
@@ -135,6 +136,8 @@ Type here, press **Enter** to send, **Shift+Enter** for a new line. It reads "As
 - **Send**, the paper plane. While the agent works, its tooltip changes to "Steer — lands between tool calls".
 
 You can also paste or drop an image straight into the box, and, while **Documents** is on, drop a document on it. Each attachment waits above the box as a chip, with **×** to remove it, until you send. A document can go on its own, with nothing typed. A document's chip shows its size as Markdown and roughly how many tokens it will take, so you know what it costs before you send it.
+
+A message you haven't sent stays with its session. Switch to another workspace, close the tab or move the tab to another window, and it's still in the box when you come back, attachments included. It lasts as long as its window stays open: closing that window, reloading it or restarting the app empties the box. A session you never sent anything to is the exception: closing its tab deletes it, message and all.
 
 Click any picture in the conversation, such as an image you attached, a screenshot the agent took or an image it made, to see it full size. There, **Copy** puts it on your clipboard, ready to paste anywhere, and **Save…** saves it where you choose. Click outside the picture or press **Esc** to close it.
 

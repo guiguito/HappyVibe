@@ -19,8 +19,9 @@ paths:
   extension list · **P3** the host child policy, memory/session-dir clamps, exact-model-only
   resolution (refuse, never substitute) and the refusal inside `spawn()` · **P4** a project's
   `.pi/subagents.json` is ignored · **P5** a workflow's `gate:` shell command never runs; saved
-  workflows come only from the agent dir · **P6** `steer`/`workflow-stop` bus verbs plus workflow
-  progress/settled events.
+  workflows come only from the agent dir · **P6** the `workflow-stop` bus verb plus workflow
+  progress/settled events (its `steer` half retired at 0.22.1 — upstream ships the verb with the
+  same owner guard; `tintinweb-patch-contract` pins upstream's).
 - Gates: `tests/tintinweb-patch-apply.test.ts` (applier + markers), `tintinweb-patch-contract` and
   `tintinweb-trust` (behaviour; the latter boots real Pi key-free and is all red unpatched), and
   `tests/tintinweb-contract.test.ts` — the pin-bump gate. A bump re-anchors the hunks; never loosen
@@ -98,7 +99,7 @@ paths:
   `get_subagent_result({wait:true})` is intercepted (`isResultWait`) — the result arrives as its own
   turn. `reportUsage` is off (§19 counts each child's session file).
 - Relay: bus events → `hv.subagent` notifies (`hv-tw-relay.ts`), never RPC stdout.
-- `/hv-subagent-steer <runId> <base64>` drives the patched `subagents:rpc:steer` (base64 so any
+- `/hv-subagent-steer <runId> <base64>` drives upstream's `subagents:rpc:steer` (base64 so any
   sentence survives a one-line command), from the run card or a run PICKED in the `@` menu — typed
   text never addresses a run (`steerTarget`). Workflows are not steerable.
 - A run whose last entry is a tool result or user message, with a file quiet for 10 min, turns amber
