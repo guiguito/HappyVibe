@@ -19,7 +19,7 @@ const INDEX = src("index.ts");
 describe("the package", () => {
   it("is the pinned version, with the entry spawn.ts loads", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8"));
-    expect(pkg.version).toBe("0.22.0");
+    expect(pkg.version).toBe("0.23.1");
     expect(fs.existsSync(path.join(RT, TW_RELPATH))).toBe(true);
   });
 
@@ -60,7 +60,9 @@ describe("the lifecycle the relay and the busy gate listen to", () => {
   });
 
   it("the entry types the session file carries", () => {
-    expect(INDEX).toContain('pi.appendEntry("subagents:record"');
+    // 0.23 writes it through a constant (and now reads it back for resume and get_subagent_result).
+    expect(src("agent-record-entry.ts")).toContain('AGENT_RECORD_ENTRY_TYPE = "subagents:record"');
+    expect(INDEX).toContain("pi.appendEntry<AgentRecordEntryData>(AGENT_RECORD_ENTRY_TYPE,");
     expect(src("workflow/entry.ts")).toContain('WORKFLOW_ENTRY_TYPE = "subagents:workflow"');
   });
 

@@ -44,6 +44,10 @@ export function hunks(chunksDir, iconSvg) {
     // An MCP server's consent screen shows the name Pi registers with (default "pi"); a server's own
     // oauth.clientName still wins. Our own name only — never another product's (§13, decision 15).
     ...mcp.map((file) => ({ id: "oauth-mcp-name", file, find: "client_name:settings.clientName??APP_NAME", replace: 'client_name:settings.clientName??/*hv-patch:oauth-mcp-name*/"HappyVibe"' })),
+    // Pi 1.5: `auto` signs in as pi.dev's Client ID Metadata Document ("pi" on the consent screen),
+    // which bypasses the name above. Upstream skips it for a rebranded APP_NAME — so do we. An
+    // entry's explicit `oauth.clientRegistration: "cimd"` still gets it.
+    ...mcp.map((file) => ({ id: "oauth-mcp-cimd", file, find: 'APP_NAME!=="pi"?!1:isClientMetadataDocumentCallback', replace: "/*hv-patch:oauth-mcp-cimd*/!0?!1:isClientMetadataDocumentCallback" })),
   ];
 }
 
