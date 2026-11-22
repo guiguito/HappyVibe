@@ -57,7 +57,7 @@ export type UsageEventName = keyof typeof USAGE_EVENTS;
 export const SCREENS = [
   "chat", "schedules", "workspace", "guide",
   "models", "builtinTools", "memory", "plugins", "skills", "promptTemplates", "mcp", "agents", "sysprompt",
-  "permissions", "tools", "terminal", "voice", "onBehalf", "shortcuts", "privacy", "stats", "audit", "changelog",
+  "permissions", "tools", "terminal", "voice", "onBehalf", "appearance", "shortcuts", "privacy", "stats", "audit", "changelog",
 ] as const;
 export type Screen = (typeof SCREENS)[number];
 

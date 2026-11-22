@@ -42,7 +42,7 @@ describe("the overlay's geometry is the one that was specced", () => {
     // An `absolute` overlay inside the sticky header positions against the
     // nearest POSITIONED ancestor. Without `relative` here it escapes to the
     // pane and lands somewhere else entirely.
-    expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full"');
+    expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-chat mx-auto w-full"');
   });
 
   it("the overlay is left-anchored, not centred", () => {
@@ -301,7 +301,7 @@ describe("the overlay and the hover readout (A3)", () => {
   });
 
   it("the sticky wrapper string is untouched", () => {
-    expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full"');
+    expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-chat mx-auto w-full"');
   });
 });
 

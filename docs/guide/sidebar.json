@@ -4,6 +4,6 @@
   "models",
   { "label": "Abilities", "items": ["built-in-tools", "memory", "plugins", "skills", "prompts", "mcp", "agents"] },
   { "label": "Control", "items": ["system-prompt", "permissions", "agent-tools"] },
-  { "label": "App features", "items": ["terminal", "voice", "ai-autofill", "keyboard-shortcuts", "privacy"] },
+  { "label": "App features", "items": ["terminal", "voice", "ai-autofill", "appearance", "keyboard-shortcuts", "privacy"] },
   { "label": "The record", "items": ["stats", "audit-log", "changelog"] }
 ]
