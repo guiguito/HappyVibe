@@ -85,6 +85,15 @@ describe("theme — the dark palette", () => {
     expect(contrastRatio(D("tangerine-deep"), D("honey-soft"))).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("your own message is a tangerine TINT with ink text, readable in both themes, not a solid orange slab", () => {
+    const L = (token: string): string => light[`--color-${token}`];
+    expect(contrastRatio(L("ink"), L("tangerine-soft")), "light").toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(D("ink"), D("tangerine-soft")), "dark").toBeGreaterThanOrEqual(4.5);
+    const transcript = read("renderer/src/components/Transcript.tsx");
+    expect(transcript).toContain('className="bg-tangerine-soft text-ink rounded-2xl rounded-br-md');
+    expect(transcript).not.toContain("bg-tangerine text-paper rounded-2xl rounded-br-md");
+  });
+
   it("a label on a solid fill (`text-paper` on a button) is the dark paper, and reads on every fill", () => {
     for (const f of ["tangerine", "berry", "leaf", "sky", "honey", "ink"]) {
       expect(contrastRatio(D("paper"), D(f)), `paper on ${f}`).toBeGreaterThanOrEqual(4.5);
