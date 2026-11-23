@@ -19,8 +19,9 @@
  */
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Derived from vitest's OWN manifest, never hardcoded: `vitest/vitest.mjs` is a real
 // file but its exports map does not list it, so resolving that subpath throws
@@ -32,10 +33,31 @@ const manifest = require.resolve("vitest/package.json");
 const bin = JSON.parse(readFileSync(manifest, "utf8")).bin;
 const vitest = path.resolve(path.dirname(manifest), typeof bin === "string" ? bin : bin.vitest);
 
-const r = spawnSync(process.execPath, [vitest, "run", ...process.argv.slice(2)], {
-  stdio: "inherit",
-  env: { ...process.env, DEEPSEEK_API_KEY: "sk-REPLACE", OPENROUTER_API_KEY: "sk-REPLACE" },
-});
-
+const env = { ...process.env, DEEPSEEK_API_KEY: "sk-REPLACE", OPENROUTER_API_KEY: "sk-REPLACE" };
 // Killed by a signal (Ctrl-C) reports status null — exit non-zero rather than 0.
-process.exit(r.status ?? 1);
+const run = (args) => spawnSync(process.execPath, [vitest, "run", ...args], { stdio: "inherit", env }).status ?? 1;
+
+const args = process.argv.slice(2);
+
+/**
+ * Windows only (or HV_TEST_SERIAL_PI=1 to try it elsewhere): the files that boot a real Pi
+ * run ONE AT A TIME, after everything else has run in parallel. On the Windows runners a Pi
+ * started while others boot sometimes hangs silently before its first line of output — the
+ * test then dies at 30 s (builtins-contract, piclient, session-fork-contract; frequent since
+ * Pi 1.5, never on macOS or Linux). PI_TIMING=1 makes every such Pi print its start-up
+ * stages, so the next hang shows how far it got. The list is DERIVED from the files' own
+ * text, never written down: a new real-Pi test joins the serial pass by existing.
+ * An explicit file argument (`npm test -- <file>`) keeps the single parallel run.
+ */
+const serialPi = (process.platform === "win32" || process.env.HV_TEST_SERIAL_PI === "1") && args.length === 0;
+if (!serialPi) process.exit(run(args));
+
+const testsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tests");
+const piFiles = readdirSync(testsDir)
+  .filter((f) => f.endsWith(".test.ts"))
+  .filter((f) => /PI_CLI_RELPATH|new PiClient\(/.test(readFileSync(path.join(testsDir, f), "utf8")))
+  .map((f) => `tests/${f}`);
+env.PI_TIMING = "1";
+const rest = run(piFiles.flatMap((f) => ["--exclude", f]));
+const pi = run(["--no-file-parallelism", ...piFiles]);
+process.exit(rest || pi);
