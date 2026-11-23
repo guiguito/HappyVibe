@@ -58,6 +58,12 @@ export interface ToolCall {
    * the copy it cannot, so the edit asks like any other call. Absent means on.
    */
   fileRewind?: boolean;
+  /**
+   * True once the user (or a deny rule) has denied a call in this session. The edit safe default
+   * then stops: a model whose `bash touch x` was just denied otherwise creates `x` with a free
+   * `write` (measured in the live batch, 2026-11-22). Absent means no deny yet.
+   */
+  afterDeny?: boolean;
 }
 
 export interface Verdict {
@@ -465,8 +471,9 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
     if (outside) return { action: "ask", source: "outside-workspace", outsidePath: outside };
   }
   // Round 29: an edit Rewind can undo, inside the workspace, runs without asking —
-  // and only while Rewind keeps a copy of the files here (§9's switch).
-  if (WORKSPACE_EDIT_TOOLS.has(call.tool) && call.fileRewind !== false) {
+  // and only while Rewind keeps a copy of the files here (§9's switch), and only until something
+  // was denied in this session: after a "no", an edit is not the agent's way around it.
+  if (WORKSPACE_EDIT_TOOLS.has(call.tool) && call.fileRewind !== false && call.afterDeny !== true) {
     const paths = pathArgs(call.input ?? {});
     if (paths.length > 0 && paths.every((p) => editRunsFreely(p, call))) return { action: "allow", source: "safe-default" };
   }
