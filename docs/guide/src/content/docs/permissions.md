@@ -123,7 +123,7 @@ When a call needs your answer, the approval dialog opens over the session. It ne
 With no rule matching, these run without the approval dialog:
 
 - Tools that only read or look things up: reading, searching and listing files inside your workspace, reading the page open in the app's browser, searching the web, and recalling a memory.
-- Editing or writing a file inside your workspace. Rewind can undo it while **Keep a copy of your files** is on ([Rewind](#rewind), above). With it off, edits ask. A file or folder whose name starts with a dot (`.env`, `.git`, `.github`) and `AGENTS.md` or `CLAUDE.md` still ask, because Rewind can't undo them or every future session reads them.
+- Editing or writing a file inside your workspace. Rewind can undo it while **Keep a copy of your files** is on ([Rewind](#rewind), above). With it off, edits ask. Once you deny something in a session, edits ask for the rest of that session too, so the agent can't get around your answer by writing the file another way. A file or folder whose name starts with a dot (`.env`, `.git`, `.github`) and `AGENTS.md` or `CLAUDE.md` still ask, because Rewind can't undo them or every future session reads them.
 - A read-only shell command, such as `git status` or `grep -rn todo src`, when every path it names stays inside your workspace. A command that runs your project's code, such as `npm test`, asks. On Windows without Git Bash, where the agent uses PowerShell, every command asks.
 - Handing a task to a subagent that can only read, such as `code-explorer`. A subagent that can change files asks, and shows what it can reach.
 - Opening a page on your own computer (localhost) in the app's browser, the usual way to preview what you're building.

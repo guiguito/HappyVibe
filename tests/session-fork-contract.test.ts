@@ -41,8 +41,21 @@ beforeAll(async () => {
     await ended;
   }
   src = ((await c.send({ type: "get_state" })).data as { sessionFile: string }).sessionFile;
+  exits.push(exitOf(c));
   c.stop();
 }, 90_000);
+/**
+ * Every Pi here shares one agent dir, and stop() only SIGNALS. The next test's Pi used to start
+ * while the previous one was still dying and writing there: ENOTEMPTY at cleanup on macOS, and on
+ * Windows the duplicate's Pi sat silent for 30 s right after such an overlap. So a Pi starts only
+ * once the previous ones have exited, and cleanup waits for them too. Bounded: a Pi that never
+ * exits costs 10 s here and is reported by its own test, rather than hanging the hook.
+ */
+const exits: Promise<void>[] = [];
+function exitOf(c: { on(ev: "exit", h: () => void): unknown }): Promise<void> {
+  const exited = new Promise<void>((res) => c.on("exit", () => res()));
+  return Promise.race([exited, new Promise<void>((res) => setTimeout(res, 10_000))]);
+}
 // ponytail: trace for the Windows-only "Pi took too long to copy the session" hang (back on Pi 1.5.0
 // after 0 hits in 36 runs). Each step's time + Pi's own PI_TIMING boot stages land in the CI log, so a
 // timeout names where it stalled: no "spawned" = spawn, no Startup Timings = Pi boot, no "← get_state"
@@ -52,14 +65,17 @@ const traced = (tag: string) => (s: ConstructorParameters<typeof PiClient>[0]) =
   const t0 = Date.now();
   const log = (m: string) => console.log(`[fk-trace ${tag}] +${Date.now() - t0}ms ${m}`);
   c.on("exit", (e: { code: number | null }) => log(`pi exited code=${e.code}`));
+  const exited = exitOf(c);
   return {
-    start: async () => { log("spawn"); await c.start(); log("spawned"); },
+    start: async () => { await Promise.all(exits); exits.push(exited); log("spawn"); await c.start(); log("spawned"); },
     send: async (cmd: { type: string; [k: string]: unknown }) => { log(`→ ${cmd.type}`); const r = await c.send(cmd); log(`← ${cmd.type}`); return r; },
     stop: () => { log("stop"); c.stop(); },
   };
 };
-// stop() only signals: a fork's Pi can still be writing its last files while this runs (ENOTEMPTY).
-afterAll(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+afterAll(async () => {
+  await Promise.all(exits);
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 
 test("a live user message_end carries the file entry's own message.timestamp (the piTs key)", () => {
   expect(userTs).toHaveLength(2);

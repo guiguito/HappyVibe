@@ -499,6 +499,22 @@ function persistPlan(pi: ExtensionAPI): void {
   pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
 }
 
+// After a deny, edits ask for the rest of the session (hv-rules `afterDeny`): a model whose
+// `bash touch x` was just denied otherwise creates `x` with a free `write`. Set by the user's
+// Deny and by a deny rule — not by a mode's clamp (plan, read-only, a switched-off tool), which
+// is the app enforcing a setting, not someone saying no. Persisted like plan state so a respawn
+// of the same session keeps it; a new session starts without it.
+const DENIED_TYPE = "hv-denied";
+let deniedInSession = false;
+function noteDeny(pi: ExtensionAPI): void {
+  if (deniedInSession) return;
+  deniedInSession = true;
+  pi.appendEntry(DENIED_TYPE, { denied: true });
+}
+function restoreDenied(entries: SessionEntry[]): boolean {
+  return entries.some((e) => (e.type === "custom" || e.type === "custom_message") && e.customType === DENIED_TYPE);
+}
+
 // What each completed child actually said, so the delivery can carry it instead of
 // upstream's truncated notification (hv-subagent-delivery.ts). Deliberately NOT
 // persisted: a completion and its delivery turn happen together, and writing multi-KB
@@ -770,6 +786,7 @@ export default function (pi: ExtensionAPI) {
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
+    deniedInSession = restoreDenied(entries);
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
     // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
@@ -1251,6 +1268,7 @@ export default function (pi: ExtensionAPI) {
       const wv = evaluate(rules, { tool: "workflow", input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS });
       if (wv.action === "deny" && wv.source === "rule") {
         audit(ctx.ui, { tool: "workflow", summary: name, decision: "deny", source: "rule", rule: wv.rule });
+        noteDeny(pi);
         return { block: true, reason: `Blocked by HappyVibe permission rule (workflow). ${NEXT_STEP}` };
       }
       if (dangerous) {
@@ -1269,6 +1287,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       audit(ctx.ui, { tool: "workflow", summary: name, decision: "deny", source: "user" });
+      noteDeny(pi);
       return { block: true, reason: `User denied running this workflow in HappyVibe. ${NEXT_STEP}` };
     }
 
@@ -1282,7 +1301,7 @@ export default function (pi: ExtensionAPI) {
       // the audit log back into a record of decisions rather than a record of
       // one setting being on.
       const shadow = evaluate(rules, {
-        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")), fileRewind: FILE_REWIND,
+        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")), fileRewind: FILE_REWIND, afterDeny: deniedInSession,
       });
       audit(ctx.ui, {
         tool: permTool,
@@ -1303,11 +1322,12 @@ export default function (pi: ExtensionAPI) {
     }
 
     const v = evaluate(rules, {
-      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")), fileRewind: FILE_REWIND,
+      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS, realPath: resolveThroughLinks, workspaceHasGit: fs.existsSync(path.join(process.cwd(), ".git")), fileRewind: FILE_REWIND, afterDeny: deniedInSession,
     });
 
     if (v.action === "deny") {
       audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule", rule: v.rule });
+      noteDeny(pi);
       // X7 (2026-09-10): a bare "blocked" makes a current model retry the same
       // call with small variations — which is what the audit log then fills up
       // with. Every other refusal in the app already names an alternative.
@@ -1394,6 +1414,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "user" });
+    noteDeny(pi);
     return { block: true, reason: `User denied this action in HappyVibe. ${NEXT_STEP}` };
   });
 
