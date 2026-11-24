@@ -50,3 +50,25 @@ describe("npm test is still key-free", () => {
     expect(script).toMatch(/process\.exit\(/);
   });
 });
+
+describe("on Windows, the real-Pi files run one at a time", () => {
+  it("derives the list from the test files' own text, never a written-down list", () => {
+    expect(script).toMatch(/readdirSync\(testsDir\)/);
+    expect(script).toMatch(/PI_CLI_RELPATH\|new PiClient/);
+  });
+
+  it("runs the rest in parallel without them, then them serially, and fails if either fails", () => {
+    expect(script).toMatch(/flatMap\(\(f\) => \["--exclude", f\]\)/);
+    expect(script).toMatch(/"--no-file-parallelism", \.\.\.piFiles/);
+    expect(script).toMatch(/process\.exit\(rest \|\| pi\)/);
+  });
+
+  it("the derived list actually finds the real-Pi files", () => {
+    const dir = path.join(ROOT, "tests");
+    const found = fs.readdirSync(dir).filter((f) =>
+      f.endsWith(".test.ts") && /PI_CLI_RELPATH|new PiClient\(/.test(fs.readFileSync(path.join(dir, f), "utf8")));
+    expect(found).toContain("builtins-contract.test.ts");
+    expect(found).toContain("session-fork-contract.test.ts");
+    expect(found).toContain("piclient.test.ts");
+  });
+});
