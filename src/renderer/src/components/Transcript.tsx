@@ -473,7 +473,7 @@ function UserBubble({
   const collapsed = long && !expanded;
   return (
     <div className="self-end max-w-[85%] group">
-      <div className="bg-tangerine text-paper rounded-2xl rounded-br-md px-4 py-2.5 shadow-sticker border-2 border-tangerine-deep whitespace-pre-wrap text-[0.95rem]">
+      <div className="bg-tangerine-soft text-ink rounded-2xl rounded-br-md px-4 py-2.5 shadow-sticker border-2 border-tangerine whitespace-pre-wrap text-[0.95rem]">
         {/* W2.1: attached images ride the same bubble; click to zoom (#6). */}
         {images && images.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -489,7 +489,7 @@ function UserBubble({
             {docChips.map((d, i) => (
               <span
                 key={`${d.path}-${i}`}
-                className="rounded-md bg-paper/25 px-1.5 py-0.5 text-xs font-semibold"
+                className="rounded-md bg-tangerine/15 px-1.5 py-0.5 text-xs font-semibold"
                 title={d.path}
               >
                 {basename(d.path)} · {documentFamily(d.format)}
@@ -500,7 +500,7 @@ function UserBubble({
         {/* §7 round 12: the restore budget is a NAMED ceiling, not a silent
             truncation — a picture the user sent must not just be missing. */}
         {"imagesDropped" in it && it.imagesDropped && (
-          <div className="mb-2 text-[11px] font-semibold text-paper/70">image not shown (too large to restore)</div>
+          <div className="mb-2 text-[11px] font-semibold text-ink/70">image not shown (too large to restore)</div>
         )}
         {/* §24: the promptTemplate header. Monospace because it is something the user
             typed verbatim, and it stays visible whether or not the expansion is. */}
@@ -508,7 +508,7 @@ function UserBubble({
           <div className="flex items-center gap-2 font-mono text-sm font-bold">
             {/* Stripped again here because a RESTORED item carries main's raw
                 `typed`, which still holds the appended @file blocks. */}
-            <span className="rounded-md bg-paper/25 px-1.5 py-0.5">{stripInjectedBlocks(promptTemplate.typed).trim()}</span>
+            <span className="rounded-md bg-tangerine/15 px-1.5 py-0.5">{stripInjectedBlocks(promptTemplate.typed).trim()}</span>
           </div>
         )}
         <div
@@ -520,20 +520,20 @@ function UserBubble({
         >
           {splitMentionSegments(text).map((seg, i) =>
             seg.kind === "mention" ? (
-              <span key={i} className="rounded-md bg-paper/25 px-1 font-semibold">{seg.value}</span>
+              <span key={i} className="rounded-md bg-tangerine/15 px-1 font-semibold">{seg.value}</span>
             ) : (
               <span key={i}>{seg.value}</span>
             ),
           )}
           {collapsed && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-tangerine" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-tangerine-soft" />
           )}
         </div>
         {long && (
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="mt-1 text-[11px] font-bold text-paper/80 hover:text-paper underline cursor-pointer"
+            className="mt-1 text-[11px] font-bold text-ink hover:text-tangerine-deep underline cursor-pointer"
           >
             {/* §24: name what is hidden. "Show more" would imply the rest of
                 something the user wrote — this is a prompt they never saw. */}

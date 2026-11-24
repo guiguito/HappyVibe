@@ -22,6 +22,8 @@
 
   --color-tangerine: #ee5a24;
   --color-tangerine-deep: #cf4413;
+  /* The user's own message bubble: a tint, so the conversation is not a wall of orange. */
+  --color-tangerine-soft: #fde5d7;
   --color-honey: #f5a623;
   --color-honey-soft: #fdedcd;
   --color-leaf: #4c9a4f;
