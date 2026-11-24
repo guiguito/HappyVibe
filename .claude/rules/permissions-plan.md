@@ -21,7 +21,9 @@ paths:
   unless a path part starts with `.` or it is `AGENTS.md`/`CLAUDE.md` (`isProtectedPath`), resolved
   through symlinks via `realPath`, and only while Rewind keeps a copy of the files (`call.fileRewind`,
   `HV_FILE_REWIND=0` when the user turned it off — globally or for the workspace; a change respawns the
-  workspace's sessions when idle); `bash` when `isReadOnlyShellCommand` (`hv-shell.ts` — plan mode's
+  workspace's sessions when idle), and only until something was denied in the session (`call.afterDeny`: the
+  user's Deny or a deny rule, not a mode's clamp; persisted as an `hv-denied` entry, restored on
+  `session_start`; main-session gate only, sub-agents unchanged); `bash` when `isReadOnlyShellCommand` (`hv-shell.ts` — plan mode's
   ported classifier, wrapped, never edited; refuses anything that runs project code); and, in the
   bridge, a delegation whose boundary `isReadOnlyBoundary`.
 - Command rules: deny/ask match ANY part (`commandPositions`, permissive); allow needs EVERY part
